@@ -12,12 +12,12 @@ class AssistantHome extends StatelessWidget {
         children: [
 
           // 🟦 FRIENDLY INTRO
-          _softCard(
+          const _SoftCard(
             icon: Icons.shield,
-            iconColor: const Color(0xFF38BDF8),
+            iconColor: Color(0xFF38BDF8),
             title: "You're not alone",
             subtitle:
-            "I’m here to help you stay calm, aware, and safe — step by step.",
+                "I’m here to help you stay calm, aware, and safe — step by step.",
           ),
 
           const SizedBox(height: 18),
@@ -49,7 +49,7 @@ class AssistantHome extends StatelessWidget {
             color: const Color(0xFFFBBF24),
             title: "Share My Location",
             subtitle: "One-time manual sharing",
-            route: '/assistant-chat',
+            route: '/share',
           ),
 
           const SizedBox(height: 12),
@@ -80,8 +80,8 @@ class AssistantHome extends StatelessWidget {
               ),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Row(
-              children: const [
+            child: const Row(
+              children: [
                 Icon(Icons.call, color: Colors.white, size: 34),
                 SizedBox(width: 14),
                 Expanded(
@@ -101,51 +101,13 @@ class AssistantHome extends StatelessWidget {
           const SizedBox(height: 16),
 
           // ⚠️ DISCLAIMER
-          Text(
+          const Text(
             "SafeSphere does not provide emergency response services.\n"
                 "For immediate danger, contact local authorities.",
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 12,
               color: Colors.white54,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 🔹 COMPONENTS
-
-  Widget _softCard({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String subtitle,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 36, color: iconColor),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
-                Text(subtitle,
-                    style: const TextStyle(color: Colors.white70)),
-              ],
             ),
           ),
         ],
@@ -174,10 +136,56 @@ class AssistantHome extends StatelessWidget {
                 color: Colors.white,
                 fontWeight: FontWeight.w600)),
         subtitle:
-        Text(subtitle, style: const TextStyle(color: Colors.white70)),
+            Text(subtitle, style: const TextStyle(color: Colors.white70)),
         trailing:
-        const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.white54),
+            const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.white54),
         onTap: () => Navigator.pushNamed(context, route),
+      ),
+    );
+  }
+}
+
+class _SoftCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+
+  const _SoftCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 36, color: iconColor),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                Text(subtitle,
+                    style: const TextStyle(color: Colors.white70)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

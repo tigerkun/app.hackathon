@@ -9,6 +9,8 @@ import 'pages/community_alerts_page.dart';
 import 'pages/share_location_page.dart';
 import 'pages/emergency_page.dart';
 import 'pages/about_page.dart';
+import 'widgets/safe_route_page.dart';
+import 'widgets/assistant_chat.dart';
 
 void main() {
   runApp(const MyApp());
@@ -38,10 +40,14 @@ class _MyAppState extends State<MyApp> {
         '/ai-assistant': (context) => const AiAssistantPage(),
         '/home': (context) => const HomePage(),
         '/alerts': (context) => const CommunityAlertsPage(),
+        '/community': (context) => const CommunityAlertsPage(),
 
         '/share': (context) => const ShareLocationPage(),
         '/emergency': (context) => const EmergencyPage(),
         '/about': (context) => const AboutPage(),
+        '/safe-route': (context) => const SafeRoutePage(),
+        '/assistant-chat': (context) => const AssistantChatPage(),
+        '/chat': (context) => const AssistantChatPage(),
       },
     );
   }
