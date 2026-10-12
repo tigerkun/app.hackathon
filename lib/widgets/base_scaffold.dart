@@ -40,6 +40,7 @@ class _BaseScaffoldState extends State<BaseScaffold> {
       drawer: Drawer(
         backgroundColor: drawerColor,
         child: ListView(
+          padding: EdgeInsets.zero,
           children: [
             DrawerHeader(
               child: Text(
@@ -52,41 +53,70 @@ class _BaseScaffoldState extends State<BaseScaffold> {
               ),
             ),
 
-            _drawerItem(Icons.home, "Home", () {
-              Navigator.pushReplacementNamed(context, '/');
-            }),
+            _DrawerItem(
+              icon: Icons.home,
+              text: "Home",
+              onTap: () {
+                Navigator.pushReplacementNamed(context, '/');
+              },
+            ),
 
-            _drawerItem(Icons.report, "Report Near Me", () {
-              Navigator.pushReplacementNamed(context, '/report');
-            }),
+            _DrawerItem(
+              icon: Icons.report,
+              text: "Report Near Me",
+              onTap: () {
+                Navigator.pushReplacementNamed(context, '/report');
+              },
+            ),
 
-            _drawerItem(Icons.chat, "Community Chat", () {
-              Navigator.pop(context); // close drawer FIRST
-              Navigator.pushReplacementNamed(context, '/chat');
-            }),
+            _DrawerItem(
+              icon: Icons.chat,
+              text: "Community Chat",
+              onTap: () {
+                Navigator.pop(context); // close drawer FIRST
+                Navigator.pushReplacementNamed(context, '/chat');
+              },
+            ),
 
+            _DrawerItem(
+              icon: Icons.warning,
+              text: "Emergency",
+              onTap: () {
+                Navigator.pushReplacementNamed(context, '/emergency');
+              },
+            ),
 
-            _drawerItem(Icons.warning, "Emergency", () {
-              Navigator.pushReplacementNamed(context, '/emergency');
-            }),
-
-            _drawerItem(Icons.info, "About", () {
-              Navigator.pushReplacementNamed(context, '/about');
-            }),
+            _DrawerItem(
+              icon: Icons.info,
+              text: "About",
+              onTap: () {
+                Navigator.pushReplacementNamed(context, '/about');
+              },
+            ),
 
             const Divider(),
-
           ],
         ),
       ),
 
-      // 👇 PAGE CONTENT GOES HERE
       body: widget.body,
     );
   }
+}
 
-  ListTile _drawerItem(
-      IconData icon, String text, VoidCallback onTap) {
+class _DrawerItem extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final VoidCallback onTap;
+
+  const _DrawerItem({
+    required this.icon,
+    required this.text,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return ListTile(
       leading: Icon(icon),
       title: Text(text),

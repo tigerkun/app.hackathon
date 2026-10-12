@@ -14,10 +14,10 @@ class AppRoute {
           curve: Curves.easeOutCubic,
         ));
 
-        final fade = Tween<double>(
+        final fade = animation.drive(Tween<double>(
           begin: 0,
           end: 1,
-        ).animate(animation);
+        ));
 
         return FadeTransition(
           opacity: fade,

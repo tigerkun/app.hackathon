@@ -28,12 +28,26 @@ class _AnimatedEntryState extends State<AnimatedEntry>
       duration: const Duration(milliseconds: 500),
     );
     fade = CurvedAnimation(parent: controller, curve: Curves.easeOut);
-    slide = Tween(
+    slide = Tween<Offset>(
       begin: const Offset(0, 0.1),
       end: Offset.zero,
     ).animate(fade);
 
-    Future.delayed(Duration(milliseconds: widget.delay), controller.forward);
+    if (widget.delay == 0) {
+      controller.forward();
+    } else {
+      Future.delayed(Duration(milliseconds: widget.delay), () {
+        if (mounted) {
+          controller.forward();
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
   }
 
   @override
