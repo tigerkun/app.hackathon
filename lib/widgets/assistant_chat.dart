@@ -16,6 +16,12 @@ class _AssistantChatPageState extends State<AssistantChatPage> {
     }
   ];
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   void _sendMessage() {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
@@ -69,14 +75,14 @@ class _AssistantChatPageState extends State<AssistantChatPage> {
 
                 return Align(
                   alignment:
-                  isUser ? Alignment.centerRight : Alignment.centerLeft,
+                      isUser ? Alignment.centerRight : Alignment.centerLeft,
                   child: Container(
                     margin: const EdgeInsets.symmetric(vertical: 6),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: isUser
                           ? Colors.blueAccent
-                          : Colors.white.withOpacity(0.08),
+                          : Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Text(

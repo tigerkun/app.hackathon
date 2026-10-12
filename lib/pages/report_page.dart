@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../models/report_model.dart';
+import '../data/report_store.dart';
 import '../widgets/map_placeholder.dart';
 import '../widgets/glass_container.dart';
 import '../theme/app_colors.dart';
@@ -12,13 +14,63 @@ class ReportPage extends StatefulWidget {
 
 class _ReportPageState extends State<ReportPage> {
   String selectedType = "Theft";
+  final TextEditingController _descriptionController = TextEditingController();
 
-  final incidents = const [
+  static const List<Map<String, dynamic>> incidents = [
     {"label": "Theft", "icon": Icons.shopping_bag},
     {"label": "Harassment", "icon": Icons.person_off},
     {"label": "Accident", "icon": Icons.car_crash},
     {"label": "Suspicious", "icon": Icons.visibility},
   ];
+
+  static const List<SafetyMarker> safetyMarkers = [
+    SafetyMarker(
+      position: Offset(0.25, 0.35),
+      icon: Icons.local_police,
+      color: AppColors.blue,
+      label: "Police",
+    ),
+    SafetyMarker(
+      position: Offset(0.55, 0.45),
+      icon: Icons.local_hospital,
+      color: AppColors.red,
+      label: "Hospital",
+    ),
+    SafetyMarker(
+      position: Offset(0.7, 0.3),
+      icon: Icons.security,
+      color: AppColors.teal,
+      label: "Safe Zone",
+    ),
+  ];
+
+  @override
+  void dispose() {
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  void _submitReport() {
+    final desc = _descriptionController.text.trim();
+    final newReport = Report(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      type: selectedType,
+      location: "New Delhi (Current)",
+      description: desc.isEmpty ? "No detailed description" : desc,
+      time: DateTime.now(),
+    );
+
+    ReportStore.addReport(newReport);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Report submitted successfully! Total reports: ${ReportStore.total}"),
+        backgroundColor: AppColors.teal,
+      ),
+    );
+
+    _descriptionController.clear();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,30 +78,9 @@ class _ReportPageState extends State<ReportPage> {
       body: Stack(
         children: [
           /// MAP BACKGROUND
-          MapPlaceholder(
-            markers: const [
-              SafetyMarker(
-                position: Offset(0.25, 0.35),
-                icon: Icons.local_police,
-                color: AppColors.blue,
-                label: "Police",
-              ),
-              SafetyMarker(
-                position: Offset(0.55, 0.45),
-                icon: Icons.local_hospital,
-                color: AppColors.red,
-                label: "Hospital",
-              ),
-              SafetyMarker(
-                position: Offset(0.7, 0.3),
-                icon: Icons.security,
-                color: AppColors.teal,
-                label: "Safe Zone",
-              ),
-            ],
+          const MapPlaceholder(
+            markers: safetyMarkers,
           ),
-
-
 
           /// TOP BAR
           SafeArea(
@@ -103,8 +134,8 @@ class _ReportPageState extends State<ReportPage> {
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           itemCount: incidents.length,
-                          separatorBuilder: (_, __) =>
-                          const SizedBox(width: 10),
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(width: 10),
                           itemBuilder: (context, index) {
                             final item = incidents[index];
                             final bool active =
@@ -118,13 +149,13 @@ class _ReportPageState extends State<ReportPage> {
                               },
                               child: AnimatedContainer(
                                 duration:
-                                const Duration(milliseconds: 200),
+                                    const Duration(milliseconds: 200),
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 14),
                                 decoration: BoxDecoration(
                                   color: active
                                       ? AppColors.amber
-                                      .withValues(alpha: 0.18)
+                                          .withValues(alpha: 0.18)
                                       : Colors.transparent,
                                   borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
@@ -159,20 +190,18 @@ class _ReportPageState extends State<ReportPage> {
 
                       /// DESCRIPTION
                       TextField(
+                        controller: _descriptionController,
                         maxLines: 3,
-                        style:
-                        const TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Colors.white),
                         decoration: InputDecoration(
-                          hintText:
-                          "Describe what happened...",
-                          hintStyle: const TextStyle(
-                              color: Colors.white38),
+                          hintText: "Describe what happened...",
+                          hintStyle:
+                              const TextStyle(color: Colors.white38),
                           filled: true,
                           fillColor:
-                          Colors.black.withValues(alpha: 0.25),
+                              Colors.black.withValues(alpha: 0.25),
                           border: OutlineInputBorder(
-                            borderRadius:
-                            BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(14),
                             borderSide: BorderSide.none,
                           ),
                         ),
@@ -181,8 +210,8 @@ class _ReportPageState extends State<ReportPage> {
                       const SizedBox(height: 14),
 
                       /// LOCATION INFO
-                      Row(
-                        children: const [
+                      const Row(
+                        children: [
                           Icon(Icons.location_on,
                               color: AppColors.teal),
                           SizedBox(width: 6),
@@ -205,13 +234,13 @@ class _ReportPageState extends State<ReportPage> {
                             backgroundColor: AppColors.amber,
                             shape: RoundedRectangleBorder(
                               borderRadius:
-                              BorderRadius.circular(16),
+                                  BorderRadius.circular(16),
                             ),
                             elevation: 10,
                             shadowColor:
-                            AppColors.amber.withValues(alpha: 0.5),
+                                AppColors.amber.withValues(alpha: 0.5),
                           ),
-                          onPressed: () {},
+                          onPressed: _submitReport,
                           child: const Text(
                             "Submit Report",
                             style: TextStyle(

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-
 /// Simple marker model (lightweight & expandable)
 class SafetyMarker {
   final Offset position; // relative (0–1 based)
@@ -26,6 +25,8 @@ class MapPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+
     return Stack(
       children: [
         /// MAP BASE
@@ -48,17 +49,17 @@ class MapPlaceholder extends StatelessWidget {
         /// GRID OVERLAY (realistic map feel)
         CustomPaint(
           size: Size.infinite,
-          painter: _GridPainter(),
+          painter: const _GridPainter(),
         ),
 
         /// MARKERS
-        ...markers.map((marker) {
-          return Positioned(
-            left: MediaQuery.of(context).size.width * marker.position.dx,
-            top: MediaQuery.of(context).size.height * marker.position.dy,
+        for (final marker in markers)
+          Positioned(
+            key: ValueKey(marker.label),
+            left: screenSize.width * marker.position.dx,
+            top: screenSize.height * marker.position.dy,
             child: _MapMarker(marker: marker),
-          );
-        }).toList(),
+          ),
       ],
     );
   }
@@ -73,6 +74,7 @@ class _MapMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           padding: const EdgeInsets.all(6),
@@ -107,6 +109,8 @@ class _MapMarker extends StatelessWidget {
 
 /// GRID PAINTER
 class _GridPainter extends CustomPainter {
+  const _GridPainter();
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()

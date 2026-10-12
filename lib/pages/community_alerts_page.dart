@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/app_drawer.dart';
 
 class CommunityAlertsPage extends StatefulWidget {
   const CommunityAlertsPage({super.key});
@@ -13,8 +14,9 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
 
   final String detectedArea = "Your Area";
 
-  final List<Map<String, dynamic>> alerts = [
+  static const List<Map<String, dynamic>> alerts = [
     {
+      'id': '1',
       'type': 'Warning',
       'domain': 'Safety',
       'category': 'Suspicious Activity',
@@ -26,6 +28,7 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
       'color': Colors.redAccent,
     },
     {
+      'id': '2',
       'type': 'Caution',
       'domain': 'Civic',
       'category': 'Poor Lighting',
@@ -37,6 +40,7 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
       'color': Colors.orangeAccent,
     },
     {
+      'id': '3',
       'type': 'Info',
       'domain': 'Civic',
       'category': 'Road Hazard',
@@ -55,6 +59,7 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
 
     // Mock location detection delay
     Future.delayed(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
       setState(() {
         locationDetected = true;
       });
@@ -79,36 +84,26 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     );
   }
 
+  void _selectFilter(String filter) {
+    setState(() {
+      selectedFilter = filter;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final filteredAlerts = selectedFilter == 'All'
         ? alerts
         : alerts
-        .where((alert) => alert['domain'] == selectedFilter)
-        .toList();
+            .where((alert) => alert['domain'] == selectedFilter)
+            .toList();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text("Community Alerts"),
       ),
 
-      drawer: Drawer(
-        child: ListView(
-          children: [
-            const DrawerHeader(
-              child: Text(
-                "SafeSphere",
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-            ),
-            _drawerItem(Icons.home, "Home", '/'),
-            _drawerItem(Icons.report, "Report Near Me", '/report'),
-            _drawerItem(Icons.campaign, "Community Alerts", '/community'),
-            _drawerItem(Icons.chat, "Safety Assistant", '/chat'),
-            _drawerItem(Icons.support_agent, "Emergency Info", '/emergency'),
-          ],
-        ),
-      ),
+      drawer: const AppDrawer(),
 
       body: Padding(
         padding: const EdgeInsets.all(16),
@@ -126,16 +121,15 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
 
             const SizedBox(height: 12),
 
-            // Filter chips (UI only)
+            // Filter chips
             Wrap(
               spacing: 10,
               children: ['All', 'Safety', 'Civic'].map((filter) {
                 return ChoiceChip(
+                  key: ValueKey('chip_$filter'),
                   label: Text(filter),
                   selected: selectedFilter == filter,
-                  onSelected: (_) {
-                    setState(() => selectedFilter = filter);
-                  },
+                  onSelected: (_) => _selectFilter(filter),
                 );
               }).toList(),
             ),
@@ -144,21 +138,23 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
 
             // Alerts list OR empty state
             Expanded(
-              child: alerts.isEmpty
+              child: filteredAlerts.isEmpty
                   ? const Center(
-                child: Text(
-                  "No active community alerts in your area.",
-                  style: TextStyle(fontSize: 16),
-                ),
-              )
+                      child: Text(
+                        "No active community alerts in your area.",
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    )
                   : ListView.builder(
-                itemCount: filteredAlerts.length,
-                itemBuilder: (context, index) {
-                  final alert = filteredAlerts[index];
-
-                  return _alertCard(alert);
-                },
-              ),
+                      itemCount: filteredAlerts.length,
+                      itemBuilder: (context, index) {
+                        final alert = filteredAlerts[index];
+                        return _AlertCard(
+                          key: ValueKey(alert['id']),
+                          alert: alert,
+                        );
+                      },
+                    ),
             ),
 
             const SizedBox(height: 8),
@@ -173,8 +169,17 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
       ),
     );
   }
+}
 
-  Widget _alertCard(Map<String, dynamic> alert) {
+class _AlertCard extends StatelessWidget {
+  final Map<String, dynamic> alert;
+
+  const _AlertCard({super.key, required this.alert});
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = alert['color'] as Color;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -185,25 +190,25 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
             // Top row: icon + priority
             Row(
               children: [
-                Icon(alert['icon'], color: alert['color']),
+                Icon(alert['icon'] as IconData, color: color),
                 const SizedBox(width: 8),
                 Container(
                   padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: alert['color'].withOpacity(0.15),
+                    color: color.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    alert['type'],
+                    alert['type'] as String,
                     style: TextStyle(
-                        color: alert['color'],
+                        color: color,
                         fontWeight: FontWeight.bold),
                   ),
                 ),
                 const Spacer(),
                 Text(
-                  alert['time'],
+                  alert['time'] as String,
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
@@ -212,7 +217,7 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
             const SizedBox(height: 8),
 
             Text(
-              alert['message'],
+              alert['message'] as String,
               style: const TextStyle(fontSize: 15),
             ),
 
@@ -226,24 +231,13 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
             const SizedBox(height: 6),
 
             Text(
-              alert['expiry'],
+              alert['expiry'] as String,
               style: const TextStyle(
                   fontSize: 12, fontStyle: FontStyle.italic),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  ListTile _drawerItem(IconData icon, String title, String route) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      onTap: () {
-        Navigator.pop(context);
-        Navigator.pushNamed(context, route);
-      },
     );
   }
 }

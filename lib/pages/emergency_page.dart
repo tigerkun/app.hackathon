@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-
-
 class EmergencyPage extends StatelessWidget {
   const EmergencyPage({super.key});
 
@@ -30,11 +28,11 @@ class EmergencyPage extends StatelessWidget {
             children: [
 
               // 🔴 TOP DISCLAIMER
-              _infoBanner(
+              _InfoBanner(
                 icon: Icons.shield_outlined,
                 title: "Emergency Support & Safety Assistance",
                 subtitle:
-                "This page helps you access help and inform trusted contacts. "
+                    "This page helps you access help and inform trusted contacts. "
                     "It does not replace emergency services.",
                 textColor: textColor,
                 subTextColor: subTextColor,
@@ -43,7 +41,7 @@ class EmergencyPage extends StatelessWidget {
               const SizedBox(height: 20),
 
               // 🚨 EMERGENCY CALL
-              _actionCard(
+              _ActionCard(
                 color: const Color(0xFFB71C1C),
                 icon: Icons.call,
                 title: "Call Emergency",
@@ -60,20 +58,20 @@ class EmergencyPage extends StatelessWidget {
 
               const SizedBox(height: 12),
 
-              _helplineCard(cardColor, textColor, "National Emergency", "112"),
-              _helplineCard(cardColor, textColor, "Women Helpline", "181"),
-              _helplineCard(cardColor, textColor, "Ambulance", "108"),
-              _helplineCard(cardColor, textColor, "Fire Services", "101"),
+              _HelplineCard(cardColor: cardColor, textColor: textColor, title: "National Emergency", number: "112"),
+              _HelplineCard(cardColor: cardColor, textColor: textColor, title: "Women Helpline", number: "181"),
+              _HelplineCard(cardColor: cardColor, textColor: textColor, title: "Ambulance", number: "108"),
+              _HelplineCard(cardColor: cardColor, textColor: textColor, title: "Fire Services", number: "101"),
 
               const SizedBox(height: 24),
 
               // 🟠 INFORM CONTACTS
-              _actionCard(
+              _ActionCard(
                 color: const Color(0xFFF9A825),
                 icon: Icons.group,
                 title: "Inform Trusted Contacts",
                 subtitle:
-                "Send a manual alert with your last known location",
+                    "Send a manual alert with your last known location",
                 onTap: () {
                   _showMessagePreview(context);
                 },
@@ -82,14 +80,14 @@ class EmergencyPage extends StatelessWidget {
               const SizedBox(height: 16),
 
               // 📍 SHARE LOCATION
-              _neutralCard(
-                cardColor,
-                Icons.location_on,
-                "Share My Current Location",
-                "One-time location sharing only",
-                textColor,
-                subTextColor,
-                    () {},
+              _NeutralCard(
+                color: cardColor,
+                icon: Icons.location_on,
+                title: "Share My Current Location",
+                subtitle: "One-time location sharing only",
+                textColor: textColor,
+                subTextColor: subTextColor,
+                onTap: () => Navigator.pushNamed(context, '/share'),
               ),
 
               const SizedBox(height: 24),
@@ -101,17 +99,22 @@ class EmergencyPage extends StatelessWidget {
 
               const SizedBox(height: 12),
 
-              _tipCard(cardColor, textColor, "Move to a crowded or well-lit area"),
-              _tipCard(cardColor, textColor,
-                  "Keep your phone battery sufficiently charged"),
-              _tipCard(cardColor, textColor,
-                  "Contact authorities if danger is immediate"),
+              _TipCard(cardColor: cardColor, textColor: textColor, text: "Move to a crowded or well-lit area"),
+              _TipCard(cardColor: cardColor, textColor: textColor, text: "Keep your phone battery sufficiently charged"),
+              _TipCard(cardColor: cardColor, textColor: textColor, text: "Contact authorities if danger is immediate"),
 
               const SizedBox(height: 24),
 
               // 🟢 I'M SAFE
               OutlinedButton.icon(
-                onPressed: () {},
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Status updated: You are safe."),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                },
                 icon: const Icon(Icons.check_circle, color: Colors.green),
                 label: const Text("I'm Safe Now"),
                 style: OutlinedButton.styleFrom(
@@ -127,7 +130,7 @@ class EmergencyPage extends StatelessWidget {
               // ⚠️ BOTTOM DISCLAIMER
               Text(
                 "SafeSphere does not provide emergency response services. "
-                    "For immediate danger, contact local authorities.",
+                "For immediate danger, contact local authorities.",
                 style: TextStyle(fontSize: 12, color: subTextColor),
                 textAlign: TextAlign.center,
               ),
@@ -138,15 +141,47 @@ class EmergencyPage extends StatelessWidget {
     );
   }
 
-  // ---------------- HELPERS ----------------
+  void _showMessagePreview(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Send Alert Message"),
+        content: const Text(
+          "I may need help. Please try to contact me.\n"
+          "Last known location: Your Area",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Share"),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-  Widget _infoBanner({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Color textColor,
-    required Color subTextColor,
-  }) {
+class _InfoBanner extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color textColor;
+  final Color subTextColor;
+
+  const _InfoBanner({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.textColor,
+    required this.subTextColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -169,14 +204,25 @@ class EmergencyPage extends StatelessWidget {
       ],
     );
   }
+}
 
-  Widget _actionCard({
-    required Color color,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
+class _ActionCard extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _ActionCard({
+    required this.color,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -209,16 +255,29 @@ class EmergencyPage extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _neutralCard(
-      Color color,
-      IconData icon,
-      String title,
-      String subtitle,
-      Color textColor,
-      Color subTextColor,
-      VoidCallback onTap,
-      ) {
+class _NeutralCard extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color textColor;
+  final Color subTextColor;
+  final VoidCallback onTap;
+
+  const _NeutralCard({
+    required this.color,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.textColor,
+    required this.subTextColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -249,14 +308,28 @@ class EmergencyPage extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _helplineCard(
-      Color color, Color textColor, String title, String number) {
+class _HelplineCard extends StatelessWidget {
+  final Color cardColor;
+  final Color textColor;
+  final String title;
+  final String number;
+
+  const _HelplineCard({
+    required this.cardColor,
+    required this.textColor,
+    required this.title,
+    required this.number,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color,
+        color: cardColor,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
@@ -270,13 +343,26 @@ class EmergencyPage extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _tipCard(Color color, Color textColor, String text) {
+class _TipCard extends StatelessWidget {
+  final Color cardColor;
+  final Color textColor;
+  final String text;
+
+  const _TipCard({
+    required this.cardColor,
+    required this.textColor,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color,
+        color: cardColor,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
@@ -285,29 +371,6 @@ class EmergencyPage extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
               child: Text(text, style: TextStyle(color: textColor))),
-        ],
-      ),
-    );
-  }
-
-  void _showMessagePreview(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Send Alert Message"),
-        content: const Text(
-          "I may need help. Please try to contact me.\n"
-              "Last known location: Your Area",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Share"),
-          ),
         ],
       ),
     );

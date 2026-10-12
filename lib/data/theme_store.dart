@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 
 class AppTheme {
@@ -29,13 +28,13 @@ class AppTheme {
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
       colors: [
-        teal.withOpacity(0.12),
-        purple.withOpacity(0.08),
+        teal.withValues(alpha: 0.12),
+        purple.withValues(alpha: 0.08),
       ],
     ),
     boxShadow: [
       BoxShadow(
-        color: Colors.black.withOpacity(0.25),
+        color: Colors.black.withValues(alpha: 0.25),
         blurRadius: 20,
         offset: const Offset(0, 10),
       ),
@@ -44,7 +43,7 @@ class AppTheme {
 
   // 🟦 Solid card
   static BoxDecoration bgCard = BoxDecoration(
-    color: surfaceDark.withOpacity(0.9),
+    color: surfaceDark.withValues(alpha: 0.9),
     borderRadius: BorderRadius.circular(18),
     border: Border.all(color: border),
   );

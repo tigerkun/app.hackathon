@@ -24,7 +24,7 @@ class SafeRoutePage extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.18),
+                color: Colors.green.withValues(alpha: 0.18),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: const Text(

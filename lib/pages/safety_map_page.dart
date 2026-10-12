@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/app_drawer.dart';
 
 class SafetyMapPage extends StatelessWidget {
   const SafetyMapPage({super.key});
@@ -6,9 +7,15 @@ class SafetyMapPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: const AppDrawer(),
       appBar: AppBar(
         title: const Text("Safety Map"),
-        leading: const Icon(Icons.menu),
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
       ),
 
       body: Stack(
@@ -19,7 +26,7 @@ class SafetyMapPage extends StatelessWidget {
             width: double.infinity,
             height: double.infinity,
             color: Colors.grey.shade200,
-            child: CustomPaint(
+            child: const CustomPaint(
               painter: _GridPainter(),
             ),
           ),
@@ -63,14 +70,14 @@ class SafetyMapPage extends StatelessWidget {
           ),
 
           /// ---------------- FILTER CHIPS ----------------
-          Positioned(
+          const Positioned(
             top: 12,
             left: 12,
             right: 12,
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: const [
+                children: [
                   _MapChip("All"),
                   _MapChip("Safety"),
                   _MapChip("Civic"),
@@ -82,7 +89,7 @@ class SafetyMapPage extends StatelessWidget {
           ),
 
           /// ---------------- ALERT PREVIEW ----------------
-          Positioned(
+          const Positioned(
             left: 12,
             right: 12,
             bottom: 110,
@@ -90,7 +97,7 @@ class SafetyMapPage extends StatelessWidget {
           ),
 
           /// ---------------- LEGEND ----------------
-          Positioned(
+          const Positioned(
             right: 12,
             bottom: 12,
             child: _LegendCard(),
@@ -101,7 +108,7 @@ class SafetyMapPage extends StatelessWidget {
             right: 20,
             bottom: 200,
             child: FloatingActionButton.extended(
-              onPressed: () {},
+              onPressed: () => Navigator.pushNamed(context, '/report'),
               icon: const Icon(Icons.flag),
               label: const Text("Report Near This Location"),
             ),
@@ -128,6 +135,8 @@ class SafetyMapPage extends StatelessWidget {
 /// GRID BACKGROUND (FAKE MAP)
 /// ===================================================
 class _GridPainter extends CustomPainter {
+  const _GridPainter();
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
@@ -162,6 +171,7 @@ class _MapMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(Icons.location_pin, color: color, size: 36),
         Text(label, style: const TextStyle(fontSize: 10)),
@@ -194,6 +204,8 @@ class _MapChip extends StatelessWidget {
 /// ALERT PREVIEW CARD
 /// ===================================================
 class _AlertPreviewCard extends StatelessWidget {
+  const _AlertPreviewCard();
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -203,7 +215,7 @@ class _AlertPreviewCard extends StatelessWidget {
         title: const Text("Suspicious Activity"),
         subtitle: const Text("Reported near Main Street • 10 mins ago"),
         trailing: TextButton(
-          onPressed: () {},
+          onPressed: () => Navigator.pushNamed(context, '/alerts'),
           child: const Text("View"),
         ),
       ),
@@ -215,15 +227,18 @@ class _AlertPreviewCard extends StatelessWidget {
 /// LEGEND CARD
 /// ===================================================
 class _LegendCard extends StatelessWidget {
+  const _LegendCard();
+
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return const Card(
       elevation: 4,
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        padding: EdgeInsets.all(8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
+          mainAxisSize: MainAxisSize.min,
+          children: [
             Text("Legend", style: TextStyle(fontWeight: FontWeight.bold)),
             SizedBox(height: 6),
             _LegendRow(Colors.green, "Info"),
@@ -245,6 +260,7 @@ class _LegendRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(Icons.location_pin, color: color, size: 18),
         const SizedBox(width: 6),
