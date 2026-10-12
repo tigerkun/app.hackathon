@@ -10,11 +10,17 @@ class AssistantChatPage extends StatefulWidget {
 class _AssistantChatPageState extends State<AssistantChatPage> {
   final TextEditingController _controller = TextEditingController();
   final List<Map<String, String>> _messages = [
-    {
+    const {
       'role': 'assistant',
       'text': 'Hi 👋 I’m your Safety Assistant.\nTell me what’s going on — I’m here to help calmly.'
     }
   ];
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   void _sendMessage() {
     final text = _controller.text.trim();
@@ -32,17 +38,17 @@ class _AssistantChatPageState extends State<AssistantChatPage> {
   }
 
   String _mockResponse(String input) {
-    input = input.toLowerCase();
+    final lowerInput = input.toLowerCase();
 
-    if (input.contains('follow') || input.contains('unsafe')) {
+    if (lowerInput.contains('follow') || lowerInput.contains('unsafe')) {
       return "Thanks for telling me. Try moving to a well-lit, populated area and keep your phone accessible. If you feel threatened, consider calling emergency services.";
     }
 
-    if (input.contains('night') || input.contains('dark')) {
+    if (lowerInput.contains('night') || lowerInput.contains('dark')) {
       return "Night travel can feel stressful. Stick to familiar routes, share your location with someone you trust, and avoid isolated areas.";
     }
 
-    if (input.contains('help')) {
+    if (lowerInput.contains('help')) {
       return "You’re not alone. You can inform trusted contacts or use the emergency call option if needed.";
     }
 
@@ -63,20 +69,21 @@ class _AssistantChatPageState extends State<AssistantChatPage> {
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: _messages.length,
-              itemBuilder: (_, i) {
+              itemBuilder: (context, i) {
                 final msg = _messages[i];
                 final isUser = msg['role'] == 'user';
 
                 return Align(
+                  key: ValueKey(i),
                   alignment:
-                  isUser ? Alignment.centerRight : Alignment.centerLeft,
+                      isUser ? Alignment.centerRight : Alignment.centerLeft,
                   child: Container(
                     margin: const EdgeInsets.symmetric(vertical: 6),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: isUser
                           ? Colors.blueAccent
-                          : Colors.white.withOpacity(0.08),
+                          : Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Text(

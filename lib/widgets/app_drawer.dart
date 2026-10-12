@@ -8,10 +8,10 @@ class AppDrawer extends StatelessWidget {
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
-        children: [
+        children: const [
 
           // ===== HEADER =====
-          const DrawerHeader(
+          DrawerHeader(
             decoration: BoxDecoration(
               color: Colors.blue,
             ),
@@ -38,40 +38,33 @@ class AppDrawer extends StatelessWidget {
           ),
 
           // ===== MENU ITEMS =====
-          _drawerItem(
-            context,
+          _DrawerItem(
             icon: Icons.home,
             title: "Home",
             route: '/home',
           ),
 
-          _drawerItem(
-            context,
+          _DrawerItem(
             icon: Icons.map,
             title: "Community Alerts",
             route: '/alerts',
           ),
 
-
-
-          _drawerItem(
-            context,
+          _DrawerItem(
             icon: Icons.share_location,
             title: "Share Location",
             route: '/share',
           ),
 
-          _drawerItem(
-            context,
+          _DrawerItem(
             icon: Icons.warning_amber,
             title: "Emergency",
             route: '/emergency',
           ),
 
-          const Divider(),
+          Divider(),
 
-          _drawerItem(
-            context,
+          _DrawerItem(
             icon: Icons.info_outline,
             title: "About",
             route: '/about',
@@ -80,14 +73,22 @@ class AppDrawer extends StatelessWidget {
       ),
     );
   }
+}
 
-  // ===== DRAWER TILE BUILDER =====
-  Widget _drawerItem(
-      BuildContext context, {
-        required IconData icon,
-        required String title,
-        required String route,
-      }) {
+// ===== DRAWER TILE WIDGET =====
+class _DrawerItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String route;
+
+  const _DrawerItem({
+    required this.icon,
+    required this.title,
+    required this.route,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return ListTile(
       leading: Icon(icon),
       title: Text(title),

@@ -19,8 +19,8 @@ class HomePage extends StatelessWidget {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: Row(
-          children: const [
+        title: const Row(
+          children: [
             Icon(Icons.location_on, size: 18),
             SizedBox(width: 6),
             Text("New Delhi"),
@@ -30,10 +30,10 @@ class HomePage extends StatelessWidget {
 
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.purple,
-        child: const Icon(Icons.smart_toy),
         onPressed: () {
           Navigator.pushNamed(context, '/ai-assistant');
         },
+        child: const Icon(Icons.smart_toy),
       ),
 
       body: ListView(
@@ -56,18 +56,18 @@ class HomePage extends StatelessWidget {
           const SizedBox(height: 20),
 
           /// 2️⃣ LOCAL SAFETY STATUS (ANCHOR CARD)
-          GlassContainer(
+          const GlassContainer(
             borderColor: AppColors.teal,
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(16),
               child: Row(
                 children: [
-                  const Icon(Icons.shield, size: 40, color: AppColors.teal),
-                  const SizedBox(width: 14),
+                  Icon(Icons.shield, size: 40, color: AppColors.teal),
+                  SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
+                      children: [
                         Text(
                           "Safety Level: Moderate",
                           style: TextStyle(
@@ -138,7 +138,7 @@ class HomePage extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: AppColors.purple.withOpacity(0.15),
+                        color: AppColors.purple.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(
@@ -188,12 +188,12 @@ class HomePage extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          _ActivityItem(
+          const _ActivityItem(
             icon: Icons.lightbulb,
             text: "Poor street lighting reported",
             time: "30 mins ago",
           ),
-          _ActivityItem(
+          const _ActivityItem(
             icon: Icons.visibility,
             text: "Suspicious activity flagged",
             time: "1 hr ago",
@@ -213,7 +213,7 @@ class HomePage extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: AppColors.red.withOpacity(0.15),
+                        color: AppColors.red.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Icon(Icons.notifications_active,
@@ -266,9 +266,9 @@ class HomePage extends StatelessWidget {
           const SizedBox(height: 16),
 
           /// 6️⃣ SAFETY TIP
-          GlassContainer(
+          const GlassContainer(
             borderColor: AppColors.teal,
-            child: const ListTile(
+            child: ListTile(
               leading: Icon(Icons.info, color: AppColors.teal),
               title: Text(
                 "Prefer well-lit routes while traveling at night",
@@ -294,7 +294,7 @@ class HomePage extends StatelessWidget {
   }
 }
 
-/// SMALL HELPERS (NO LOGIC)
+/// SMALL HELPERS
 class _ActionCard extends StatelessWidget {
   final IconData icon;
   final String title;

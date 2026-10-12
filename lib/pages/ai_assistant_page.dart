@@ -4,14 +4,14 @@ import '../theme/app_colors.dart';
 import '../widgets/glass_container.dart';
 
 /// ------------------------------------------------------------
-/// CHAT MESSAGE MODEL (FIXED: was missing)
+/// CHAT MESSAGE MODEL
 /// ------------------------------------------------------------
 class _ChatMessage {
   final String text;
   final bool isUser;
   final bool isTyping;
 
-  _ChatMessage({
+  const _ChatMessage({
     required this.text,
     required this.isUser,
     this.isTyping = false,
@@ -50,8 +50,9 @@ class _TypingTextState extends State<TypingText> {
       await Future.delayed(const Duration(milliseconds: 28));
       if (!mounted) return;
       setState(() {
-        _displayed += widget.text[_index];
+        // Optimization: Substring slice is O(1) instead of repeated string concatenation overhead
         _index++;
+        _displayed = widget.text.substring(0, _index);
       });
     }
   }
@@ -63,7 +64,7 @@ class _TypingTextState extends State<TypingText> {
 }
 
 /// ------------------------------------------------------------
-/// AI PULSE HEADER (UNCHANGED)
+/// AI PULSE HEADER
 /// ------------------------------------------------------------
 class AiPulseHeader extends StatefulWidget {
   const AiPulseHeader({super.key});
@@ -80,8 +81,8 @@ class _AiPulseHeaderState extends State<AiPulseHeader>
   void initState() {
     super.initState();
     _controller =
-    AnimationController(vsync: this, duration: const Duration(seconds: 4))
-      ..repeat();
+        AnimationController(vsync: this, duration: const Duration(seconds: 4))
+          ..repeat();
   }
 
   @override
@@ -96,7 +97,7 @@ class _AiPulseHeaderState extends State<AiPulseHeader>
       height: 60,
       child: AnimatedBuilder(
         animation: _controller,
-        builder: (_, __) {
+        builder: (context, child) {
           return Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(3, (i) {
@@ -132,12 +133,18 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
   final TextEditingController _controller = TextEditingController();
 
   final List<_ChatMessage> messages = [
-    _ChatMessage(
+    const _ChatMessage(
       text:
-      "Hi 👋 I’m your Safety Assistant.\nTell me what’s going on and I’ll guide you calmly.",
+          "Hi 👋 I’m your Safety Assistant.\nTell me what’s going on and I’ll guide you calmly.",
       isUser: false,
     ),
   ];
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   void _sendMessage() {
     final text = _controller.text.trim();
@@ -146,12 +153,13 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     setState(() {
       messages.add(_ChatMessage(text: text, isUser: true));
       messages.add(
-        _ChatMessage(text: '', isUser: false, isTyping: true),
+        const _ChatMessage(text: '', isUser: false, isTyping: true),
       );
       _controller.clear();
     });
 
     Future.delayed(const Duration(milliseconds: 900), () {
+      if (!mounted) return;
       setState(() {
         messages.removeLast(); // remove typing indicator
         messages.add(
@@ -165,13 +173,13 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
   }
 
   String _generateReply(String input) {
-    input = input.toLowerCase();
+    final lowerInput = input.toLowerCase();
 
-    if (input.contains("follow")) {
+    if (lowerInput.contains("follow")) {
       return "If you feel followed, move to a crowded or well-lit area and keep your phone accessible.";
-    } else if (input.contains("unsafe") || input.contains("scared")) {
+    } else if (lowerInput.contains("unsafe") || lowerInput.contains("scared")) {
       return "You’re not alone. Stay calm, trust your instincts, and consider sharing your live location.";
-    } else if (input.contains("accident")) {
+    } else if (lowerInput.contains("accident")) {
       return "If there’s an accident, ensure you’re safe first. I can guide you to nearby help.";
     } else {
       return "I’m here with you. Can you tell me where you are or what you’re experiencing?";
@@ -197,7 +205,10 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
               padding: const EdgeInsets.all(16),
               itemCount: messages.length,
               itemBuilder: (context, index) {
-                return _ChatBubble(message: messages[index]);
+                return _ChatBubble(
+                  key: ValueKey(index),
+                  message: messages[index],
+                );
               },
             ),
           ),
@@ -218,14 +229,14 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                         hintStyle: TextStyle(color: Colors.white38),
                         border: InputBorder.none,
                         contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12),
+                            EdgeInsets.symmetric(horizontal: 12),
                       ),
                       onSubmitted: (_) => _sendMessage(),
                     ),
                   ),
                   IconButton(
                     icon:
-                    const Icon(Icons.send, color: AppColors.purple),
+                        const Icon(Icons.send, color: AppColors.purple),
                     onPressed: _sendMessage,
                   )
                 ],
@@ -239,17 +250,17 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
 }
 
 /// ------------------------------------------------------------
-/// CHAT BUBBLE (WITH LOTTIE TYPING)
+/// CHAT BUBBLE
 /// ------------------------------------------------------------
 class _ChatBubble extends StatelessWidget {
   final _ChatMessage message;
 
-  const _ChatBubble({required this.message});
+  const _ChatBubble({super.key, required this.message});
 
   @override
   Widget build(BuildContext context) {
     final align =
-    message.isUser ? Alignment.centerRight : Alignment.centerLeft;
+        message.isUser ? Alignment.centerRight : Alignment.centerLeft;
 
     final color = message.isUser
         ? AppColors.purple.withValues(alpha: 0.25)
@@ -269,24 +280,24 @@ class _ChatBubble extends StatelessWidget {
         ),
         child: message.isTyping
             ? SizedBox(
-          height: 36,
-          width: 60,
-          child: Lottie.asset(
-            'assets/lottie/ai_typing.json',
-            repeat: true,
-          ),
-        )
+                height: 36,
+                width: 60,
+                child: Lottie.asset(
+                  'assets/lottie/ai_typing.json',
+                  repeat: true,
+                ),
+              )
             : message.isUser
-            ? Text(
-          message.text,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 14),
-        )
-            : TypingText(
-          text: message.text,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 14),
-        ),
+                ? Text(
+                    message.text,
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 14),
+                  )
+                : TypingText(
+                    text: message.text,
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 14),
+                  ),
       ),
     );
   }

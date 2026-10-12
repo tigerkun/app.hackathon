@@ -11,13 +11,35 @@ class ReportPage extends StatefulWidget {
 }
 
 class _ReportPageState extends State<ReportPage> {
-  String selectedType = "Theft";
+  String _selectedType = "Theft";
 
-  final incidents = const [
+  // Optimization: Static const list avoids re-allocations on widget rebuilds
+  static const List<Map<String, dynamic>> _incidents = [
     {"label": "Theft", "icon": Icons.shopping_bag},
     {"label": "Harassment", "icon": Icons.person_off},
     {"label": "Accident", "icon": Icons.car_crash},
     {"label": "Suspicious", "icon": Icons.visibility},
+  ];
+
+  static const List<SafetyMarker> _mapMarkers = [
+    SafetyMarker(
+      position: Offset(0.25, 0.35),
+      icon: Icons.local_police,
+      color: AppColors.blue,
+      label: "Police",
+    ),
+    SafetyMarker(
+      position: Offset(0.55, 0.45),
+      icon: Icons.local_hospital,
+      color: AppColors.red,
+      label: "Hospital",
+    ),
+    SafetyMarker(
+      position: Offset(0.7, 0.3),
+      icon: Icons.security,
+      color: AppColors.teal,
+      label: "Safe Zone",
+    ),
   ];
 
   @override
@@ -26,30 +48,9 @@ class _ReportPageState extends State<ReportPage> {
       body: Stack(
         children: [
           /// MAP BACKGROUND
-          MapPlaceholder(
-            markers: const [
-              SafetyMarker(
-                position: Offset(0.25, 0.35),
-                icon: Icons.local_police,
-                color: AppColors.blue,
-                label: "Police",
-              ),
-              SafetyMarker(
-                position: Offset(0.55, 0.45),
-                icon: Icons.local_hospital,
-                color: AppColors.red,
-                label: "Hospital",
-              ),
-              SafetyMarker(
-                position: Offset(0.7, 0.3),
-                icon: Icons.security,
-                color: AppColors.teal,
-                label: "Safe Zone",
-              ),
-            ],
+          const MapPlaceholder(
+            markers: _mapMarkers,
           ),
-
-
 
           /// TOP BAR
           SafeArea(
@@ -102,29 +103,32 @@ class _ReportPageState extends State<ReportPage> {
                         height: 54,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
-                          itemCount: incidents.length,
-                          separatorBuilder: (_, __) =>
-                          const SizedBox(width: 10),
+                          itemCount: _incidents.length,
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(width: 10),
                           itemBuilder: (context, index) {
-                            final item = incidents[index];
-                            final bool active =
-                                selectedType == item["label"];
+                            final item = _incidents[index];
+                            final String label = item["label"] as String;
+                            final IconData icon = item["icon"] as IconData;
+                            final bool active = _selectedType == label;
 
                             return GestureDetector(
                               onTap: () {
-                                setState(() {
-                                  selectedType = item["label"] as String;
-                                });
+                                if (_selectedType != label) {
+                                  setState(() {
+                                    _selectedType = label;
+                                  });
+                                }
                               },
                               child: AnimatedContainer(
                                 duration:
-                                const Duration(milliseconds: 200),
+                                    const Duration(milliseconds: 200),
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 14),
                                 decoration: BoxDecoration(
                                   color: active
                                       ? AppColors.amber
-                                      .withValues(alpha: 0.18)
+                                          .withValues(alpha: 0.18)
                                       : Colors.transparent,
                                   borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
@@ -136,13 +140,13 @@ class _ReportPageState extends State<ReportPage> {
                                 child: Row(
                                   children: [
                                     Icon(
-                                      item["icon"] as IconData,
+                                      icon,
                                       color: AppColors.amber,
                                       size: 20,
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
-                                      item["label"] as String,
+                                      label,
                                       style: const TextStyle(
                                         color: Colors.white,
                                       ),
@@ -161,18 +165,18 @@ class _ReportPageState extends State<ReportPage> {
                       TextField(
                         maxLines: 3,
                         style:
-                        const TextStyle(color: Colors.white),
+                            const TextStyle(color: Colors.white),
                         decoration: InputDecoration(
                           hintText:
-                          "Describe what happened...",
+                              "Describe what happened...",
                           hintStyle: const TextStyle(
                               color: Colors.white38),
                           filled: true,
                           fillColor:
-                          Colors.black.withValues(alpha: 0.25),
+                              Colors.black.withValues(alpha: 0.25),
                           border: OutlineInputBorder(
                             borderRadius:
-                            BorderRadius.circular(14),
+                                BorderRadius.circular(14),
                             borderSide: BorderSide.none,
                           ),
                         ),
@@ -181,8 +185,8 @@ class _ReportPageState extends State<ReportPage> {
                       const SizedBox(height: 14),
 
                       /// LOCATION INFO
-                      Row(
-                        children: const [
+                      const Row(
+                        children: [
                           Icon(Icons.location_on,
                               color: AppColors.teal),
                           SizedBox(width: 6),
@@ -205,11 +209,11 @@ class _ReportPageState extends State<ReportPage> {
                             backgroundColor: AppColors.amber,
                             shape: RoundedRectangleBorder(
                               borderRadius:
-                              BorderRadius.circular(16),
+                                  BorderRadius.circular(16),
                             ),
                             elevation: 10,
                             shadowColor:
-                            AppColors.amber.withValues(alpha: 0.5),
+                                AppColors.amber.withValues(alpha: 0.5),
                           ),
                           onPressed: () {},
                           child: const Text(

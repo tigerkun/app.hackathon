@@ -19,7 +19,7 @@ class SafetyMapPage extends StatelessWidget {
             width: double.infinity,
             height: double.infinity,
             color: Colors.grey.shade200,
-            child: CustomPaint(
+            child: const CustomPaint(
               painter: _GridPainter(),
             ),
           ),
@@ -63,14 +63,14 @@ class SafetyMapPage extends StatelessWidget {
           ),
 
           /// ---------------- FILTER CHIPS ----------------
-          Positioned(
+          const Positioned(
             top: 12,
             left: 12,
             right: 12,
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: const [
+                children: [
                   _MapChip("All"),
                   _MapChip("Safety"),
                   _MapChip("Civic"),
@@ -82,7 +82,7 @@ class SafetyMapPage extends StatelessWidget {
           ),
 
           /// ---------------- ALERT PREVIEW ----------------
-          Positioned(
+          const Positioned(
             left: 12,
             right: 12,
             bottom: 110,
@@ -90,7 +90,7 @@ class SafetyMapPage extends StatelessWidget {
           ),
 
           /// ---------------- LEGEND ----------------
-          Positioned(
+          const Positioned(
             right: 12,
             bottom: 12,
             child: _LegendCard(),
@@ -128,6 +128,8 @@ class SafetyMapPage extends StatelessWidget {
 /// GRID BACKGROUND (FAKE MAP)
 /// ===================================================
 class _GridPainter extends CustomPainter {
+  const _GridPainter();
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
@@ -194,6 +196,8 @@ class _MapChip extends StatelessWidget {
 /// ALERT PREVIEW CARD
 /// ===================================================
 class _AlertPreviewCard extends StatelessWidget {
+  const _AlertPreviewCard();
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -215,15 +219,17 @@ class _AlertPreviewCard extends StatelessWidget {
 /// LEGEND CARD
 /// ===================================================
 class _LegendCard extends StatelessWidget {
+  const _LegendCard();
+
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return const Card(
       elevation: 4,
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        padding: EdgeInsets.all(8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
+          children: [
             Text("Legend", style: TextStyle(fontWeight: FontWeight.bold)),
             SizedBox(height: 6),
             _LegendRow(Colors.green, "Info"),

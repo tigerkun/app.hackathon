@@ -34,8 +34,9 @@ class _TypingTextState extends State<TypingText> {
     _timer = Timer.periodic(widget.speed, (timer) {
       if (_index < widget.text.length) {
         setState(() {
-          _displayedText += widget.text[_index];
+          // Optimization: Substring slice avoids repeated string allocations O(N^2) -> O(N)
           _index++;
+          _displayedText = widget.text.substring(0, _index);
         });
       } else {
         timer.cancel();

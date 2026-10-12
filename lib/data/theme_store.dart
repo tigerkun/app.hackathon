@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 
 class AppTheme {
@@ -21,21 +20,21 @@ class AppTheme {
 
   static const Color border = Color(0x22FFFFFF);
 
-  // 🧊 Glass card (NO const)
-  static BoxDecoration glassCard = BoxDecoration(
+  // 🧊 Glass card
+  static final BoxDecoration glassCard = BoxDecoration(
     borderRadius: BorderRadius.circular(20),
     border: Border.all(color: border),
     gradient: LinearGradient(
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
       colors: [
-        teal.withOpacity(0.12),
-        purple.withOpacity(0.08),
+        teal.withValues(alpha: 0.12),
+        purple.withValues(alpha: 0.08),
       ],
     ),
     boxShadow: [
       BoxShadow(
-        color: Colors.black.withOpacity(0.25),
+        color: Colors.black.withValues(alpha: 0.25),
         blurRadius: 20,
         offset: const Offset(0, 10),
       ),
@@ -43,14 +42,14 @@ class AppTheme {
   );
 
   // 🟦 Solid card
-  static BoxDecoration bgCard = BoxDecoration(
-    color: surfaceDark.withOpacity(0.9),
+  static final BoxDecoration bgCard = BoxDecoration(
+    color: surfaceDark.withValues(alpha: 0.9),
     borderRadius: BorderRadius.circular(18),
     border: Border.all(color: border),
   );
 
   // 🎨 App-level Dark Theme
-  static ThemeData darkTheme = ThemeData(
+  static final ThemeData darkTheme = ThemeData(
     brightness: Brightness.dark,
     scaffoldBackgroundColor: bgDark,
     primaryColor: teal,
