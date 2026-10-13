@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'theme/app_theme.dart';
+import 'data/auth_state.dart';
+import 'routes/route_guard.dart';
 import 'pages/home_page.dart';
 import 'pages/safety_map_page.dart';
 import 'pages/report_page.dart';
 import 'pages/ai_assistant_page.dart';
 import 'pages/community_alerts_page.dart';
-
 import 'pages/share_location_page.dart';
 import 'pages/emergency_page.dart';
 import 'pages/about_page.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
 
@@ -23,33 +25,53 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   bool dark = true;
+  late final AuthState _authState;
+
+  @override
+  void initState() {
+    super.initState();
+    _authState = AuthState();
+    _authState.initialize();
+  }
+
+  @override
+  void dispose() {
+    _authState.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: dark ? AppTheme.dark() : AppTheme.light(),
-      routes: {
-        '/': (_) => const HomePage(),
-        '/map': (_) => const SafetyMapPage(),
-        '/report': (_) => const ReportPage(),
+    return ListenableBuilder(
+      listenable: _authState,
+      builder: (context, _) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: dark ? AppTheme.dark() : AppTheme.light(),
+          onGenerateRoute: (settings) => RouteGuard.generateRoute(settings, _authState),
+          routes: {
+            '/': (_) => const HomePage(),
+            '/map': (_) => const SafetyMapPage(),
+            '/report': (_) => const ReportPage(),
 
-        '/safety-map': (_) => const SafetyMapPage(),
-        '/ai-assistant': (context) => const AiAssistantPage(),
-        '/home': (context) => const HomePage(),
-        '/alerts': (context) => const CommunityAlertsPage(),
+            '/safety-map': (_) => const SafetyMapPage(),
+            '/ai-assistant': (context) => const AiAssistantPage(),
+            '/home': (context) => const HomePage(),
+            '/alerts': (context) => const CommunityAlertsPage(),
 
-        '/share': (context) => const ShareLocationPage(),
-        '/emergency': (context) => const EmergencyPage(),
-        '/about': (context) => const AboutPage(),
+            '/share': (context) => const ShareLocationPage(),
+            '/emergency': (context) => const EmergencyPage(),
+            '/about': (context) => const AboutPage(),
 
-        // Route aliases
-        '/community': (context) => const CommunityAlertsPage(),
-        '/chat': (context) => const AiAssistantPage(),
+            // Route aliases
+            '/community': (context) => const CommunityAlertsPage(),
+            '/chat': (context) => const AiAssistantPage(),
+          },
+          onUnknownRoute: (settings) => MaterialPageRoute(
+            builder: (_) => const HomePage(),
+          ),
+        );
       },
-      onUnknownRoute: (settings) => MaterialPageRoute(
-        builder: (_) => const HomePage(),
-      ),
     );
   }
 }
