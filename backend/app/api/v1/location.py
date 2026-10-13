@@ -30,6 +30,12 @@ def update_location_ping(data: LocationPing, current_user: dict = Depends(get_cu
             s["latitude"] = data.latitude
             s["longitude"] = data.longitude
 
+    # Update active location sharing sessions
+    for session in db.share_sessions.values():
+        if session["user_id"] == user_id and session.get("is_active", True):
+            session["current_latitude"] = data.latitude
+            session["current_longitude"] = data.longitude
+
     return {"status": "ok", "recorded_at": datetime.now().isoformat()}
 
 @router.post("/share-session", response_model=ShareSessionResponse, status_code=201)

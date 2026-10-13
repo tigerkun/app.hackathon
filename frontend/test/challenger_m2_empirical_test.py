@@ -23,10 +23,11 @@ from typing import Dict, List, Set, Tuple, Optional
 from dataclasses import dataclass, field
 
 PROJECT_ROOT = os.path.abspath(r"C:\Users\tejas\projects\safesphere")
-LIB_DIR = os.path.join(PROJECT_ROOT, "lib")
+FRONTEND_DIR = os.path.join(PROJECT_ROOT, "frontend") if os.path.exists(os.path.join(PROJECT_ROOT, "frontend", "lib")) else PROJECT_ROOT
+LIB_DIR = os.path.join(FRONTEND_DIR, "lib")
 PAGES_DIR = os.path.join(LIB_DIR, "pages")
 WIDGETS_DIR = os.path.join(LIB_DIR, "widgets")
-TEST_DIR = os.path.join(PROJECT_ROOT, "test")
+TEST_DIR = os.path.join(FRONTEND_DIR, "test")
 
 # ---------------------------------------------------------------------------
 # Section 1: Simulated Flutter Navigation Runtime

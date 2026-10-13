@@ -20,11 +20,12 @@ from typing import Dict, List, Set, Tuple, Optional
 from dataclasses import dataclass, field
 
 PROJECT_ROOT = os.path.abspath(r"C:\Users\tejas\projects\safesphere")
-LIB_DIR = os.path.join(PROJECT_ROOT, "lib")
+FRONTEND_DIR = os.path.join(PROJECT_ROOT, "frontend") if os.path.exists(os.path.join(PROJECT_ROOT, "frontend", "lib")) else PROJECT_ROOT
+LIB_DIR = os.path.join(FRONTEND_DIR, "lib")
 PAGES_DIR = os.path.join(LIB_DIR, "pages")
 WIDGETS_DIR = os.path.join(LIB_DIR, "widgets")
 MODELS_DIR = os.path.join(LIB_DIR, "models")
-TEST_DIR = os.path.join(PROJECT_ROOT, "test")
+TEST_DIR = os.path.join(FRONTEND_DIR, "test")
 
 # ==============================================================================
 # Section 1: Stateful Concurrency & Lifecycle Simulation Models
@@ -597,7 +598,7 @@ class TestMilestone3Challenger(unittest.TestCase):
         self.assertIn("class SafetyMarker", marker_code)
 
         # Theme store collision check
-        theme_store_path = os.path.join(PROJECT_ROOT, "lib", "data", "theme_store.dart")
+        theme_store_path = os.path.join(FRONTEND_DIR, "lib", "data", "theme_store.dart")
         self.assertFalse(os.path.exists(theme_store_path),
                          "theme_store.dart must remain deleted to prevent AppTheme collision")
 
@@ -617,7 +618,7 @@ class TestMilestone3Challenger(unittest.TestCase):
             "lib/utils/route_animation.dart",
         ]
         for df in dead_files:
-            full_df = os.path.join(PROJECT_ROOT, df)
+            full_df = os.path.join(FRONTEND_DIR, df)
             self.assertFalse(os.path.exists(full_df), f"Dead file {df} was resurrected!")
 
     def test_m2_non_regression_navigation_and_routes(self):

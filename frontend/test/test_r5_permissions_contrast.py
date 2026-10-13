@@ -2,7 +2,8 @@ import os
 import re
 import unittest
 
-WORKSPACE = r"C:\Users\tejas\projects\safesphere"
+WORKSPACE_ROOT = r"C:\Users\tejas\projects\safesphere"
+WORKSPACE = os.path.join(WORKSPACE_ROOT, "frontend") if os.path.exists(os.path.join(WORKSPACE_ROOT, "frontend", "pubspec.yaml")) else WORKSPACE_ROOT
 
 class TestR5ThemingAndPermissions(unittest.TestCase):
     def test_pubspec_identity(self):

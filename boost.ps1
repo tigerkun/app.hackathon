@@ -53,7 +53,7 @@ Write-Host "  - FastAPI Backend Server:" -ForegroundColor Cyan
 Write-Host "      Command: uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload"
 Write-Host "      Swagger Docs: http://127.0.0.1:8000/docs"
 Write-Host "  - Web Preview Dashboard:" -ForegroundColor Cyan
-Write-Host "      Command: node web_preview/server.js"
+Write-Host "      Command: node frontend/web_preview/server.js"
 Write-Host "      App URL: http://127.0.0.1:8080"
 Write-Host "  - Flutter Mobile Application:" -ForegroundColor Cyan
 Write-Host "      Command: flutter run"

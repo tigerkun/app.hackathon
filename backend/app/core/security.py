@@ -3,6 +3,7 @@ import hmac
 import json
 import base64
 import time
+import secrets
 from typing import Optional, Dict, Any
 from .config import settings
 
@@ -16,7 +17,7 @@ def _b64_decode(data: str) -> bytes:
 def hash_password(password: str, salt: Optional[str] = None) -> str:
     """PBKDF2-HMAC-SHA256 password hashing with salt."""
     if salt is None:
-        salt = base64.b64encode(hashlib.sha256(str(time.time()).encode()).digest()).decode()[:16]
+        salt = secrets.token_hex(16)
     key = hashlib.pbkdf2_hmac(
         'sha256',
         password.encode('utf-8'),

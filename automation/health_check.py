@@ -16,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 def check_file_structure():
     print("[1/4] Checking Mono-Repo Directory Architecture...")
+    frontend_lib = PROJECT_ROOT / "frontend" / "lib" if (PROJECT_ROOT / "frontend" / "lib").exists() else PROJECT_ROOT / "lib"
     required_paths = [
         PROJECT_ROOT / "backend" / "app" / "main.py",
         PROJECT_ROOT / "backend" / "app" / "api" / "v1" / "auth.py",
@@ -28,11 +29,11 @@ def check_file_structure():
         PROJECT_ROOT / "docs" / "PRD.md",
         PROJECT_ROOT / "docs" / "ARCHITECTURE.md",
         PROJECT_ROOT / "docs" / "API_SPEC.md",
-        PROJECT_ROOT / "lib" / "services" / "auth_service.dart",
-        PROJECT_ROOT / "lib" / "models" / "user_model.dart",
-        PROJECT_ROOT / "lib" / "pages" / "login_page.dart",
-        PROJECT_ROOT / "lib" / "pages" / "signup_page.dart",
-        PROJECT_ROOT / "lib" / "pages" / "auth_pin_page.dart",
+        frontend_lib / "services" / "auth_service.dart",
+        frontend_lib / "models" / "user_model.dart",
+        frontend_lib / "pages" / "login_page.dart",
+        frontend_lib / "pages" / "signup_page.dart",
+        frontend_lib / "pages" / "auth_pin_page.dart",
     ]
     all_ok = True
     for p in required_paths:
@@ -75,6 +76,7 @@ def check_backend_tests():
 def check_flutter_static_tests():
     print("\n[4/4] Running Core Adversarial & Navigation Test Suites...")
     import subprocess
+    frontend_dir = PROJECT_ROOT / "frontend" if (PROJECT_ROOT / "frontend" / "test").exists() else PROJECT_ROOT
     scripts = [
         "test/adversarial_r1_challenger_test.py",
         "test/challenger_m2_empirical_test.py",
@@ -84,8 +86,9 @@ def check_flutter_static_tests():
     ]
     all_passed = True
     for script in scripts:
-        cmd = [sys.executable, str(PROJECT_ROOT / script)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        test_file = frontend_dir / script
+        cmd = [sys.executable, str(test_file)]
+        res = subprocess.run(cmd, cwd=str(frontend_dir), capture_output=True, text=True)
         if res.returncode == 0:
             print(f"  [PASS] {script}")
         else:

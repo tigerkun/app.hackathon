@@ -25,12 +25,13 @@ from typing import Dict, List, Optional, Set, Tuple
 import yaml
 
 PROJECT_ROOT = os.path.abspath(r"C:\Users\tejas\projects\safesphere")
-LIB_DIR = os.path.join(PROJECT_ROOT, "lib")
+FRONTEND_DIR = os.path.join(PROJECT_ROOT, "frontend") if os.path.exists(os.path.join(PROJECT_ROOT, "frontend", "lib")) else PROJECT_ROOT
+LIB_DIR = os.path.join(FRONTEND_DIR, "lib")
 PAGES_DIR = os.path.join(LIB_DIR, "pages")
 DATA_DIR = os.path.join(LIB_DIR, "data")
 MODELS_DIR = os.path.join(LIB_DIR, "models")
 WIDGETS_DIR = os.path.join(LIB_DIR, "widgets")
-PUBSPEC_PATH = os.path.join(PROJECT_ROOT, "pubspec.yaml")
+PUBSPEC_PATH = os.path.join(FRONTEND_DIR, "pubspec.yaml")
 
 EMERGENCY_PAGE_PATH = os.path.join(PAGES_DIR, "emergency_page.dart")
 SHARE_LOCATION_PAGE_PATH = os.path.join(PAGES_DIR, "share_location_page.dart")

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../pages/login_page.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -11,29 +12,44 @@ class AppDrawer extends StatelessWidget {
         children: [
 
           // ===== HEADER =====
-          const DrawerHeader(
-            decoration: BoxDecoration(
+          DrawerHeader(
+            decoration: const BoxDecoration(
               color: Colors.blue,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Icon(Icons.shield, color: Colors.white, size: 40),
-                SizedBox(height: 10),
-                Text(
-                  "SafeSphere",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
+            child: InkWell(
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginPage()),
+                );
+              },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: const [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Icon(Icons.shield, color: Colors.white, size: 40),
+                      Icon(Icons.account_circle, color: Colors.white70, size: 28),
+                    ],
                   ),
-                ),
-                Text(
-                  "Your personal safety companion",
-                  style: TextStyle(color: Colors.white70),
-                ),
-              ],
+                  SizedBox(height: 10),
+                  Text(
+                    "SafeSphere",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    "Tap to manage account & PIN security",
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
             ),
           ),
 
@@ -88,20 +104,6 @@ class AppDrawer extends StatelessWidget {
           ),
 
           const Divider(),
-
-          _drawerItem(
-            context,
-            icon: Icons.lock_outline,
-            title: "Account & Security",
-            route: '/login',
-          ),
-
-          _drawerItem(
-            context,
-            icon: Icons.pin,
-            title: "Quick PIN Lock",
-            route: '/auth-pin',
-          ),
 
           _drawerItem(
             context,

@@ -19,8 +19,9 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict, Tuple
 
 PROJECT_ROOT = os.path.abspath(r"C:\Users\tejas\projects\safesphere")
-LIB_DIR = os.path.join(PROJECT_ROOT, "lib")
-TEST_DIR = os.path.join(PROJECT_ROOT, "test")
+FRONTEND_DIR = os.path.join(PROJECT_ROOT, "frontend") if os.path.exists(os.path.join(PROJECT_ROOT, "frontend", "lib")) else PROJECT_ROOT
+LIB_DIR = os.path.join(FRONTEND_DIR, "lib")
+TEST_DIR = os.path.join(FRONTEND_DIR, "test")
 
 # ---------------------------------------------------------------------------
 # Section 1: Simulated Dart/Flutter Runtime Primitives
@@ -325,7 +326,7 @@ class TestFileSystemPruningAndLayout(unittest.TestCase):
             'lib/widgets/safe_route_page.dart',
         ]
         for rel_path in pruned_files:
-            full_path = os.path.join(PROJECT_ROOT, rel_path.replace('/', os.sep))
+            full_path = os.path.join(FRONTEND_DIR, rel_path.replace('/', os.sep))
             self.assertFalse(
                 os.path.exists(full_path),
                 f"Dead file must not exist on disk: {rel_path}"

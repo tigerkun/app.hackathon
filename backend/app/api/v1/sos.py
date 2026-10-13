@@ -42,10 +42,14 @@ def resolve_sos(sos_id: str, data: SosResolve, current_user: dict = Depends(get_
     if not sos:
         raise HTTPException(status_code=404, detail="SOS alert not found")
 
-    # If user has a PIN, verify it before resolving for false-coercion safety
-    if current_user.get("pin") and data.pin:
-        if current_user["pin"] != data.pin:
-            raise HTTPException(status_code=403, detail="Invalid security PIN provided for SOS cancellation")
+    # Verify that the user owns this SOS alert
+    if sos["user_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Unauthorized to resolve an SOS triggered by another user")
+
+    # If user has a PIN configured, require and verify it before resolving for false-coercion safety
+    if current_user.get("pin"):
+        if not data.pin or current_user["pin"] != data.pin:
+            raise HTTPException(status_code=403, detail="Valid security PIN required for SOS cancellation")
 
     sos["status"] = "resolved"
     sos["resolved_at"] = datetime.now().isoformat()

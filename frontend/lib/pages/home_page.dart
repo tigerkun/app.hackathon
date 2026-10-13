@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/app_drawer.dart';
+import 'login_page.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -26,6 +27,18 @@ class HomePage extends StatelessWidget {
             Text("New Delhi"),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.shield_outlined, color: AppColors.teal),
+            tooltip: "Account & PIN Security",
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginPage()),
+              );
+            },
+          ),
+        ],
       ),
 
       floatingActionButton: FloatingActionButton(
