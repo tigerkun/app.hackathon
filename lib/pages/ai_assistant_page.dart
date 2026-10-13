@@ -1,65 +1,25 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/typing_text.dart';
 
 /// ------------------------------------------------------------
 /// CHAT MESSAGE MODEL (FIXED: was missing)
 /// ------------------------------------------------------------
 class _ChatMessage {
+  final String id;
   final String text;
   final bool isUser;
   final bool isTyping;
 
   _ChatMessage({
+    required this.id,
     required this.text,
     required this.isUser,
     this.isTyping = false,
   });
-}
-
-/// ------------------------------------------------------------
-/// TYPING TEXT ANIMATION
-/// ------------------------------------------------------------
-class TypingText extends StatefulWidget {
-  final String text;
-  final TextStyle style;
-
-  const TypingText({
-    super.key,
-    required this.text,
-    required this.style,
-  });
-
-  @override
-  State<TypingText> createState() => _TypingTextState();
-}
-
-class _TypingTextState extends State<TypingText> {
-  String _displayed = '';
-  int _index = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _type();
-  }
-
-  void _type() async {
-    while (_index < widget.text.length) {
-      await Future.delayed(const Duration(milliseconds: 28));
-      if (!mounted) return;
-      setState(() {
-        _displayed += widget.text[_index];
-        _index++;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(_displayed, style: widget.style);
-  }
 }
 
 /// ------------------------------------------------------------
@@ -130,38 +90,65 @@ class AiAssistantPage extends StatefulWidget {
 
 class _AiAssistantPageState extends State<AiAssistantPage> {
   final TextEditingController _controller = TextEditingController();
+  final List<Timer> _pendingTimers = [];
+  int _messageSeq = 0;
 
   final List<_ChatMessage> messages = [
     _ChatMessage(
+      id: 'welcome',
       text:
       "Hi 👋 I’m your Safety Assistant.\nTell me what’s going on and I’ll guide you calmly.",
       isUser: false,
     ),
   ];
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    for (final timer in _pendingTimers) {
+      timer.cancel();
+    }
+    _pendingTimers.clear();
+    super.dispose();
+  }
+
   void _sendMessage() {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
+    final int seq = ++_messageSeq;
+    final String timestamp = DateTime.now().microsecondsSinceEpoch.toString();
+    final String userMsgId = 'user_${timestamp}_$seq';
+    final String typingMsgId = 'typing_${timestamp}_$seq';
+
     setState(() {
-      messages.add(_ChatMessage(text: text, isUser: true));
+      messages.add(_ChatMessage(id: userMsgId, text: text, isUser: true));
       messages.add(
-        _ChatMessage(text: '', isUser: false, isTyping: true),
+        _ChatMessage(id: typingMsgId, text: '', isUser: false, isTyping: true),
       );
       _controller.clear();
     });
 
-    Future.delayed(const Duration(milliseconds: 900), () {
+    late final Timer timer;
+    timer = Timer(const Duration(milliseconds: 900), () {
+      _pendingTimers.remove(timer);
+      if (!mounted) return;
+
       setState(() {
-        messages.removeLast(); // remove typing indicator
-        messages.add(
-          _ChatMessage(
-            text: _generateReply(text),
-            isUser: false,
-          ),
+        final typingIndex = messages.indexWhere((m) => m.id == typingMsgId);
+        final replyMsg = _ChatMessage(
+          id: 'ai_${timestamp}_$seq',
+          text: _generateReply(text),
+          isUser: false,
         );
+        if (typingIndex != -1) {
+          messages[typingIndex] = replyMsg;
+        } else {
+          messages.add(replyMsg);
+        }
       });
     });
+    _pendingTimers.add(timer);
   }
 
   String _generateReply(String input) {
@@ -225,7 +212,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                   ),
                   IconButton(
                     icon:
-                    const Icon(Icons.send, color: AppColors.purple),
+                    const Icon(Icons.arrow_upward, color: AppColors.purple),
                     onPressed: _sendMessage,
                   )
                 ],

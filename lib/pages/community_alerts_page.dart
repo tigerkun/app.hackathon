@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 class CommunityAlertsPage extends StatefulWidget {
@@ -10,6 +11,7 @@ class CommunityAlertsPage extends StatefulWidget {
 class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
   String selectedFilter = 'All';
   bool locationDetected = false;
+  Timer? _locationTimer;
 
   final String detectedArea = "Your Area";
 
@@ -54,7 +56,8 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     super.initState();
 
     // Mock location detection delay
-    Future.delayed(const Duration(milliseconds: 600), () {
+    _locationTimer = Timer(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
       setState(() {
         locationDetected = true;
       });
@@ -64,6 +67,7 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
   }
 
   void _showLocationPopup() {
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -77,6 +81,12 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _locationTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -103,8 +113,8 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
             ),
             _drawerItem(Icons.home, "Home", '/'),
             _drawerItem(Icons.report, "Report Near Me", '/report'),
-            _drawerItem(Icons.campaign, "Community Alerts", '/community'),
-            _drawerItem(Icons.chat, "Safety Assistant", '/chat'),
+            _drawerItem(Icons.campaign, "Community Alerts", '/alerts'),
+            _drawerItem(Icons.chat, "Safety Assistant", '/ai-assistant'),
             _drawerItem(Icons.support_agent, "Emergency Info", '/emergency'),
           ],
         ),

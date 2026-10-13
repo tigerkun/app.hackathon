@@ -17,9 +17,9 @@ class AboutPage extends StatelessWidget {
             const SizedBox(height: 16),
 
             const Text(
-              "Safety App",
+              "SafeSphere",
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
             ),
 
             const SizedBox(height: 12),
@@ -27,7 +27,7 @@ class AboutPage extends StatelessWidget {
               "A smart personal safety platform designed to help users "
                   "stay safe, informed, and connected during emergencies.",
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: Colors.black54),
+              style: TextStyle(fontSize: 16, color: Colors.white70),
             ),
 
             const SizedBox(height: 30),
@@ -45,14 +45,14 @@ class AboutPage extends StatelessWidget {
               "Built with privacy and security in mind. "
                   "Your data stays yours.",
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black45),
+              style: TextStyle(color: Colors.white70),
             ),
 
             const SizedBox(height: 20),
             const Text(
               "Version 1.0.0",
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black38),
+              style: TextStyle(color: Colors.white70),
             ),
           ],
         ),

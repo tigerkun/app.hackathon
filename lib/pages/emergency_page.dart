@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 
 
@@ -48,7 +49,7 @@ class EmergencyPage extends StatelessWidget {
                 icon: Icons.call,
                 title: "Call Emergency",
                 subtitle: "Dial 112 for immediate help",
-                onTap: () {},
+                onTap: () => _makeCall(context, "112"),
               ),
 
               const SizedBox(height: 20),
@@ -60,10 +61,10 @@ class EmergencyPage extends StatelessWidget {
 
               const SizedBox(height: 12),
 
-              _helplineCard(cardColor, textColor, "National Emergency", "112"),
-              _helplineCard(cardColor, textColor, "Women Helpline", "181"),
-              _helplineCard(cardColor, textColor, "Ambulance", "108"),
-              _helplineCard(cardColor, textColor, "Fire Services", "101"),
+              _helplineCard(context, cardColor, textColor, "National Emergency", "112"),
+              _helplineCard(context, cardColor, textColor, "Women Helpline", "181"),
+              _helplineCard(context, cardColor, textColor, "Ambulance", "108"),
+              _helplineCard(context, cardColor, textColor, "Fire Services", "101"),
 
               const SizedBox(height: 24),
 
@@ -89,7 +90,9 @@ class EmergencyPage extends StatelessWidget {
                 "One-time location sharing only",
                 textColor,
                 subTextColor,
-                    () {},
+                () {
+                  Navigator.pushNamed(context, '/share');
+                },
               ),
 
               const SizedBox(height: 24),
@@ -179,6 +182,7 @@ class EmergencyPage extends StatelessWidget {
   }) {
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
@@ -221,6 +225,7 @@ class EmergencyPage extends StatelessWidget {
       ) {
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -251,24 +256,52 @@ class EmergencyPage extends StatelessWidget {
   }
 
   Widget _helplineCard(
-      Color color, Color textColor, String title, String number) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(title, style: TextStyle(color: textColor)),
-          Text(number,
-              style: TextStyle(
-                  color: textColor, fontWeight: FontWeight.bold)),
-        ],
+      BuildContext context, Color color, Color textColor, String title, String number) {
+    return GestureDetector(
+      onTap: () => _makeCall(context, number),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(title, style: TextStyle(color: textColor)),
+            Text(number,
+                style: TextStyle(
+                    color: textColor, fontWeight: FontWeight.bold)),
+          ],
+        ),
       ),
     );
+  }
+
+  Future<void> _makeCall(BuildContext context, String phoneNumber) async {
+    final Uri launchUri = Uri(
+      scheme: 'tel',
+      path: phoneNumber,
+    );
+    try {
+      if (await canLaunchUrl(launchUri)) {
+        await launchUrl(launchUri);
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not open dialer for $phoneNumber')),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error dialing $phoneNumber: $e')),
+        );
+      }
+    }
   }
 
   Widget _tipCard(Color color, Color textColor, String text) {

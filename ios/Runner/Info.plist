@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Newhere</string>
+	<string>SafeSphere</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,15 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>newhere</string>
+	<string>SafeSphere</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SafeSphere needs your location to share your live coordinates during emergencies.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SafeSphere needs your location to protect your journey and share distress alerts.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+	</array>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

@@ -32,10 +32,14 @@ class _TypingTextState extends State<TypingText> {
 
   void _startTyping() {
     _timer = Timer.periodic(widget.speed, (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       if (_index < widget.text.length) {
         setState(() {
-          _displayedText += widget.text[_index];
           _index++;
+          _displayedText = widget.text.substring(0, _index);
         });
       } else {
         timer.cancel();

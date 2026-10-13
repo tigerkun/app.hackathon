@@ -22,7 +22,7 @@ class AppDrawer extends StatelessWidget {
                 Icon(Icons.shield, color: Colors.white, size: 40),
                 SizedBox(height: 10),
                 Text(
-                  "Safety App",
+                  "SafeSphere",
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 22,
@@ -48,11 +48,30 @@ class AppDrawer extends StatelessWidget {
           _drawerItem(
             context,
             icon: Icons.map,
+            title: "Safety Map",
+            route: '/safety-map',
+          ),
+
+          _drawerItem(
+            context,
+            icon: Icons.campaign,
             title: "Community Alerts",
             route: '/alerts',
           ),
 
+          _drawerItem(
+            context,
+            icon: Icons.report,
+            title: "Report Near Me",
+            route: '/report',
+          ),
 
+          _drawerItem(
+            context,
+            icon: Icons.smart_toy,
+            title: "AI Assistant",
+            route: '/ai-assistant',
+          ),
 
           _drawerItem(
             context,

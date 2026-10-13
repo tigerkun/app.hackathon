@@ -1,20 +1,7 @@
 import 'package:flutter/material.dart';
+import '../models/safety_marker.dart';
 
-
-/// Simple marker model (lightweight & expandable)
-class SafetyMarker {
-  final Offset position; // relative (0–1 based)
-  final IconData icon;
-  final Color color;
-  final String label;
-
-  const SafetyMarker({
-    required this.position,
-    required this.icon,
-    required this.color,
-    required this.label,
-  });
-}
+export '../models/safety_marker.dart';
 
 class MapPlaceholder extends StatelessWidget {
   final List<SafetyMarker> markers;

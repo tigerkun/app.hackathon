@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SafeSphere - Live Interactive App</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <style>
+    body {
+      background-color: #070B14;
+      color: #E2E8F0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .glass-card {
+      background: rgba(16, 26, 51, 0.7);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+    }
+    .glass-card:hover {
+      border-color: rgba(46, 224, 201, 0.3);
+    }
+    .teal-glow {
+      box-shadow: 0 0 25px rgba(46, 224, 201, 0.25);
+    }
+    .red-glow {
+      box-shadow: 0 0 25px rgba(255, 76, 76, 0.35);
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+    }
+    .leaflet-container {
+      background: #0B1220 !important;
+      font-family: inherit;
+    }
+    .leaflet-bar a {
+      background-color: #101A33 !important;
+      color: #2FE0C9 !important;
+      border-color: rgba(255,255,255,0.2) !important;
+    }
+    .leaflet-bar a:hover {
+      background-color: #1E293B !important;
+    }
+    .custom-pin-pulse {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #2FE0C9;
+      box-shadow: 0 0 0 rgba(46, 224, 201, 0.6);
+      animation: pulse-ring 1.8s infinite;
+    }
+    @keyframes pulse-ring {
+      0% { box-shadow: 0 0 0 0 rgba(46, 224, 201, 0.7); }
+      70% { box-shadow: 0 0 0 16px rgba(46, 224, 201, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(46, 224, 201, 0); }
+    }
+  </style>
+</head>
+<body class="p-2 sm:p-4 flex flex-col items-center justify-center min-h-screen">
+
+  <!-- Mobile Mockup Frame -->
+  <div class="w-full max-w-md h-[830px] bg-[#0B0F1A] rounded-[36px] border-4 border-slate-700 shadow-2xl flex flex-col overflow-hidden relative">
+
+    <!-- Status Bar -->
+    <div class="h-8 bg-[#0B0F1A] px-6 flex items-center justify-between text-xs text-slate-400 select-none z-30">
+      <span id="liveTime">08:30</span>
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-signal"></i>
+        <i class="fa-solid fa-wifi"></i>
+        <i class="fa-solid fa-battery-full"></i>
+      </div>
+    </div>
+
+    <!-- Top App Bar -->
+    <header id="appHeader" class="px-4 py-3 bg-[#0B0F1A]/90 backdrop-blur border-b border-white/10 flex items-center justify-between z-20">
+      <div class="flex items-center gap-3">
+        <button id="menuBtn" onclick="toggleDrawer()" class="p-2 text-slate-300 hover:text-white rounded-lg hover:bg-white/5 transition">
+          <i class="fa-solid fa-bars text-lg"></i>
+        </button>
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#2FE0C9] to-[#7B4DFF] flex items-center justify-center shadow-md">
+            <i class="fa-solid fa-shield text-slate-900 text-sm"></i>
+          </div>
+          <span id="screenTitle" class="font-bold text-lg tracking-wide text-white">SafeSphere</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="navTo('alerts')" class="relative p-2 text-slate-300 hover:text-white rounded-lg hover:bg-white/5">
+          <i class="fa-solid fa-bell"></i>
+          <span id="headerBadge" class="absolute top-1 right-1 w-2.5 h-2.5 bg-[#FF4C4C] rounded-full"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Slide-out Drawer Navigation -->
+    <nav id="drawer" class="absolute inset-y-0 left-0 w-72 bg-[#0E1526] z-50 transform -translate-x-full transition-transform duration-300 ease-in-out border-r border-white/10 flex flex-col shadow-2xl">
+      <div class="p-6 bg-gradient-to-br from-blue-900/60 to-slate-900 border-b border-white/10">
+        <div class="flex items-center justify-between mb-4">
+          <div class="w-12 h-12 rounded-xl bg-gradient-to-tr from-[#2FE0C9] to-[#7B4DFF] flex items-center justify-center shadow-lg">
+            <i class="fa-solid fa-shield text-slate-900 text-xl"></i>
+          </div>
+          <button onclick="toggleDrawer()" class="text-slate-400 hover:text-white">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+        <h2 class="text-xl font-bold text-white">SafeSphere</h2>
+        <p class="text-xs text-slate-400 mt-1">Personal Safety & Intelligence</p>
+      </div>
+      <div class="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+        <button onclick="navTo('home')" class="w-full flex items-center gap-4 px-4 py-3 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition font-medium">
+          <i class="fa-solid fa-house text-[#2FE0C9] w-5 text-center"></i> Home Dashboard
+        </button>
+        <button onclick="navTo('alerts')" class="w-full flex items-center gap-4 px-4 py-3 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition font-medium">
+          <i class="fa-solid fa-triangle-exclamation text-[#FFB020] w-5 text-center"></i> Community Alerts
+        </button>
+        <button onclick="navTo('map')" class="w-full flex items-center gap-4 px-4 py-3 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition font-medium">
+          <i class="fa-solid fa-map-location-dot text-[#3A7BFF] w-5 text-center"></i> Safety Map (Live Tiles)
+        </button>
+        <button onclick="navTo('assistant')" class="w-full flex items-center gap-4 px-4 py-3 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition font-medium">
+          <i class="fa-solid fa-robot text-[#7B4DFF] w-5 text-center"></i> AI Safety Guide
+        </button>
+        <button onclick="navTo('report')" class="w-full flex items-center gap-4 px-4 py-3 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition font-medium">
+          <i class="fa-solid fa-file-circle-plus text-[#FF4C4C] w-5 text-center"></i> Report Incident
+        </button>
+        <button onclick="navTo('share')" class="w-full flex items-center gap-4 px-4 py-3 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition font-medium">
+          <i class="fa-solid fa-location-arrow text-[#2FE0C9] w-5 text-center"></i> Share Live Location
+        </button>
+        <button onclick="navTo('emergency')" class="w-full flex items-center gap-4 px-4 py-3 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition font-medium">
+          <i class="fa-solid fa-phone-volume text-red-400 w-5 text-center"></i> Emergency Hub (112)
+        </button>
+        <div class="pt-4 border-t border-white/10 mt-4">
+          <button onclick="navTo('about')" class="w-full flex items-center gap-4 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition font-medium text-sm">
+            <i class="fa-solid fa-circle-info w-5 text-center"></i> About SafeSphere
+          </button>
+        </div>
+      </div>
+      <div class="p-4 border-t border-white/10 text-xs text-slate-500 text-center">
+        SafeSphere v1.0.0 • Connected
+      </div>
+    </nav>
+    <div id="drawerOverlay" onclick="toggleDrawer()" class="absolute inset-0 bg-black/60 z-40 hidden backdrop-blur-sm transition-opacity"></div>
+
+    <!-- Main Dynamic Screen Container -->
+    <main id="screenContainer" class="flex-1 overflow-y-auto custom-scroll p-4 pb-20">
+
+      <!-- ================= SCREEN 1: HOME ================= -->
+      <section id="screen-home" class="space-y-4">
+        <!-- SOS Hero Card -->
+        <div onclick="navTo('emergency')" class="p-4 rounded-2xl bg-gradient-to-r from-red-900/80 via-red-800/60 to-rose-950/80 border border-red-500/50 red-glow cursor-pointer hover:scale-[1.01] transition">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-red-500/20 border border-red-400/40 flex items-center justify-center">
+                <i class="fa-solid fa-triangle-exclamation text-red-400 text-xl animate-pulse"></i>
+              </div>
+              <div>
+                <h3 class="font-bold text-white text-base">EMERGENCY SOS</h3>
+                <p class="text-xs text-red-200">Tap for instant 112 call & distress alert</p>
+              </div>
+            </div>
+            <i class="fa-solid fa-chevron-right text-red-300"></i>
+          </div>
+        </div>
+
+        <!-- Quick Action Grid -->
+        <div class="grid grid-cols-2 gap-3">
+          <div onclick="navTo('report')" class="glass-card p-4 cursor-pointer hover:border-amber-400/50 transition">
+            <div class="w-8 h-8 rounded-lg bg-amber-400/10 text-amber-400 flex items-center justify-center mb-2">
+              <i class="fa-solid fa-flag"></i>
+            </div>
+            <h4 class="font-semibold text-sm text-white">Report Incident</h4>
+            <p class="text-xs text-slate-400 mt-1">Hazard or suspicious activity</p>
+          </div>
+          <div onclick="navTo('map')" class="glass-card p-4 cursor-pointer hover:border-blue-400/50 transition">
+            <div class="w-8 h-8 rounded-lg bg-blue-400/10 text-blue-400 flex items-center justify-center mb-2">
+              <i class="fa-solid fa-map"></i>
+            </div>
+            <h4 class="font-semibold text-sm text-white">Safety Map</h4>
+            <p class="text-xs text-slate-400 mt-1">Real-time local safety pins</p>
+          </div>
+        </div>
+
+        <!-- AI Assistant Banner -->
+        <div onclick="navTo('assistant')" class="glass-card p-4 cursor-pointer border-[#7B4DFF]/40 hover:border-[#7B4DFF] transition">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-[#7B4DFF]/20 text-[#7B4DFF] flex items-center justify-center">
+              <i class="fa-solid fa-robot text-lg"></i>
+            </div>
+            <div class="flex-1">
+              <div class="flex items-center gap-2">
+                <h4 class="font-semibold text-sm text-white">AI Safety Assistant</h4>
+                <span class="text-[10px] bg-[#7B4DFF]/30 text-purple-200 px-2 py-0.5 rounded-full font-medium">Ready</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-0.5">Calm de-escalation & night walk guidance</p>
+            </div>
+            <i class="fa-solid fa-arrow-right text-purple-300 text-sm"></i>
+          </div>
+        </div>
+
+        <!-- Live Community Alerts Strip -->
+        <div onclick="navTo('alerts')" class="glass-card p-4 cursor-pointer border-amber-500/30 hover:border-amber-500 transition">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-bullhorn text-[#FFB020] text-sm"></i>
+              <span class="font-semibold text-sm text-white">Community Alert Feed</span>
+            </div>
+            <span class="text-xs font-bold bg-[#FF4C4C] text-white px-2 py-0.5 rounded-full">3 Active</span>
+          </div>
+          <p class="text-xs text-slate-400">Street lighting outage reported near Central Bus Stop (20m ago).</p>
+        </div>
+
+        <!-- Recent Activity Feed -->
+        <div class="glass-card p-4">
+          <h4 class="font-semibold text-xs text-slate-400 uppercase tracking-wider mb-3">Recent Verified Reports</h4>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between text-xs border-b border-white/5 pb-2">
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-lightbulb text-amber-400"></i>
+                <span class="text-slate-200">Poor street lighting</span>
+              </div>
+              <span class="text-slate-500">30m ago</span>
+            </div>
+            <div class="flex items-center justify-between text-xs">
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-eye text-blue-400"></i>
+                <span class="text-slate-200">Suspicious movement noted</span>
+              </div>
+              <span class="text-slate-500">1h ago</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= SCREEN 2: EMERGENCY HUB ================= -->
+      <section id="screen-emergency" class="hidden space-y-4">
+        <!-- Call 112 Action -->
+        <div onclick="callEmergency('112')" class="p-5 rounded-2xl bg-gradient-to-r from-red-700 to-rose-900 border border-red-500 red-glow cursor-pointer hover:scale-[1.02] transition">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white text-2xl">
+              <i class="fa-solid fa-phone"></i>
+            </div>
+            <div>
+              <h3 class="text-xl font-black text-white">CALL 112 NOW</h3>
+              <p class="text-xs text-red-100">National Emergency Services (Police, Medical, Fire)</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Helplines List -->
+        <h4 class="font-bold text-sm text-slate-300 pt-2">Dedicated Helplines</h4>
+        <div class="grid grid-cols-2 gap-3">
+          <div onclick="callEmergency('181')" class="glass-card p-3 cursor-pointer hover:border-pink-400 transition">
+            <div class="text-pink-400 text-lg mb-1"><i class="fa-solid fa-person-dress"></i></div>
+            <div class="font-bold text-sm text-white">Women Helpline</div>
+            <div class="text-xs text-slate-400 mt-1">Dial 181</div>
+          </div>
+          <div onclick="callEmergency('108')" class="glass-card p-3 cursor-pointer hover:border-red-400 transition">
+            <div class="text-red-400 text-lg mb-1"><i class="fa-solid fa-truck-medical"></i></div>
+            <div class="font-bold text-sm text-white">Ambulance</div>
+            <div class="text-xs text-slate-400 mt-1">Dial 108</div>
+          </div>
+          <div onclick="callEmergency('101')" class="glass-card p-3 cursor-pointer hover:border-orange-400 transition">
+            <div class="text-orange-400 text-lg mb-1"><i class="fa-solid fa-fire-extinguisher"></i></div>
+            <div class="font-bold text-sm text-white">Fire Services</div>
+            <div class="text-xs text-slate-400 mt-1">Dial 101</div>
+          </div>
+          <div onclick="callEmergency('1098')" class="glass-card p-3 cursor-pointer hover:border-yellow-400 transition">
+            <div class="text-yellow-400 text-lg mb-1"><i class="fa-solid fa-child"></i></div>
+            <div class="font-bold text-sm text-white">Child Helpline</div>
+            <div class="text-xs text-slate-400 mt-1">Dial 1098</div>
+          </div>
+        </div>
+
+        <!-- Share Location Link -->
+        <div onclick="navTo('share')" class="glass-card p-4 cursor-pointer hover:border-[#2FE0C9] transition mt-4">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-[#2FE0C9]/20 text-[#2FE0C9] flex items-center justify-center">
+              <i class="fa-solid fa-location-crosshairs text-lg"></i>
+            </div>
+            <div class="flex-1">
+              <h4 class="font-semibold text-sm text-white">Broadcast Live GPS</h4>
+              <p class="text-xs text-slate-400">Share encrypted link with trusted circle</p>
+            </div>
+            <i class="fa-solid fa-arrow-right text-teal-400"></i>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= SCREEN 3: AI ASSISTANT ================= -->
+      <section id="screen-assistant" class="hidden flex flex-col h-[700px]">
+        <div class="flex items-center justify-between pb-3 border-b border-white/10 mb-2">
+          <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded-full bg-emerald-400 animate-ping"></div>
+            <span class="text-xs text-slate-300 font-medium">SafeSphere AI • Live Support</span>
+          </div>
+          <span class="text-[11px] text-slate-500">De-escalation Mode</span>
+        </div>
+
+        <!-- Chat History -->
+        <div id="chatHistory" class="flex-1 overflow-y-auto custom-scroll space-y-3 pr-1 py-2">
+          <div class="flex gap-2.5 items-start">
+            <div class="w-7 h-7 rounded-lg bg-[#7B4DFF]/30 text-[#7B4DFF] flex items-center justify-center shrink-0 text-xs">
+              <i class="fa-solid fa-robot"></i>
+            </div>
+            <div class="glass-card p-3 rounded-2xl rounded-tl-sm text-xs text-slate-200 max-w-[80%] leading-relaxed border-purple-500/30">
+              Hi 👋 I’m your SafeSphere Assistant. Tell me what’s happening and I’ll guide you calmly through the safest steps.
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Prompts -->
+        <div class="flex gap-1.5 overflow-x-auto py-2 text-[11px]">
+          <button onclick="sendQuickPrompt('I feel like someone is following me')" class="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-slate-300 whitespace-nowrap">
+            👣 Being followed
+          </button>
+          <button onclick="sendQuickPrompt('I feel unsafe on this dark street')" class="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-slate-300 whitespace-nowrap">
+            🌙 Unsafe route
+          </button>
+          <button onclick="sendQuickPrompt('There is a road accident here')" class="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-slate-300 whitespace-nowrap">
+            🚨 Accident nearby
+          </button>
+        </div>
+
+        <!-- Input Bar -->
+        <div class="pt-2">
+          <div class="flex items-center gap-2 bg-[#121B2F] border border-purple-500/40 rounded-xl p-1.5 focus-within:border-purple-400">
+            <input id="chatInput" type="text" placeholder="Describe your situation..." class="flex-1 bg-transparent px-3 text-xs text-white focus:outline-none" onkeydown="if(event.key==='Enter') sendMessage()">
+            <button onclick="sendMessage()" class="p-2 bg-[#7B4DFF] text-white rounded-lg hover:bg-purple-600 transition">
+              <i class="fa-solid fa-paper-plane text-xs"></i>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= SCREEN 4: SHARE LOCATION (UPGRADED WITH LIVE MAP RENDERING) ================= -->
+      <section id="screen-share" class="hidden space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-base font-bold text-white">Live Location Sharing</h3>
+          <span id="gpsBadge" class="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full font-medium">GPS Active</span>
+        </div>
+
+        <!-- Dynamic Coordinates Card -->
+        <div class="glass-card p-4 space-y-2 border-teal-500/30">
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <span class="text-slate-500 text-[11px] block">Latitude</span>
+              <span id="dispLat" class="font-mono text-teal-300 font-bold text-sm">28.6139° N</span>
+            </div>
+            <div>
+              <span class="text-slate-500 text-[11px] block">Longitude</span>
+              <span id="dispLng" class="font-mono text-teal-300 font-bold text-sm">77.2090° E</span>
+            </div>
+          </div>
+          <div class="pt-2 border-t border-white/10 flex items-center justify-between text-[11px]">
+            <span class="text-slate-400"><i class="fa-solid fa-bullseye text-teal-400 mr-1"></i> Accuracy: ±4.2m</span>
+            <button onclick="refreshGpsLocation()" class="text-teal-300 hover:text-teal-200 font-medium">
+              <i class="fa-solid fa-arrows-rotate mr-1"></i> Refresh GPS
+            </button>
+          </div>
+        </div>
+
+        <!-- Embedded Interactive Map -->
+        <div class="glass-card overflow-hidden rounded-2xl border-white/20 h-56 relative shadow-lg">
+          <div id="shareMap" class="w-full h-full z-10"></div>
+          <div class="absolute bottom-2 left-2 z-20 bg-slate-900/90 backdrop-blur px-2 py-1 rounded text-[10px] text-teal-300 font-mono border border-teal-500/30">
+            <i class="fa-solid fa-satellite-dish mr-1"></i> Live Satellite Lock
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="space-y-2 pt-1">
+          <button onclick="triggerShare()" class="w-full py-3.5 bg-gradient-to-r from-[#2FE0C9] to-[#3A7BFF] text-slate-950 font-bold rounded-xl shadow-lg hover:opacity-95 transition flex items-center justify-center gap-2 text-sm">
+            <i class="fa-solid fa-share-nodes"></i> Share Live Location (Google Maps Link)
+          </button>
+          <button onclick="openExternalGoogleMaps()" class="w-full py-2.5 bg-white/5 hover:bg-white/10 text-white border border-white/15 rounded-xl font-medium text-xs flex items-center justify-center gap-2 transition">
+            <i class="fa-solid fa-map-location-dot text-blue-400"></i> Open in Google Maps
+          </button>
+        </div>
+      </section>
+
+      <!-- ================= SCREEN 5: REPORT INCIDENT ================= -->
+      <section id="screen-report" class="hidden space-y-4">
+        <h3 class="text-base font-bold text-white">Report Safety Incident</h3>
+        <p class="text-xs text-slate-400">Crowdsourced alerts help keep everyone in your zone informed.</p>
+
+        <!-- Dynamic GPS Tag -->
+        <div class="glass-card p-3 flex items-center justify-between border-teal-500/20 text-xs">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-location-crosshairs text-teal-400"></i>
+            <span class="text-slate-300">Tagged Location:</span>
+          </div>
+          <span id="reportGeoTag" class="font-mono text-teal-300 font-semibold text-[11px]">28.6139, 77.2090 (Auto-Tagged)</span>
+        </div>
+
+        <!-- Category Picker -->
+        <div>
+          <label class="text-xs font-semibold text-slate-300 block mb-2">Incident Type</label>
+          <div class="grid grid-cols-2 gap-2" id="categoryPicker">
+            <button onclick="selectCategory(this, 'Harassment')" class="category-btn p-3 glass-card text-left text-xs font-medium border-white/10 hover:border-amber-400 transition flex items-center gap-2">
+              <i class="fa-solid fa-triangle-exclamation text-rose-400"></i> Harassment
+            </button>
+            <button onclick="selectCategory(this, 'Theft')" class="category-btn p-3 glass-card text-left text-xs font-medium border-white/10 hover:border-amber-400 transition flex items-center gap-2">
+              <i class="fa-solid fa-mask text-amber-400"></i> Theft / Snatching
+            </button>
+            <button onclick="selectCategory(this, 'Poor Lighting')" class="category-btn p-3 glass-card text-left text-xs font-medium border-white/10 hover:border-amber-400 transition flex items-center gap-2 active border-amber-400">
+              <i class="fa-solid fa-lightbulb text-yellow-300"></i> Poor Lighting
+            </button>
+            <button onclick="selectCategory(this, 'Suspicious')" class="category-btn p-3 glass-card text-left text-xs font-medium border-white/10 hover:border-amber-400 transition flex items-center gap-2">
+              <i class="fa-solid fa-eye text-blue-400"></i> Suspicious Activity
+            </button>
+          </div>
+        </div>
+
+        <!-- Description Input -->
+        <div>
+          <label class="text-xs font-semibold text-slate-300 block mb-1">Details</label>
+          <textarea id="reportDesc" rows="3" placeholder="Provide location clues or hazard details..." class="w-full glass-card p-3 text-xs text-white focus:outline-none focus:border-amber-400 border-white/10 rounded-xl resize-none"></textarea>
+        </div>
+
+        <!-- Submit Button -->
+        <button onclick="submitReport()" class="w-full py-3 bg-[#FFB020] text-slate-950 font-bold rounded-xl shadow-lg hover:bg-amber-400 transition flex items-center justify-center gap-2 text-sm">
+          <i class="fa-solid fa-check"></i> Submit to SafeSphere Network
+        </button>
+      </section>
+
+      <!-- ================= SCREEN 6: ALERTS ================= -->
+      <section id="screen-alerts" class="hidden space-y-3">
+        <div class="flex items-center justify-between pb-2 border-b border-white/10">
+          <span class="text-xs text-slate-400 font-medium">Local Geo-Feed</span>
+          <span class="text-xs font-semibold text-[#2FE0C9]">Near Your Area</span>
+        </div>
+        <div id="alertsContainer" class="space-y-2.5">
+          <!-- Dynamic alerts will populate here -->
+        </div>
+      </section>
+
+      <!-- ================= SCREEN 7: SAFETY MAP (REAL TILE RENDERING) ================= -->
+      <section id="screen-map" class="hidden h-[710px] flex flex-col space-y-3">
+        <div class="flex items-center justify-between text-xs text-slate-400">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            <span class="text-slate-300 font-medium">Live Radar & Map Tiles</span>
+          </div>
+          <button onclick="openExternalGoogleMaps()" class="text-blue-400 hover:text-blue-300 text-[11px] font-semibold flex items-center gap-1">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> Google Maps
+          </button>
+        </div>
+
+        <!-- Leaflet Map Container -->
+        <div class="flex-1 glass-card overflow-hidden rounded-2xl border-white/20 relative shadow-2xl">
+          <div id="mainMap" class="w-full h-full z-10"></div>
+          
+          <!-- Map Overlay Controls -->
+          <div class="absolute top-3 left-3 z-20 flex flex-col gap-1.5">
+            <button onclick="centerMapOnUser()" class="p-2 bg-[#101A33]/90 hover:bg-[#101A33] border border-teal-500/40 text-teal-300 rounded-lg shadow text-xs" title="Center on Me">
+              <i class="fa-solid fa-crosshairs"></i>
+            </button>
+          </div>
+
+          <div class="absolute bottom-3 left-3 right-3 z-20 bg-[#101A33]/95 backdrop-blur p-2.5 rounded-xl border border-white/15 flex items-center justify-between shadow-xl">
+            <div class="flex items-center gap-2 text-xs">
+              <i class="fa-solid fa-shield text-teal-400"></i>
+              <span id="mapSelectedTag" class="text-slate-200 font-medium text-[11px]">Safe Patrol Corridor Active</span>
+            </div>
+            <button onclick="navTo('report')" class="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg text-[11px] shadow">
+              <i class="fa-solid fa-flag mr-1"></i> Report
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= SCREEN 8: ABOUT ================= -->
+      <section id="screen-about" class="hidden space-y-4 text-center p-4">
+        <div class="w-20 h-20 rounded-2xl bg-gradient-to-tr from-[#2FE0C9] to-[#7B4DFF] flex items-center justify-center mx-auto shadow-xl">
+          <i class="fa-solid fa-shield text-slate-950 text-3xl"></i>
+        </div>
+        <h3 class="text-2xl font-bold text-white">SafeSphere</h3>
+        <p class="text-xs text-white/70 max-w-xs mx-auto leading-relaxed">
+          A smart personal safety platform designed to help users stay safe, informed, and connected during emergencies.
+        </p>
+
+        <div class="glass-card p-4 text-left space-y-3 mt-4 text-xs text-white/80">
+          <div class="flex items-center gap-3">
+            <i class="fa-solid fa-map-pin text-[#2FE0C9] w-4"></i>
+            <span>Live Community Alerts</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <i class="fa-solid fa-robot text-[#7B4DFF] w-4"></i>
+            <span>AI Safety Assistant Guidance</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <i class="fa-solid fa-share-nodes text-[#3A7BFF] w-4"></i>
+            <span>One-Tap Live GPS Sharing</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <i class="fa-solid fa-phone text-[#FF4C4C] w-4"></i>
+            <span>National Emergency SOS (112)</span>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-white/10 text-xs text-white/50">
+          Built with privacy and security in mind. Version 1.0.0
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="h-16 bg-[#0E1526]/95 backdrop-blur border-t border-white/10 px-4 flex items-center justify-around z-20">
+      <button onclick="navTo('home')" id="nav-btn-home" class="flex flex-col items-center gap-1 text-[#2FE0C9]">
+        <i class="fa-solid fa-house text-base"></i>
+        <span class="text-[10px] font-medium">Home</span>
+      </button>
+      <button onclick="navTo('map')" id="nav-btn-map" class="flex flex-col items-center gap-1 text-slate-400 hover:text-white">
+        <i class="fa-solid fa-map text-base"></i>
+        <span class="text-[10px] font-medium">Map</span>
+      </button>
+      <button onclick="navTo('emergency')" id="nav-btn-emergency" class="flex flex-col items-center gap-1 text-red-400 hover:text-red-300">
+        <div class="w-8 h-8 -mt-4 bg-red-600 rounded-full flex items-center justify-center text-white shadow-lg border-2 border-[#0B0F1A]">
+          <i class="fa-solid fa-phone text-xs"></i>
+        </div>
+        <span class="text-[10px] font-medium">SOS</span>
+      </button>
+      <button onclick="navTo('assistant')" id="nav-btn-assistant" class="flex flex-col items-center gap-1 text-slate-400 hover:text-white">
+        <i class="fa-solid fa-robot text-base"></i>
+        <span class="text-[10px] font-medium">Assistant</span>
+      </button>
+      <button onclick="navTo('alerts')" id="nav-btn-alerts" class="flex flex-col items-center gap-1 text-slate-400 hover:text-white">
+        <i class="fa-solid fa-bell text-base"></i>
+        <span class="text-[10px] font-medium">Alerts</span>
+      </button>
+    </nav>
+
+    <!-- Native Notification Toast -->
+    <div id="toast" class="absolute bottom-20 left-4 right-4 bg-slate-900/95 border border-white/20 text-white text-xs px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 transform translate-y-32 transition-transform duration-300 z-50">
+      <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-base"></i>
+      <span id="toastMsg" class="flex-1 font-medium">Notification</span>
+    </div>
+  </div>
+
+  <script>
+    // State variables
+    let currentLat = 28.6139;
+    let currentLng = 77.2090;
+    let mainMapInstance = null;
+    let shareMapInstance = null;
+    let userMarker = null;
+
+    const ReportStore = {
+      reports: [
+        { id: '1', type: 'Poor Lighting', desc: 'Street lights malfunctioning near Bus Stop', time: '40m ago' },
+        { id: '2', type: 'Suspicious', desc: 'Unregistered vehicle lingering at corner', time: '1h ago' }
+      ],
+      addReport: function(report) {
+        this.reports.unshift(report);
+        renderAlerts();
+      }
+    };
+
+    let selectedCat = 'Poor Lighting';
+
+    function toggleDrawer() {
+      const drawer = document.getElementById('drawer');
+      const overlay = document.getElementById('drawerOverlay');
+      const isOpen = !drawer.classList.contains('-translate-x-full');
+      if (isOpen) {
+        drawer.classList.add('-translate-x-full');
+        overlay.classList.add('hidden');
+      } else {
+        drawer.classList.remove('-translate-x-full');
+        overlay.classList.remove('hidden');
+      }
+    }
+
+    function navTo(screenId) {
+      document.querySelectorAll('#screenContainer > section').forEach(sec => sec.classList.add('hidden'));
+      const target = document.getElementById('screen-' + screenId);
+      if (target) target.classList.remove('hidden');
+
+      const titles = {
+        'home': 'SafeSphere',
+        'emergency': 'Emergency Support',
+        'assistant': 'AI Safety Assistant',
+        'share': 'Share Location',
+        'report': 'Report Incident',
+        'alerts': 'Community Alerts',
+        'map': 'Safety Map',
+        'about': 'About SafeSphere'
+      };
+      document.getElementById('screenTitle').innerText = titles[screenId] || 'SafeSphere';
+
+      // Update bottom nav active state
+      ['home', 'map', 'emergency', 'assistant', 'alerts'].forEach(id => {
+        const btn = document.getElementById('nav-btn-' + id);
+        if (btn) {
+          if (id === screenId) {
+            btn.className = 'flex flex-col items-center gap-1 text-[#2FE0C9]';
+          } else if (id === 'emergency') {
+            btn.className = 'flex flex-col items-center gap-1 text-red-400 hover:text-red-300';
+          } else {
+            btn.className = 'flex flex-col items-center gap-1 text-slate-400 hover:text-white';
+          }
+        }
+      });
+
+      // Close drawer if open
+      const drawer = document.getElementById('drawer');
+      if (!drawer.classList.contains('-translate-x-full')) {
+        toggleDrawer();
+      }
+
+      // Initialize maps upon first visibility
+      if (screenId === 'map') {
+        setTimeout(initMainMap, 100);
+      } else if (screenId === 'share') {
+        setTimeout(initShareMap, 100);
+      }
+    }
+
+    function initMainMap() {
+      if (!mainMapInstance) {
+        mainMapInstance = L.map('mainMap', { zoomControl: false }).setView([currentLat, currentLng], 14);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+          maxZoom: 19,
+          subdomains: 'abcd',
+          attribution: '&copy; OpenStreetMap &copy; CARTO'
+        }).addTo(mainMapInstance);
+        L.control.zoom({ position: 'bottomright' }).addTo(mainMapInstance);
+
+        // User Live Pin
+        const userIcon = L.divIcon({
+          className: 'custom-pin-pulse',
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        });
+        userMarker = L.marker([currentLat, currentLng], { icon: userIcon }).addTo(mainMapInstance);
+        userMarker.bindPopup('<b style="color:#0B1220">You Are Here</b><br>Live GPS Active');
+
+        // Police Station Pin
+        const policeIcon = L.divIcon({
+          html: '<div style="background:#3A7BFF; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; border:2px solid white; box-shadow:0 0 10px #3A7BFF"><i class="fa-solid fa-shield text-xs"></i></div>',
+          iconSize: [26, 26],
+          iconAnchor: [13, 13]
+        });
+        L.marker([currentLat + 0.005, currentLng - 0.006], { icon: policeIcon }).addTo(mainMapInstance)
+          .bindPopup('<b style="color:#0B1220">Central Police Booth</b><br>Active 24/7 Patrol<br><a href="tel:112" style="color:#3A7BFF; font-weight:bold">Dial 112</a>');
+
+        // Hospital Pin
+        const hospitalIcon = L.divIcon({
+          html: '<div style="background:#FF4C4C; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; border:2px solid white; box-shadow:0 0 10px #FF4C4C"><i class="fa-solid fa-hospital text-xs"></i></div>',
+          iconSize: [26, 26],
+          iconAnchor: [13, 13]
+        });
+        L.marker([currentLat - 0.004, currentLng + 0.005], { icon: hospitalIcon }).addTo(mainMapInstance)
+          .bindPopup('<b style="color:#0B1220">Emergency Trauma Center</b><br>Ambulance Standby<br><a href="tel:108" style="color:#FF4C4C; font-weight:bold">Dial 108</a>');
+
+        // Hazard Pin
+        const hazardIcon = L.divIcon({
+          html: '<div style="background:#FFB020; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:black; border:2px solid white; box-shadow:0 0 10px #FFB020"><i class="fa-solid fa-triangle-exclamation text-xs"></i></div>',
+          iconSize: [26, 26],
+          iconAnchor: [13, 13]
+        });
+        L.marker([currentLat + 0.003, currentLng + 0.004], { icon: hazardIcon }).addTo(mainMapInstance)
+          .bindPopup('<b style="color:#0B1220">Poor Street Lighting</b><br>Reported 40m ago • Caution');
+      } else {
+        mainMapInstance.invalidateSize();
+      }
+    }
+
+    function initShareMap() {
+      if (!shareMapInstance) {
+        shareMapInstance = L.map('shareMap', { zoomControl: false, dragging: true }).setView([currentLat, currentLng], 15);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+          maxZoom: 19,
+          subdomains: 'abcd'
+        }).addTo(shareMapInstance);
+
+        const pulseIcon = L.divIcon({
+          className: 'custom-pin-pulse',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8]
+        });
+        L.marker([currentLat, currentLng], { icon: pulseIcon }).addTo(shareMapInstance)
+          .bindPopup('<b style="color:#0B1220">Live Location Target</b>');
+      } else {
+        shareMapInstance.invalidateSize();
+      }
+    }
+
+    function refreshGpsLocation() {
+      showToast('Acquiring high-accuracy GPS fix...', 'fa-satellite', 'text-teal-400');
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            currentLat = pos.coords.latitude;
+            currentLng = pos.coords.longitude;
+            document.getElementById('dispLat').innerText = currentLat.toFixed(5) + '° N';
+            document.getElementById('dispLng').innerText = currentLng.toFixed(5) + '° E';
+            document.getElementById('reportGeoTag').innerText = currentLat.toFixed(4) + ', ' + currentLng.toFixed(4) + ' (GPS Verified)';
+            if (mainMapInstance && userMarker) {
+              userMarker.setLatLng([currentLat, currentLng]);
+              mainMapInstance.setView([currentLat, currentLng], 15);
+            }
+            if (shareMapInstance) {
+              shareMapInstance.setView([currentLat, currentLng], 15);
+            }
+            showToast('GPS coordinates updated successfully!', 'fa-circle-check', 'text-emerald-400');
+          },
+          () => {
+            showToast('Using high-confidence baseline coordinates', 'fa-info-circle', 'text-amber-400');
+          },
+          { timeout: 5000, enableHighAccuracy: true }
+        );
+      }
+    }
+
+    function centerMapOnUser() {
+      if (mainMapInstance) {
+        mainMapInstance.flyTo([currentLat, currentLng], 15);
+        showToast('Map centered on your live coordinates', 'fa-crosshairs', 'text-teal-400');
+      }
+    }
+
+    function openExternalGoogleMaps() {
+      const url = `https://www.google.com/maps/@${currentLat},${currentLng},16z`;
+      window.open(url, '_blank');
+    }
+
+    function showToast(msg, icon = 'fa-circle-check', color = 'text-emerald-400') {
+      const toast = document.getElementById('toast');
+      const iconEl = document.getElementById('toastIcon');
+      const msgEl = document.getElementById('toastMsg');
+      iconEl.className = 'fa-solid ' + icon + ' ' + color + ' text-base';
+      msgEl.innerText = msg;
+      toast.classList.remove('translate-y-32');
+      setTimeout(() => {
+        toast.classList.add('translate-y-32');
+      }, 3500);
+    }
+
+    function callEmergency(number) {
+      showToast('Dialing Emergency Services: ' + number + '...', 'fa-phone-volume', 'text-red-400');
+      window.open('tel:' + number, '_self');
+    }
+
+    function triggerShare() {
+      const url = `https://www.google.com/maps?q=${currentLat},${currentLng}`;
+      if (navigator.share) {
+        navigator.share({
+          title: "🚨 SafeSphere Live GPS Alert",
+          text: "I am sharing my live location for safety:",
+          url: url
+        }).catch(() => {});
+      } else {
+        navigator.clipboard.writeText(`🚨 I’m sharing my location for safety:\n${url}`);
+        showToast("Live Google Maps link copied to clipboard!", "fa-copy", "text-teal-400");
+      }
+    }
+
+    function selectCategory(btn, cat) {
+      document.querySelectorAll('.category-btn').forEach(b => {
+        b.classList.remove('active', 'border-amber-400');
+        b.classList.add('border-white/10');
+      });
+      btn.classList.add('active', 'border-amber-400');
+      selectedCat = cat;
+    }
+
+    function submitReport() {
+      const desc = document.getElementById('reportDesc').value.trim();
+      if (!desc) {
+        showToast('Please enter incident details', 'fa-triangle-exclamation', 'text-amber-400');
+        return;
+      }
+      ReportStore.addReport({
+        id: Date.now().toString(),
+        type: selectedCat,
+        desc: desc,
+        time: 'Just now'
+      });
+      document.getElementById('reportDesc').value = '';
+      showToast('Report verified and added to live network!', 'fa-shield-halved', 'text-[#2FE0C9]');
+      navTo('alerts');
+    }
+
+    function renderAlerts() {
+      const container = document.getElementById('alertsContainer');
+      container.innerHTML = '';
+      ReportStore.reports.forEach(r => {
+        const div = document.createElement('div');
+        div.className = 'glass-card p-3.5 border-white/10 hover:border-white/20 transition';
+        div.innerHTML = `
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs font-bold text-amber-300"><i class="fa-solid fa-triangle-exclamation mr-1"></i> ${r.type}</span>
+            <span class="text-[10px] text-slate-500">${r.time}</span>
+          </div>
+          <p class="text-xs text-slate-300">${r.desc}</p>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // AI Chat engine
+    function sendQuickPrompt(text) {
+      document.getElementById('chatInput').value = text;
+      sendMessage();
+    }
+
+    function sendMessage() {
+      const input = document.getElementById('chatInput');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+
+      const chat = document.getElementById('chatHistory');
+      
+      const userDiv = document.createElement('div');
+      userDiv.className = 'flex justify-end';
+      userDiv.innerHTML = `
+        <div class="bg-gradient-to-r from-purple-800 to-indigo-800 p-3 rounded-2xl rounded-tr-sm text-xs text-white max-w-[80%] shadow">
+          ${text}
+        </div>
+      `;
+      chat.appendChild(userDiv);
+
+      const typingDiv = document.createElement('div');
+      typingDiv.className = 'flex gap-2.5 items-start typing-bubble';
+      typingDiv.innerHTML = `
+        <div class="w-7 h-7 rounded-lg bg-[#7B4DFF]/30 text-[#7B4DFF] flex items-center justify-center shrink-0 text-xs">
+          <i class="fa-solid fa-robot"></i>
+        </div>
+        <div class="glass-card p-3 rounded-2xl rounded-tl-sm text-xs text-slate-400">
+          <i class="fa-solid fa-ellipsis animate-pulse"></i> Assistant is typing...
+        </div>
+      `;
+      chat.appendChild(typingDiv);
+      chat.scrollTop = chat.scrollHeight;
+
+      setTimeout(() => {
+        typingDiv.remove();
+        const reply = generateAiReply(text);
+        const botDiv = document.createElement('div');
+        botDiv.className = 'flex gap-2.5 items-start';
+        botDiv.innerHTML = `
+          <div class="w-7 h-7 rounded-lg bg-[#7B4DFF]/30 text-[#7B4DFF] flex items-center justify-center shrink-0 text-xs">
+            <i class="fa-solid fa-robot"></i>
+          </div>
+          <div class="glass-card p-3 rounded-2xl rounded-tl-sm text-xs text-slate-200 max-w-[80%] leading-relaxed border-purple-500/30">
+            ${reply}
+          </div>
+        `;
+        chat.appendChild(botDiv);
+        chat.scrollTop = chat.scrollHeight;
+      }, 700);
+    }
+
+    function generateAiReply(input) {
+      input = input.toLowerCase();
+      if (input.includes('follow')) {
+        return "⚠️ If you suspect you're being followed: Stay calm, do not head home. Turn into a crowded, well-lit store or cafe immediately. Keep your phone in hand and tap SOS if threatened.";
+      } else if (input.includes('unsafe') || input.includes('dark')) {
+        return "🌙 You're not alone. Stick to open main roads with visible traffic. I recommend sharing your live GPS right now via the 'Share Location' tab.";
+      } else if (input.includes('accident')) {
+        return "🚨 Ensure you are in a physically safe spot first. If medical aid is required, dial 108 or 112 from the Emergency tab immediately.";
+      } else {
+        return "I’m right here with you. Can you tell me your immediate surroundings or if you need an emergency contact informed?";
+      }
+    }
+
+    // Live Clock
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById('liveTime').innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }, 1000);
+
+    renderAlerts();
+  </script>
+</body>
+</html>

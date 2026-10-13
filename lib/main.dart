@@ -42,7 +42,14 @@ class _MyAppState extends State<MyApp> {
         '/share': (context) => const ShareLocationPage(),
         '/emergency': (context) => const EmergencyPage(),
         '/about': (context) => const AboutPage(),
+
+        // Route aliases
+        '/community': (context) => const CommunityAlertsPage(),
+        '/chat': (context) => const AiAssistantPage(),
       },
+      onUnknownRoute: (settings) => MaterialPageRoute(
+        builder: (_) => const HomePage(),
+      ),
     );
   }
 }
