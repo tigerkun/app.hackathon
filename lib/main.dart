@@ -9,6 +9,9 @@ import 'pages/community_alerts_page.dart';
 import 'pages/share_location_page.dart';
 import 'pages/emergency_page.dart';
 import 'pages/about_page.dart';
+import 'pages/login_page.dart';
+import 'pages/signup_page.dart';
+import 'pages/auth_pin_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -42,6 +45,10 @@ class _MyAppState extends State<MyApp> {
         '/share': (context) => const ShareLocationPage(),
         '/emergency': (context) => const EmergencyPage(),
         '/about': (context) => const AboutPage(),
+        '/login': (context) => const LoginPage(),
+        '/signup': (context) => const SignupPage(),
+        '/auth-pin': (context) => const AuthPinPage(),
+        '/auth': (context) => const LoginPage(),
 
         // Route aliases
         '/community': (context) => const CommunityAlertsPage(),

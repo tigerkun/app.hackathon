@@ -91,6 +91,20 @@ class AppDrawer extends StatelessWidget {
 
           _drawerItem(
             context,
+            icon: Icons.lock_outline,
+            title: "Account & Security",
+            route: '/login',
+          ),
+
+          _drawerItem(
+            context,
+            icon: Icons.pin,
+            title: "Quick PIN Lock",
+            route: '/auth-pin',
+          ),
+
+          _drawerItem(
+            context,
             icon: Icons.info_outline,
             title: "About",
             route: '/about',

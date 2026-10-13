@@ -1,0 +1,25 @@
+{
+  "name": "safesphere-monorepo",
+  "version": "2.0.0",
+  "description": "SafeSphere - Personal Safety & Community Intelligence Platform Monorepo",
+  "scripts": {
+    "start": "node web_preview/server.js",
+    "preview": "node web_preview/server.js",
+    "backend": "python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload",
+    "test": "python automation/health_check.py",
+    "test:backend": "python -m unittest backend/tests/test_api.py",
+    "test:mobile": "python test/test_r5_permissions_contrast.py",
+    "boost": "powershell -ExecutionPolicy Bypass -File boost.ps1",
+    "automation": "powershell -ExecutionPolicy Bypass -File automation.ps1"
+  },
+  "keywords": [
+    "safesphere",
+    "flutter",
+    "safety",
+    "fastapi",
+    "geolocator",
+    "emergency"
+  ],
+  "author": "SafeSphere Team",
+  "license": "MIT"
+}

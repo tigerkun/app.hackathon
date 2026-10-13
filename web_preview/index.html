@@ -93,6 +93,9 @@
         </div>
       </div>
       <div class="flex items-center gap-2">
+        <button onclick="toggleAuthModal()" class="p-2 text-slate-300 hover:text-white rounded-lg hover:bg-white/5 transition" title="Security PIN & Account">
+          <i class="fa-solid fa-user-shield text-[#2FE0C9]"></i>
+        </button>
         <button onclick="navTo('alerts')" class="relative p-2 text-slate-300 hover:text-white rounded-lg hover:bg-white/5">
           <i class="fa-solid fa-bell"></i>
           <span id="headerBadge" class="absolute top-1 right-1 w-2.5 h-2.5 bg-[#FF4C4C] rounded-full"></span>
@@ -147,6 +150,79 @@
       </div>
     </nav>
     <div id="drawerOverlay" onclick="toggleDrawer()" class="absolute inset-0 bg-black/60 z-40 hidden backdrop-blur-sm transition-opacity"></div>
+
+    <!-- Auth & Security Profile Modal -->
+    <div id="authModal" class="fixed inset-0 bg-black/75 z-50 hidden backdrop-blur-md flex items-center justify-center p-4">
+      <div class="glass-card w-full max-w-sm p-6 relative border border-white/20 shadow-2xl rounded-2xl bg-[#0D1528]/95">
+        <button onclick="toggleAuthModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#2FE0C9] to-[#7B4DFF] flex items-center justify-center text-slate-900 shadow-md">
+            <i class="fa-solid fa-user-shield text-lg"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base">Account & Security</h3>
+            <p id="authSubtitle" class="text-xs text-slate-400">Authenticated Guardian Session</p>
+          </div>
+        </div>
+
+        <div id="authContent" class="space-y-4">
+          <!-- Session Status Card -->
+          <div class="p-3 bg-white/5 rounded-xl border border-white/10 text-xs">
+            <div class="flex justify-between items-center mb-1">
+              <span class="text-slate-400">Citizen ID:</span>
+              <span id="authUserId" class="font-mono text-[#2FE0C9]">user_safesphere_demo_01</span>
+            </div>
+            <div class="flex justify-between items-center mb-1">
+              <span class="text-slate-400">Emergency Contact:</span>
+              <span class="text-white font-medium">National Emergency (112)</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-slate-400">Backend API:</span>
+              <span id="apiStatusBadge" class="px-2 py-0.5 rounded-full text-[10px] bg-green-500/20 text-green-400">Connected (:8000)</span>
+            </div>
+          </div>
+
+          <!-- PIN Unlock Section -->
+          <div class="p-3 bg-white/5 rounded-xl border border-white/10">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-xs font-semibold text-slate-200">Safety PIN Verification</span>
+              <span class="text-[10px] text-[#2FE0C9]">Active (1234)</span>
+            </div>
+            <div class="flex gap-2">
+              <input type="password" id="pinInput" maxlength="4" placeholder="Enter PIN" class="flex-1 bg-black/40 border border-white/20 rounded-lg px-3 py-1.5 text-center text-sm text-white tracking-widest focus:outline-none focus:border-[#2FE0C9]">
+              <button onclick="verifyWebPin()" class="px-3 py-1.5 bg-[#3A7BFF] hover:bg-blue-600 rounded-lg text-xs font-bold text-white transition">Verify</button>
+            </div>
+            <p id="pinFeedback" class="text-[10px] text-slate-400 mt-1"></p>
+          </div>
+
+          <!-- Biometric Simulation Toggle -->
+          <div class="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10 text-xs">
+            <div class="flex items-center gap-2.5">
+              <i class="fa-solid fa-fingerprint text-[#7B4DFF] text-base"></i>
+              <div>
+                <div class="font-semibold text-white">Biometric Quick Auth</div>
+                <div class="text-[10px] text-slate-400">TouchID / FaceID ready</div>
+              </div>
+            </div>
+            <button onclick="simulateBiometricAuth()" class="px-2.5 py-1 bg-[#7B4DFF]/30 hover:bg-[#7B4DFF]/50 text-[#7B4DFF] hover:text-white rounded-lg text-[11px] font-medium transition">
+              Simulate
+            </button>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex gap-2 pt-2">
+            <button onclick="resetAuthSession()" class="flex-1 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl text-xs font-semibold border border-red-500/30 transition">
+              Sign Out / Lock
+            </button>
+            <button onclick="toggleAuthModal()" class="flex-1 py-2 bg-[#2FE0C9]/20 hover:bg-[#2FE0C9]/30 text-[#2FE0C9] rounded-xl text-xs font-semibold border border-[#2FE0C9]/30 transition">
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Main Dynamic Screen Container -->
     <main id="screenContainer" class="flex-1 overflow-y-auto custom-scroll p-4 pb-20">
@@ -879,6 +955,35 @@
       const now = new Date();
       document.getElementById('liveTime').innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }, 1000);
+
+    function toggleAuthModal() {
+      const modal = document.getElementById('authModal');
+      modal.classList.toggle('hidden');
+    }
+
+    function verifyWebPin() {
+      const pin = document.getElementById('pinInput').value;
+      const feedback = document.getElementById('pinFeedback');
+      if (pin === '1234') {
+        feedback.innerText = '✅ PIN Verified. Elevated crisis access granted.';
+        feedback.className = 'text-[10px] text-green-400 mt-1';
+        setTimeout(() => { toggleAuthModal(); }, 800);
+      } else {
+        feedback.innerText = '❌ Incorrect PIN. Try 1234 or reset.';
+        feedback.className = 'text-[10px] text-red-400 mt-1';
+      }
+    }
+
+    function simulateBiometricAuth() {
+      showToast('Biometric sensor scanned: Biometrics verified ✅');
+      setTimeout(() => { toggleAuthModal(); }, 600);
+    }
+
+    function resetAuthSession() {
+      showToast('Session locked. Enter PIN or password to resume.');
+      document.getElementById('authUserId').innerText = 'Locked / Anonymous';
+      document.getElementById('authSubtitle').innerText = 'Session Locked';
+    }
 
     renderAlerts();
   </script>

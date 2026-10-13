@@ -1,0 +1,93 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SafeSphere Emergency & Personal Safety API Contract",
+    "version": "1.0.0",
+    "description": "Standardized schema contract for SafeSphere Flutter client, Web Preview client, and FastAPI backend."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8000/api/v1",
+      "description": "Local Development Server"
+    }
+  ],
+  "paths": {
+    "/auth/signup": {
+      "post": {
+        "summary": "Register new citizen account",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "name", "phone", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "name": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "password": { "type": "string" },
+                  "pin": { "type": "string" },
+                  "emergency_contacts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": { "type": "string" },
+                        "phone": { "type": "string" },
+                        "relationship": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Login with email or phone and password"
+      }
+    },
+    "/auth/login-pin": {
+      "post": {
+        "summary": "Quick unlock with 4-digit PIN"
+      }
+    },
+    "/auth/biometrics/login": {
+      "post": {
+        "summary": "Biometric hardware signature exchange"
+      }
+    },
+    "/sos/trigger": {
+      "post": {
+        "summary": "Broadcast critical SOS alert and dispatch contacts"
+      }
+    },
+    "/sos/active": {
+      "get": {
+        "summary": "Retrieve active emergency incidents"
+      }
+    },
+    "/reports": {
+      "get": {
+        "summary": "List crowd-sourced safety incident reports"
+      },
+      "post": {
+        "summary": "Submit a safety incident report"
+      }
+    },
+    "/markers/nearby": {
+      "get": {
+        "summary": "Find verified safe zones and police stations near coordinates"
+      }
+    },
+    "/location/share-session": {
+      "post": {
+        "summary": "Generate live tracking URL for family/friends"
+      }
+    }
+  }
+}
