@@ -1,0 +1,18 @@
+/**
+ * Location Tracking Routes
+ * Express routes for /api/v1/location/*
+ */
+
+const express = require('express');
+const locationController = require('../controllers/locationController');
+const { optionalAuth } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.post('/share-session', optionalAuth, locationController.shareSession);
+router.get('/track/:sessionId', locationController.getTrack);
+router.post('/ping', locationController.ping);
+router.post('/terminate/:sessionId', locationController.terminate);
+router.post('/terminate', locationController.terminate);
+
+module.exports = router;

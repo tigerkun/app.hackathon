@@ -24,6 +24,7 @@ function createUser({
   phone,
   passwordHash,
   pin = null,
+  pinHash = null,
   biometricToken = null,
   biometricsEnabled = false,
   emergencyContacts = [],
@@ -31,13 +32,15 @@ function createUser({
   createdAt = new Date().toISOString(),
   updatedAt = new Date().toISOString()
 }) {
+  const resolvedPin = pinHash || pin || null;
   return {
     id,
     name: (name || '').trim(),
     email: normalizeEmail(email),
     phone: normalizePhone(phone),
     passwordHash,
-    pin: pin ? String(pin).trim() : null,
+    pin: resolvedPin ? String(resolvedPin).trim() : null,
+    pinHash: resolvedPin ? String(resolvedPin).trim() : null,
     biometricToken: biometricToken ? String(biometricToken).trim() : null,
     biometricsEnabled: Boolean(biometricsEnabled),
     emergencyContacts: Array.isArray(emergencyContacts) ? emergencyContacts : [],
@@ -54,7 +57,7 @@ function toSafeUser(user) {
     name: user.name,
     email: user.email,
     phone: user.phone,
-    hasPin: Boolean(user.pin),
+    hasPin: Boolean(user.pin || user.pinHash),
     biometricsEnabled: Boolean(user.biometricsEnabled),
     emergencyContacts: user.emergencyContacts || [],
     isActive: user.isActive,

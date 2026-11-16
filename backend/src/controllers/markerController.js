@@ -44,7 +44,7 @@ function list(req, res, next) {
 
 function nearby(req, res, next) {
   try {
-    const { lat, lon, latitude, longitude, radius } = req.query;
+    const { lat, lon, latitude, longitude, radius, category, type } = req.query;
     const targetLat = lat || latitude;
     const targetLon = lon || longitude;
 
@@ -59,7 +59,13 @@ function nearby(req, res, next) {
       });
     }
 
-    const allMarkers = db.getAllMarkers();
+    let allMarkers = db.getAllMarkers();
+    const filterCat = category || type;
+    if (filterCat) {
+      allMarkers = allMarkers.filter(m =>
+        m.category && m.category.toLowerCase().includes(String(filterCat).toLowerCase())
+      );
+    }
     const nearbyMarkers = findNearby(allMarkers, targetLat, targetLon, radius || 10);
 
     res.status(200).json({
@@ -87,11 +93,24 @@ function create(req, res, next) {
       });
     }
 
+    const latNum = Number(latitude);
+    const lonNum = Number(longitude);
+    if (isNaN(latNum) || isNaN(lonNum) || latNum < -90 || latNum > 90 || lonNum < -180 || lonNum > 180) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'latitude must be between -90 and 90, and longitude between -180 and 180',
+          details: []
+        }
+      });
+    }
+
     const marker = createMarker({
       name,
       category,
-      latitude,
-      longitude,
+      latitude: latNum,
+      longitude: lonNum,
       address,
       isVerified: isVerified !== undefined ? isVerified : true
     });

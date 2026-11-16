@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:share_plus/share_plus.dart';
+import '../services/auth_service.dart';
 
 
 
@@ -114,7 +117,41 @@ class EmergencyPage extends StatelessWidget {
 
               // 🟢 I'M SAFE
               OutlinedButton.icon(
-                onPressed: () {},
+                onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  final authService = AuthService.instance;
+                  final activeSosId = await authService.getActiveSosId();
+
+                  if (activeSosId == null || activeSosId.isEmpty) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text("No active emergency SOS session to resolve."),
+                      ),
+                    );
+                    return;
+                  }
+
+                  final success = await authService.resolveSos(
+                    alertId: activeSosId,
+                    notes: 'Resolved by user directly in Emergency screen',
+                  );
+
+                  if (success) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text("Active SOS alert marked resolved and broadcast updated."),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  } else {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text("Could not resolve SOS alert with server. Please check connection."),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                  }
+                },
                 icon: const Icon(Icons.check_circle, color: Colors.green),
                 label: const Text("I'm Safe Now"),
                 style: OutlinedButton.styleFrom(
@@ -329,8 +366,7 @@ class EmergencyPage extends StatelessWidget {
       builder: (_) => AlertDialog(
         title: const Text("Send Alert Message"),
         content: const Text(
-          "I may need help. Please try to contact me.\n"
-              "Last known location: Your Area",
+          "This will dispatch a real-time SOS broadcast with your verified device GPS coordinates and open SMS/Share to notify your contacts.",
         ),
         actions: [
           TextButton(
@@ -338,8 +374,75 @@ class EmergencyPage extends StatelessWidget {
             child: const Text("Cancel"),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Share"),
+            onPressed: () async {
+              Navigator.pop(context);
+              final messenger = ScaffoldMessenger.of(context);
+
+              double? lat;
+              double? lng;
+              double? acc;
+
+              try {
+                LocationPermission permission = await Geolocator.checkPermission();
+                if (permission == LocationPermission.denied) {
+                  permission = await Geolocator.requestPermission();
+                }
+
+                if (permission == LocationPermission.whileInUse ||
+                    permission == LocationPermission.always) {
+                  final position = await Geolocator.getCurrentPosition(
+                    desiredAccuracy: LocationAccuracy.high,
+                    timeLimit: const Duration(seconds: 5),
+                  );
+                  lat = position.latitude;
+                  lng = position.longitude;
+                  acc = position.accuracy;
+                }
+              } catch (_) {}
+
+              if (lat == null || lng == null) {
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text("Cannot dispatch SOS without GPS fix. Please enable device location."),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                return;
+              }
+
+              // 1. Dispatch real HTTP POST /api/v1/sos/trigger to SafeSphere backend
+              final authService = AuthService.instance;
+              final result = await authService.triggerSos(
+                latitude: lat,
+                longitude: lng,
+                accuracy: acc,
+                alertType: 'CRITICAL_SOS',
+                notes: 'Manual alert triggered from Emergency screen',
+              );
+
+              final locationUrl = "https://www.google.com/maps?q=$lat,$lng";
+              final alertMsg = "🚨 [SafeSphere EMERGENCY ALERT] I need immediate help. My current live location is:\n$locationUrl";
+
+              // 2. Open native SMS / messaging share intent
+              await Share.share(alertMsg);
+
+              if (result != null) {
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text("Emergency SOS broadcast to monitoring channel and shared."),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } else {
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text("Location shared via SMS (Backend broadcast offline)."),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
+            },
+            child: const Text("Dispatch & Share"),
           ),
         ],
       ),

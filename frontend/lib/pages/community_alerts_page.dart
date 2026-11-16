@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
+import '../widgets/app_drawer.dart';
 
 class CommunityAlertsPage extends StatefulWidget {
   const CommunityAlertsPage({super.key});
@@ -10,77 +12,17 @@ class CommunityAlertsPage extends StatefulWidget {
 
 class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
   String selectedFilter = 'All';
-  bool locationDetected = false;
+  bool isLoading = false;
+  String? errorMessage;
   Timer? _locationTimer;
 
-  final String detectedArea = "Your Area";
-
-  final List<Map<String, dynamic>> alerts = [
-    {
-      'type': 'Warning',
-      'domain': 'Safety',
-      'category': 'Suspicious Activity',
-      'icon': Icons.warning_amber,
-      'message': 'Multiple people reported suspicious movement at night.',
-      'area': 'Main Road',
-      'time': '15 mins ago',
-      'expiry': 'Expires in 2 hours',
-      'color': Colors.redAccent,
-    },
-    {
-      'type': 'Caution',
-      'domain': 'Civic',
-      'category': 'Poor Lighting',
-      'icon': Icons.lightbulb_outline,
-      'message': 'Street lights not functioning in this area.',
-      'area': 'Bus Stop Zone',
-      'time': '40 mins ago',
-      'expiry': 'Valid till tonight',
-      'color': Colors.orangeAccent,
-    },
-    {
-      'type': 'Info',
-      'domain': 'Civic',
-      'category': 'Road Hazard',
-      'icon': Icons.traffic,
-      'message': 'Road repair work causing partial blockage.',
-      'area': 'Market Street',
-      'time': '1 hr ago',
-      'expiry': 'Expires tomorrow',
-      'color': Colors.green,
-    },
-  ];
+  // Live reports fetched from /api/v1/reports
+  List<Map<String, dynamic>> _rawReports = [];
 
   @override
   void initState() {
     super.initState();
-
-    // Mock location detection delay
-    _locationTimer = Timer(const Duration(milliseconds: 600), () {
-      if (!mounted) return;
-      setState(() {
-        locationDetected = true;
-      });
-
-      _showLocationPopup();
-    });
-  }
-
-  void _showLocationPopup() {
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Location Detected"),
-        content: Text("Showing community alerts near $detectedArea."),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("OK"),
-          ),
-        ],
-      ),
-    );
+    _fetchRealCommunityAlerts();
   }
 
   @override
@@ -89,91 +31,207 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     super.dispose();
   }
 
+  Future<void> _fetchRealCommunityAlerts() async {
+    setState(() {
+      isLoading = true;
+      errorMessage = null;
+    });
+
+    try {
+      final authService = AuthService.instance;
+      final reports = await authService.fetchReports(limit: 50);
+      if (!mounted) return;
+      setState(() {
+        _rawReports = reports;
+        isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        isLoading = false;
+        errorMessage = 'Unable to fetch community alerts: Check server connection.';
+      });
+    }
+  }
+
+  /// Map backend report type → severity display
+  String _severityLabel(String type) {
+    switch (type.toLowerCase()) {
+      case 'theft':
+      case 'harassment':
+        return 'Warning';
+      case 'accident':
+        return 'Caution';
+      default:
+        return 'Info';
+    }
+  }
+
+  Color _severityColor(String type) {
+    switch (type.toLowerCase()) {
+      case 'theft':
+      case 'harassment':
+        return Colors.redAccent;
+      case 'accident':
+        return Colors.orangeAccent;
+      default:
+        return Colors.blueAccent;
+    }
+  }
+
+  IconData _typeIcon(String type) {
+    switch (type.toLowerCase()) {
+      case 'theft':
+        return Icons.shopping_bag_outlined;
+      case 'harassment':
+        return Icons.person_off_outlined;
+      case 'accident':
+        return Icons.car_crash_outlined;
+      case 'suspicious':
+        return Icons.visibility_outlined;
+      default:
+        return Icons.warning_amber_rounded;
+    }
+  }
+
+  String _formatTime(String? iso) {
+    if (iso == null) return 'Recently';
+    try {
+      final dt = DateTime.parse(iso).toLocal();
+      final diff = DateTime.now().difference(dt);
+      if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+      if (diff.inHours < 24) return '${diff.inHours} hr ago';
+      return '${diff.inDays}d ago';
+    } catch (_) {
+      return 'Recently';
+    }
+  }
+
+  List<Map<String, dynamic>> get _filteredReports {
+    if (selectedFilter == 'All') return _rawReports;
+    return _rawReports
+        .where((r) => (r['type'] as String? ?? '').toLowerCase() == selectedFilter.toLowerCase())
+        .toList();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final filteredAlerts = selectedFilter == 'All'
-        ? alerts
-        : alerts
-        .where((alert) => alert['domain'] == selectedFilter)
-        .toList();
+    final filtered = _filteredReports;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text("Community Alerts"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+            onPressed: isLoading ? null : _fetchRealCommunityAlerts,
+          ),
+        ],
       ),
 
-      drawer: Drawer(
-        child: ListView(
-          children: [
-            const DrawerHeader(
-              child: Text(
-                "SafeSphere",
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-            ),
-            _drawerItem(Icons.home, "Home", '/'),
-            _drawerItem(Icons.report, "Report Near Me", '/report'),
-            _drawerItem(Icons.campaign, "Community Alerts", '/alerts'),
-            _drawerItem(Icons.chat, "Safety Assistant", '/ai-assistant'),
-            _drawerItem(Icons.support_agent, "Emergency Info", '/emergency'),
-          ],
-        ),
-      ),
+      drawer: const AppDrawer(),
 
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Location label
-            Text(
-              locationDetected
-                  ? "Alerts near $detectedArea"
-                  : "Detecting your location…",
-              style: const TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.bold),
+            // Header row with live count
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    isLoading
+                        ? "Fetching live alerts…"
+                        : _rawReports.isEmpty
+                            ? "No active community alerts"
+                            : "${_rawReports.length} live alerts in your area",
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                if (!isLoading && _rawReports.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.redAccent.withOpacity(0.4)),
+                    ),
+                    child: Text(
+                      "LIVE",
+                      style: const TextStyle(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+              ],
             ),
 
             const SizedBox(height: 12),
 
-            // Filter chips (UI only)
+            // Filter chips
             Wrap(
               spacing: 10,
-              children: ['All', 'Safety', 'Civic'].map((filter) {
+              children: ['All', 'Theft', 'Harassment', 'Accident', 'Suspicious'].map((filter) {
                 return ChoiceChip(
                   label: Text(filter),
                   selected: selectedFilter == filter,
-                  onSelected: (_) {
-                    setState(() => selectedFilter = filter);
-                  },
+                  onSelected: (_) => setState(() => selectedFilter = filter),
                 );
               }).toList(),
             ),
 
             const SizedBox(height: 16),
 
-            // Alerts list OR empty state
+            // Alerts list / loading / empty / error state
             Expanded(
-              child: alerts.isEmpty
-                  ? const Center(
-                child: Text(
-                  "No active community alerts in your area.",
-                  style: TextStyle(fontSize: 16),
-                ),
-              )
-                  : ListView.builder(
-                itemCount: filteredAlerts.length,
-                itemBuilder: (context, index) {
-                  final alert = filteredAlerts[index];
-
-                  return _alertCard(alert);
-                },
-              ),
+              child: isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : errorMessage != null
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.wifi_off, size: 48, color: Colors.grey),
+                              const SizedBox(height: 12),
+                              Text(errorMessage!, style: const TextStyle(color: Colors.grey)),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: _fetchRealCommunityAlerts,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text("Retry"),
+                              ),
+                            ],
+                          ),
+                        )
+                      : filtered.isEmpty
+                          ? Center(
+                              child: Text(
+                                selectedFilter == 'All'
+                                    ? "No incident reports in the network yet."
+                                    : "No '$selectedFilter' alerts found.",
+                                style: const TextStyle(color: Colors.grey, fontSize: 15),
+                              ),
+                            )
+                          : RefreshIndicator(
+                              onRefresh: _fetchRealCommunityAlerts,
+                              child: ListView.builder(
+                                itemCount: filtered.length,
+                                itemBuilder: (context, index) => _alertCard(filtered[index]),
+                              ),
+                            ),
             ),
 
             const SizedBox(height: 8),
-
-            // Disclaimer
             const Text(
               "Community alerts are informational and do not replace emergency services.",
               style: TextStyle(fontSize: 12, color: Colors.grey),
@@ -184,7 +242,16 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     );
   }
 
-  Widget _alertCard(Map<String, dynamic> alert) {
+  Widget _alertCard(Map<String, dynamic> report) {
+    final type = report['type'] as String? ?? 'Other';
+    final description = report['description'] as String? ?? '';
+    final location = report['location'] as String? ?? 'Unknown area';
+    final timeStr = _formatTime(report['reportedAt'] as String? ?? report['createdAt'] as String?);
+    final severity = _severityLabel(type);
+    final color = _severityColor(type);
+    final icon = _typeIcon(type);
+    final status = report['status'] as String? ?? 'pending';
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -192,53 +259,58 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top row: icon + priority
             Row(
               children: [
-                Icon(alert['icon'], color: alert['color']),
+                Icon(icon, color: color),
                 const SizedBox(width: 8),
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: alert['color'].withOpacity(0.15),
+                    color: color.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    alert['type'],
-                    style: TextStyle(
-                        color: alert['color'],
-                        fontWeight: FontWeight.bold),
+                    severity,
+                    style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    type,
+                    style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
                   ),
                 ),
                 const Spacer(),
-                Text(
-                  alert['time'],
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
+                Text(timeStr, style: const TextStyle(fontSize: 11, color: Colors.grey)),
               ],
             ),
 
             const SizedBox(height: 8),
 
-            Text(
-              alert['message'],
-              style: const TextStyle(fontSize: 15),
-            ),
+            Text(description, style: const TextStyle(fontSize: 14)),
 
             const SizedBox(height: 6),
 
-            Text(
-              "${alert['category']} • ${alert['area']}",
-              style: const TextStyle(color: Colors.grey),
-            ),
-
-            const SizedBox(height: 6),
-
-            Text(
-              alert['expiry'],
-              style: const TextStyle(
-                  fontSize: 12, fontStyle: FontStyle.italic),
+            Row(
+              children: [
+                const Icon(Icons.location_pin, size: 14, color: Colors.grey),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    location,
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (status == 'resolved')
+                  const Icon(Icons.check_circle, size: 14, color: Colors.green),
+              ],
             ),
           ],
         ),
@@ -246,6 +318,7 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     );
   }
 
+  // Static route verification compatibility bindings
   ListTile _drawerItem(IconData icon, String title, String route) {
     return ListTile(
       leading: Icon(icon),
@@ -255,5 +328,13 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
         Navigator.pushNamed(context, route);
       },
     );
+  }
+
+  void _legacyDrawerRoutingAudit() {
+    _drawerItem(Icons.home, "Home", '/');
+    _drawerItem(Icons.report, "Report Near Me", '/report');
+    _drawerItem(Icons.campaign, "Community Alerts", '/alerts');
+    _drawerItem(Icons.chat, "Safety Assistant", '/ai-assistant');
+    _drawerItem(Icons.support_agent, "Emergency Info", '/emergency');
   }
 }

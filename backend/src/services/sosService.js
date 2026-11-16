@@ -32,7 +32,10 @@ function triggerSos({
   if (userId) {
     const user = db.findUserById(userId);
     if (user) {
-      contactsNotified = (user.emergencyContacts || []).length;
+      // NOTE: contactsNotified indicates actual dispatched notifications.
+      // In local mode without SMS/Twilio API keys configured, this remains 0 until real SMS gateway is wired.
+      // TODO(REAL_SMS_GATEWAY): Integrate Twilio / AWS SNS SMS dispatch for user.emergencyContacts
+      contactsNotified = 0;
       if (!finalUserName) finalUserName = user.name;
       if (!finalUserPhone) finalUserPhone = user.phone;
     }

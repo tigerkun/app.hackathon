@@ -19,6 +19,15 @@ try {
   // Fallback to precomputed valid bcrypt hash
 }
 
+const DEMO_PIN = '1234';
+let DEMO_PIN_HASH = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+
+try {
+  DEMO_PIN_HASH = bcrypt.hashSync(DEMO_PIN, config.saltRounds);
+} catch (e) {
+  // Fallback to precomputed valid bcrypt hash
+}
+
 function getSeedData() {
   const now = new Date().toISOString();
 
@@ -28,7 +37,8 @@ function getSeedData() {
     email: 'demo@safesphere.org',
     phone: '+91 9876543210',
     passwordHash: DEMO_PASSWORD_HASH,
-    pin: '1234',
+    pin: DEMO_PIN_HASH,
+    pinHash: DEMO_PIN_HASH,
     biometricToken: 'bio_device_demo_token_xyz987',
     biometricsEnabled: true,
     emergencyContacts: [
@@ -135,5 +145,7 @@ function getSeedData() {
 module.exports = {
   getSeedData,
   DEMO_PASSWORD,
-  DEMO_PASSWORD_HASH
+  DEMO_PASSWORD_HASH,
+  DEMO_PIN,
+  DEMO_PIN_HASH
 };

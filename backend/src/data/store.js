@@ -6,6 +6,7 @@
 
 const { getSeedData } = require('./seedData');
 const { normalizeEmail, normalizePhone } = require('../models/userModel');
+const config = require('../config');
 
 class DataStore {
   constructor() {
@@ -15,6 +16,7 @@ class DataStore {
     this.markers = new Map();
     this.alerts = new Map();
     this.otps = new Map();
+    this.trackingSessions = new Map();
 
     this.init();
   }
@@ -23,18 +25,23 @@ class DataStore {
     this.reset();
   }
 
-  reset() {
+  reset(options = {}) {
     this.users.clear();
     this.sessions.clear();
     this.reports.clear();
     this.markers.clear();
     this.alerts.clear();
     this.otps.clear();
+    this.trackingSessions.clear();
 
     const seed = getSeedData();
 
-    // Seed Demo User
-    if (seed.demoUser) {
+    // Gate demo user seeding
+    const shouldSeedDemo = (options && options.demoMode !== undefined)
+      ? Boolean(options.demoMode)
+      : Boolean(config.isDemoMode);
+
+    if (seed.demoUser && shouldSeedDemo) {
       this.users.set(seed.demoUser.id, { ...seed.demoUser });
     }
 
@@ -322,6 +329,89 @@ class DataStore {
     if (!phone) return false;
     const normalized = normalizePhone(phone);
     return this.otps.delete(normalized);
+  }
+
+  // ==========================================
+  // Live Tracking Session Repository
+  // ==========================================
+
+  findTrackingSessionById(id) {
+    if (!id) return null;
+    const session = this.trackingSessions.get(id);
+    if (!session) return null;
+
+    // Check expiration if still marked active
+    if (session.status === 'active' && session.expiresAt && new Date(session.expiresAt) < new Date()) {
+      session.status = 'expired';
+    }
+
+    return {
+      ...session,
+      breadcrumbs: (session.breadcrumbs || []).map((b) => ({ ...b }))
+    };
+  }
+
+  saveTrackingSession(session) {
+    if (!session || !session.id) throw new Error('Tracking session must have an ID');
+    const toSave = {
+      ...session,
+      updatedAt: new Date().toISOString()
+    };
+    this.trackingSessions.set(session.id, toSave);
+    return {
+      ...toSave,
+      breadcrumbs: (toSave.breadcrumbs || []).map((b) => ({ ...b }))
+    };
+  }
+
+  updateTrackingSession(id, updates) {
+    const existing = this.trackingSessions.get(id);
+    if (!existing) return null;
+    const updated = {
+      ...existing,
+      ...updates,
+      id: existing.id,
+      updatedAt: new Date().toISOString()
+    };
+    this.trackingSessions.set(id, updated);
+    return {
+      ...updated,
+      breadcrumbs: (updated.breadcrumbs || []).map((b) => ({ ...b }))
+    };
+  }
+
+  addTrackingBreadcrumb(id, breadcrumb) {
+    const existing = this.trackingSessions.get(id);
+    if (!existing) return null;
+
+    const point = {
+      latitude: Number(breadcrumb.latitude),
+      longitude: Number(breadcrumb.longitude),
+      speed: breadcrumb.speed !== undefined && breadcrumb.speed !== null ? Number(breadcrumb.speed) : 0,
+      battery: breadcrumb.battery !== undefined && breadcrumb.battery !== null ? Number(breadcrumb.battery) : null,
+      accuracy: breadcrumb.accuracy !== undefined && breadcrumb.accuracy !== null ? Number(breadcrumb.accuracy) : null,
+      timestamp: breadcrumb.timestamp || new Date().toISOString()
+    };
+
+    if (!Array.isArray(existing.breadcrumbs)) {
+      existing.breadcrumbs = [];
+    }
+    existing.breadcrumbs.push(point);
+    existing.currentLocation = { ...point };
+    existing.updatedAt = new Date().toISOString();
+
+    this.trackingSessions.set(id, existing);
+    return {
+      ...existing,
+      breadcrumbs: existing.breadcrumbs.map((b) => ({ ...b }))
+    };
+  }
+
+  getAllTrackingSessions() {
+    return Array.from(this.trackingSessions.values()).map((s) => ({
+      ...s,
+      breadcrumbs: (s.breadcrumbs || []).map((b) => ({ ...b }))
+    }));
   }
 }
 

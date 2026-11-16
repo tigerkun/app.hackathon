@@ -1,0 +1,152 @@
+/**
+ * Location Controller
+ * REST API handlers for live guardian tracking sessions, coordinates pings, and retrieval.
+ */
+
+const trackingService = require('../services/trackingService');
+
+function shareSession(req, res, next) {
+  try {
+    const body = req.body || {};
+    const latitude = body.latitude;
+    const longitude = body.longitude;
+    const accuracy = body.accuracy;
+    const speed = body.speed;
+    const battery = body.battery !== undefined ? body.battery : body.batteryLevel;
+    const durationMinutes = body.durationMinutes || body.duration_minutes || 60;
+    const metadata = body.metadata || {};
+
+    const userId = req.user ? req.user.id : (body.userId || body.user_id || null);
+    const userName = req.user ? req.user.name : (body.userName || body.user_name || 'SafeSphere Citizen');
+
+    const result = trackingService.createShareSession({
+      userId,
+      userName,
+      latitude,
+      longitude,
+      accuracy,
+      speed,
+      battery,
+      durationMinutes,
+      metadata,
+      baseUrl: body.baseUrl || 'http://127.0.0.1:8080'
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Tracking session created successfully',
+      sessionId: result.sessionId,
+      token: result.token,
+      shareUrl: result.shareUrl,
+      expiresAt: result.expiresAt,
+      data: {
+        sessionId: result.sessionId,
+        token: result.token,
+        shareUrl: result.shareUrl,
+        expiresAt: result.expiresAt,
+        session: result.session
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function getTrack(req, res, next) {
+  try {
+    const { sessionId } = req.params;
+    const session = trackingService.getTrackingSession(sessionId);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        session,
+        sessionId: session.id,
+        userName: session.userName,
+        status: session.status,
+        currentLocation: session.currentLocation,
+        breadcrumbs: session.breadcrumbs,
+        createdAt: session.createdAt,
+        expiresAt: session.expiresAt
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function ping(req, res, next) {
+  try {
+    const body = req.body || {};
+    const sessionId = body.sessionId || body.session_id;
+    const latitude = body.latitude;
+    const longitude = body.longitude;
+    const speed = body.speed;
+    const battery = body.battery !== undefined ? body.battery : body.batteryLevel;
+    const accuracy = body.accuracy;
+    const timestamp = body.timestamp;
+
+    const result = trackingService.recordPing({
+      sessionId,
+      latitude,
+      longitude,
+      speed,
+      battery,
+      accuracy,
+      timestamp
+    });
+
+    // Relay location update to active WebSocket guardian subscribers
+    try {
+      const { broadcastLocationUpdate } = require('../server');
+      if (typeof broadcastLocationUpdate === 'function') {
+        broadcastLocationUpdate(sessionId, result.currentLocation);
+      }
+    } catch (_) {}
+
+    res.status(200).json({
+      success: true,
+      message: 'Location ping recorded',
+      data: {
+        sessionId: result.sessionId,
+        currentLocation: result.currentLocation,
+        pointCount: result.pointCount,
+        timestamp: result.currentLocation.timestamp
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function terminate(req, res, next) {
+  try {
+    const sessionId = req.params.sessionId || (req.body && (req.body.sessionId || req.body.session_id));
+    const reason = req.body && req.body.reason;
+
+    const session = trackingService.terminateTrackingSession(sessionId, reason);
+
+    // Relay stream termination to active WebSocket subscribers
+    try {
+      const { broadcastStreamTerminate } = require('../server');
+      if (typeof broadcastStreamTerminate === 'function') {
+        broadcastStreamTerminate(sessionId, reason);
+      }
+    } catch (_) {}
+
+    res.status(200).json({
+      success: true,
+      message: 'Tracking session terminated',
+      data: session
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  shareSession,
+  getTrack,
+  ping,
+  terminate
+};

@@ -11,10 +11,10 @@ const { validateSosTrigger } = require('../middleware/validation');
 const router = express.Router();
 
 router.post('/trigger', optionalAuth, validateSosTrigger, alertController.trigger);
-router.get('/active', alertController.active);
-router.get('/', alertController.list);
-router.post('/resolve', alertController.resolve);
-router.post('/:id/resolve', alertController.resolve);
-router.get('/:id', alertController.getById);
+router.get('/active', optionalAuth, alertController.active);
+router.get('/', optionalAuth, alertController.list);
+router.post('/resolve', optionalAuth, alertController.resolve);
+router.post('/:id/resolve', optionalAuth, alertController.resolve);
+router.get('/:id', optionalAuth, alertController.getById);
 
 module.exports = router;

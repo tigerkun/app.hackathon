@@ -1,10 +1,13 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_drawer.dart';
 import '../theme/app_colors.dart';
-import '../services/map_config.dart';
+import '../services/auth_service.dart';
 
 class ShareLocationPage extends StatefulWidget {
   const ShareLocationPage({super.key});
@@ -14,12 +17,28 @@ class ShareLocationPage extends StatefulWidget {
 }
 
 class _ShareLocationPageState extends State<ShareLocationPage> {
+  // ── GPS state ──────────────────────────────────────────────────────────────
   bool _isLoading = false;
   double? _latitude;
   double? _longitude;
   double? _accuracy;
-  bool _isFallback = false;
   DateTime? _lastUpdated;
+
+  // ── Live tracking session state ────────────────────────────────────────────
+  bool _isTracking = false;
+  bool _isStartingSession = false;
+  String? _sessionId;
+  String? _sessionToken;
+  String? _shareUrl;
+  int _pingCount = 0;
+
+  Timer? _pingTimer;
+  StreamSubscription<Position>? _positionStream;
+  WebSocket? _ws;
+
+  // ── Backend base URL (matches AuthService) ─────────────────────────────────
+  static const String _backendBase = 'http://127.0.0.1:3000';
+  static const String _wsUrl = 'ws://127.0.0.1:3000/ws/sos';
 
   @override
   void initState() {
@@ -27,134 +46,310 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
     _fetchCurrentLocation();
   }
 
+  @override
+  void dispose() {
+    _stopTracking(notify: false);
+    super.dispose();
+  }
+
+  // ── GPS Acquisition ────────────────────────────────────────────────────────
   Future<void> _fetchCurrentLocation() async {
+    if (_isLoading) return;
     setState(() => _isLoading = true);
 
-    double? lat;
-    double? lng;
-    double? acc;
-    bool fallback = false;
+    double? lat, lng, acc;
 
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        fallback = true;
-      } else {
-        LocationPermission permission = await Geolocator.checkPermission();
-        if (permission == LocationPermission.denied) {
-          permission = await Geolocator.requestPermission();
+      if (serviceEnabled) {
+        LocationPermission perm = await Geolocator.checkPermission();
+        if (perm == LocationPermission.denied) {
+          perm = await Geolocator.requestPermission();
         }
 
-        if (permission == LocationPermission.denied ||
-            permission == LocationPermission.deniedForever) {
-          fallback = true;
-        } else {
-          Position? position;
+        if (perm == LocationPermission.whileInUse || perm == LocationPermission.always) {
+          Position? pos;
           try {
-            position = await Geolocator.getCurrentPosition(
+            pos = await Geolocator.getCurrentPosition(
               locationSettings: const LocationSettings(
                 accuracy: LocationAccuracy.high,
-                timeLimit: Duration(seconds: 5),
+                timeLimit: Duration(seconds: 6),
               ),
-            ).timeout(const Duration(seconds: 5));
+            ).timeout(const Duration(seconds: 7));
           } catch (_) {
-            position = await Geolocator.getLastKnownPosition();
+            pos = await Geolocator.getLastKnownPosition();
           }
 
-          if (position != null) {
-            lat = position.latitude;
-            lng = position.longitude;
-            acc = position.accuracy;
-          } else {
-            fallback = true;
+          if (pos != null) {
+            lat = pos.latitude;
+            lng = pos.longitude;
+            acc = pos.accuracy;
           }
         }
       }
-    } catch (_) {
-      fallback = true;
-    }
-
-    if (lat == null || lng == null) {
-      lat = SafeSphereMapConfig.defaultLatitude;
-      lng = SafeSphereMapConfig.defaultLongitude;
-      acc = 15.0;
-      fallback = true;
-    }
+    } catch (_) {}
 
     if (mounted) {
       setState(() {
         _latitude = lat;
         _longitude = lng;
         _accuracy = acc;
-        _isFallback = fallback;
-        _lastUpdated = DateTime.now();
+        _lastUpdated = lat != null ? DateTime.now() : null;
         _isLoading = false;
       });
     }
   }
 
-  Future<void> _shareLocation() async {
+  // ── Start Live Tracking Session ────────────────────────────────────────────
+  Future<void> _startLiveTracking() async {
     if (_latitude == null || _longitude == null) {
       await _fetchCurrentLocation();
     }
-
-    final lat = _latitude ?? SafeSphereMapConfig.defaultLatitude;
-    final lng = _longitude ?? SafeSphereMapConfig.defaultLongitude;
-    final locationUrl = "https://www.google.com/maps?q=$lat,$lng";
-
-    final message = _isFallback
-        ? "🚨 [SafeSphere Alert] Location shared (GPS unavailable, using fallback coordinates):\n$locationUrl"
-        : "🚨 [SafeSphere Live GPS Alert] I am sharing my live location for safety:\n$locationUrl";
-
-    await Share.share(message);
-
-    if (mounted && _isFallback) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("GPS unavailable or permission denied. Default coordinates shared."),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    }
-  }
-
-  Future<void> _openGoogleMaps() async {
-    final lat = _latitude ?? SafeSphereMapConfig.defaultLatitude;
-    final lng = _longitude ?? SafeSphereMapConfig.defaultLongitude;
-    final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
-
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
+    if (_latitude == null || _longitude == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Could not launch Google Maps")),
+          const SnackBar(
+            content: Text("Cannot start tracking: GPS unavailable. Enable device location."),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isStartingSession = true);
+
+    try {
+      // 1. Create backend tracking session
+      final authService = AuthService.instance;
+      final token = await authService.storage.getString(AuthService.keyToken);
+
+      final uri = Uri.parse('$_backendBase/api/v1/location/share-session');
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 5);
+      final req = await client.postUrl(uri);
+      req.headers.contentType = ContentType.json;
+      if (token != null && token.isNotEmpty) {
+        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      }
+      req.write(jsonEncode({
+        'latitude': _latitude,
+        'longitude': _longitude,
+        'accuracy': _accuracy,
+        'durationMinutes': 60,
+      }));
+
+      final res = await req.close().timeout(const Duration(seconds: 6));
+      final body = await res.transform(utf8.decoder).join();
+      client.close();
+
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      if (data['success'] != true) throw Exception('Backend rejected session creation');
+
+      final sessionId = data['sessionId'] as String;
+      final sessionToken = data['token'] as String;
+      final shareUrl = data['shareUrl'] as String? ?? 'https://www.google.com/maps?q=$_latitude,$_longitude';
+
+      // 2. Connect to WebSocket channel for real-time relay
+      final ws = await WebSocket.connect(_wsUrl)
+          .timeout(const Duration(seconds: 5));
+
+      // 3. Send join packet as the sharing device
+      ws.add(jsonEncode({
+        'type': 'JOIN_TRACKING_SESSION',
+        'sessionId': sessionId,
+        'token': sessionToken,
+      }));
+
+      if (mounted) {
+        setState(() {
+          _sessionId = sessionId;
+          _sessionToken = sessionToken;
+          _shareUrl = shareUrl;
+          _isTracking = true;
+          _isStartingSession = false;
+          _pingCount = 0;
+          _ws = ws;
+        });
+      }
+
+      // 4. Start continuous GPS stream and ping every 10 seconds
+      _positionStream = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 5,
+        ),
+      ).listen((Position pos) {
+        _latitude = pos.latitude;
+        _longitude = pos.longitude;
+        _accuracy = pos.accuracy;
+        _lastUpdated = DateTime.now();
+        if (mounted) setState(() {});
+      });
+
+      _pingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        _sendLocationPing();
+      });
+
+      // 5. Share the tracking URL immediately via SMS/messaging
+      await Share.share(
+        '📍 [SafeSphere Live Tracking] I am sharing my real-time location for safety.\nTrack me here: $shareUrl',
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isStartingSession = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not start live tracking session: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     }
   }
 
+  // ── Send a GPS breadcrumb ping ─────────────────────────────────────────────
+  Future<void> _sendLocationPing() async {
+    if (_sessionId == null || _latitude == null || _longitude == null) return;
+
+    // Relay via WebSocket (fast path)
+    try {
+      _ws?.add(jsonEncode({
+        'type': 'LOCATION_STREAM_UPDATE',
+        'sessionId': _sessionId,
+        'latitude': _latitude,
+        'longitude': _longitude,
+        'accuracy': _accuracy,
+        'timestamp': DateTime.now().toIso8601String(),
+      }));
+    } catch (_) {}
+
+    // Also ping REST endpoint for breadcrumb persistence
+    try {
+      final uri = Uri.parse('$_backendBase/api/v1/location/ping');
+      final client = HttpClient();
+      final req = await client.postUrl(uri);
+      req.headers.contentType = ContentType.json;
+      req.write(jsonEncode({
+        'sessionId': _sessionId,
+        'latitude': _latitude,
+        'longitude': _longitude,
+        'accuracy': _accuracy,
+        'timestamp': DateTime.now().toIso8601String(),
+      }));
+      await req.close().timeout(const Duration(seconds: 4));
+      client.close();
+    } catch (_) {}
+
+    if (mounted) setState(() => _pingCount++);
+  }
+
+  // ── Stop & terminate tracking session ─────────────────────────────────────
+  Future<void> _stopTracking({bool notify = true}) async {
+    _pingTimer?.cancel();
+    _pingTimer = null;
+
+    await _positionStream?.cancel();
+    _positionStream = null;
+
+    final sessId = _sessionId;
+
+    if (sessId != null) {
+      // Notify WebSocket channel
+      try {
+        _ws?.add(jsonEncode({
+          'type': 'STREAM_TERMINATE',
+          'sessionId': sessId,
+          'reason': 'User ended tracking session',
+        }));
+      } catch (_) {}
+
+      // Terminate via REST for server-side cleanup
+      try {
+        final uri = Uri.parse('$_backendBase/api/v1/location/terminate/$sessId');
+        final client = HttpClient();
+        final req = await client.postUrl(uri);
+        req.headers.contentType = ContentType.json;
+        req.write(jsonEncode({'reason': 'User ended tracking session'}));
+        await req.close().timeout(const Duration(seconds: 4));
+        client.close();
+      } catch (_) {}
+    }
+
+    try {
+      await _ws?.close();
+    } catch (_) {}
+    _ws = null;
+
+    if (mounted) {
+      setState(() {
+        _isTracking = false;
+        _sessionId = null;
+        _sessionToken = null;
+        _shareUrl = null;
+        _pingCount = 0;
+      });
+      if (notify) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Live tracking session ended. Guardians notified."),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
+  }
+
+  // ── One-shot static share (no live session) ────────────────────────────────
+  Future<void> _shareStaticLocation() async {
+    if (_latitude == null || _longitude == null) {
+      await _fetchCurrentLocation();
+    }
+    if (_latitude == null || _longitude == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("GPS unavailable — cannot share location."),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+    final url = 'https://www.google.com/maps?q=$_latitude,$_longitude';
+    await Share.share('🚨 [SafeSphere] My current location:\n$url');
+  }
+
+  Future<void> _openGoogleMaps() async {
+    if (_latitude == null || _longitude == null) return;
+    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$_latitude,$_longitude');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  // ── UI ─────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final latStr = _latitude != null ? _latitude!.toStringAsFixed(5) : "Detecting...";
-    final lngStr = _longitude != null ? _longitude!.toStringAsFixed(5) : "Detecting...";
-    final accStr = _accuracy != null ? "±${_accuracy!.toStringAsFixed(1)}m" : "N/A";
+    final latStr = _latitude != null ? _latitude!.toStringAsFixed(5) : '—';
+    final lngStr = _longitude != null ? _longitude!.toStringAsFixed(5) : '—';
+    final accStr = _accuracy != null ? '±${_accuracy!.toStringAsFixed(1)}m' : 'N/A';
 
     return Scaffold(
       appBar: AppBar(
         title: const Text("Share Location"),
         actions: [
-          IconButton(
-            icon: _isLoading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.teal),
-                  )
-                : const Icon(Icons.refresh),
-            onPressed: _isLoading ? null : _fetchCurrentLocation,
-            tooltip: "Refresh GPS",
-          )
+          if (!_isTracking)
+            IconButton(
+              icon: _isLoading
+                  ? const SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.teal),
+                    )
+                  : const Icon(Icons.refresh),
+              onPressed: _isLoading ? null : _fetchCurrentLocation,
+              tooltip: "Refresh GPS",
+            ),
         ],
       ),
       drawer: const AppDrawer(),
@@ -163,32 +358,43 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 📍 Location Status Card
+            // ── GPS Status Card ───────────────────────────────────────────
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: const Color(0xFF101A33),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: _isFallback ? Colors.amber.withValues(alpha: 0.4) : AppColors.teal.withValues(alpha: 0.4),
+                  color: (_latitude == null
+                      ? Colors.redAccent
+                      : _isTracking
+                          ? Colors.greenAccent
+                          : AppColors.teal)
+                      .withOpacity(0.4),
                 ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.between,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Row(
                         children: [
                           Icon(
-                            _isFallback ? Icons.location_searching : Icons.gps_fixed,
-                            color: _isFallback ? Colors.amber : AppColors.teal,
+                            _latitude == null ? Icons.location_off : Icons.gps_fixed,
+                            color: _latitude == null
+                                ? Colors.redAccent
+                                : _isTracking ? Colors.greenAccent : AppColors.teal,
                             size: 22,
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            _isFallback ? "GPS Fallback Mode" : "High-Accuracy GPS",
+                            _latitude == null
+                                ? "GPS Unavailable"
+                                : _isTracking
+                                    ? "Live Tracking Active"
+                                    : "High-Accuracy GPS",
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                           ),
                         ],
@@ -196,18 +402,22 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: (_isFallback ? Colors.amber : AppColors.teal).withValues(alpha: 0.15),
+                          color: (_isTracking ? Colors.greenAccent : AppColors.teal).withOpacity(0.15),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          _isLoading ? "Acquiring..." : (_isFallback ? "Fallback" : "Active"),
+                          _isLoading
+                              ? "Acquiring..."
+                              : _isTracking
+                                  ? "LIVE • $_pingCount pings"
+                                  : _latitude != null ? "Ready" : "No Signal",
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color: _isFallback ? Colors.amber : AppColors.teal,
+                            color: _isTracking ? Colors.greenAccent : AppColors.teal,
                           ),
                         ),
-                      )
+                      ),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -219,7 +429,8 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
                           children: [
                             const Text("Latitude", style: TextStyle(color: Colors.white54, fontSize: 12)),
                             const SizedBox(height: 2),
-                            Text(latStr, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 16)),
+                            Text(latStr,
+                                style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 16)),
                           ],
                         ),
                       ),
@@ -229,7 +440,8 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
                           children: [
                             const Text("Longitude", style: TextStyle(color: Colors.white54, fontSize: 12)),
                             const SizedBox(height: 2),
-                            Text(lngStr, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 16)),
+                            Text(lngStr,
+                                style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 16)),
                           ],
                         ),
                       ),
@@ -238,7 +450,7 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
                   const SizedBox(height: 12),
                   const Divider(color: Colors.white12),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.between,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text("Accuracy: $accStr", style: const TextStyle(color: Colors.white60, fontSize: 12)),
                       if (_lastUpdated != null)
@@ -247,45 +459,60 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
                           style: const TextStyle(color: Colors.white38, fontSize: 11),
                         ),
                     ],
-                  )
+                  ),
+
+                  // Session info when active
+                  if (_isTracking && _sessionId != null) ...[
+                    const SizedBox(height: 12),
+                    const Divider(color: Colors.white12),
+                    Row(
+                      children: [
+                        const Icon(Icons.link, size: 14, color: Colors.greenAccent),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            "Session: $_sessionId",
+                            style: const TextStyle(fontSize: 11, color: Colors.greenAccent, fontFamily: 'monospace'),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
 
             const SizedBox(height: 16),
 
-            // 🗺️ Simulated Map View Frame
+            // ── Map Visualizer ────────────────────────────────────────────
             Container(
-              height: 220,
+              height: 200,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white24),
+                border: Border.all(color: _isTracking ? Colors.greenAccent.withOpacity(0.4) : Colors.white24),
                 color: const Color(0xFF0D1526),
               ),
               clipBehavior: Clip.antiAlias,
               child: Stack(
                 children: [
-                  // Vector Grid Canvas
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _LocationGridPainter(),
-                    ),
-                  ),
-
-                  // Radar Pulse / Pin
+                  Positioned.fill(child: CustomPaint(painter: _LocationGridPainter(isActive: _isTracking))),
                   Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Container(
-                          width: 48,
-                          height: 48,
+                          width: 48, height: 48,
                           decoration: BoxDecoration(
-                            color: AppColors.teal.withValues(alpha: 0.2),
+                            color: (_isTracking ? Colors.greenAccent : AppColors.teal).withOpacity(0.2),
                             shape: BoxShape.circle,
                           ),
-                          child: const Center(
-                            child: Icon(Icons.my_location, color: AppColors.teal, size: 28),
+                          child: Center(
+                            child: Icon(
+                              _isTracking ? Icons.radio_button_checked : Icons.my_location,
+                              color: _isTracking ? Colors.greenAccent : AppColors.teal,
+                              size: 28,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -294,31 +521,24 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
                           decoration: BoxDecoration(
                             color: Colors.black87,
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: AppColors.teal.withValues(alpha: 0.4)),
+                            border: Border.all(
+                              color: (_isTracking ? Colors.greenAccent : AppColors.teal).withOpacity(0.4),
+                            ),
                           ),
-                          child: const Text(
-                            "Live Coordinates Detected",
-                            style: TextStyle(fontSize: 11, color: AppColors.teal, fontWeight: FontWeight.w600),
+                          child: Text(
+                            _isTracking
+                                ? "Broadcasting to guardians · $_pingCount pings sent"
+                                : _latitude != null ? "Live Coordinates Detected" : "Awaiting GPS Signal",
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: _isTracking ? Colors.greenAccent : AppColors.teal,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        )
+                        ),
                       ],
                     ),
                   ),
-
-                  // Google Maps Tag
-                  Positioned(
-                    bottom: 8,
-                    left: 12,
-                    child: Row(
-                      children: const [
-                        Icon(Icons.map, color: Colors.white60, size: 14),
-                        SizedBox(width: 4),
-                        Text("Google Maps Ready", style: TextStyle(color: Colors.white60, fontSize: 11)),
-                      ],
-                    ),
-                  ),
-
-                  // Open in Maps Action
                   Positioned(
                     bottom: 8,
                     right: 8,
@@ -332,43 +552,93 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
                       label: const Text("Open Map", style: TextStyle(fontSize: 11, color: AppColors.blue)),
                       onPressed: _openGoogleMaps,
                     ),
-                  )
+                  ),
                 ],
               ),
             ),
 
             const SizedBox(height: 24),
 
-            // 🚀 Action Buttons
-            ElevatedButton.icon(
-              icon: _isLoading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                    )
-                  : const Icon(Icons.share_location, color: Colors.black),
-              label: const Text("Share My Live Location", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 15)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.teal,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            // ── Primary Action: Start / Stop Live Tracking ────────────────
+            if (!_isTracking)
+              ElevatedButton.icon(
+                icon: _isStartingSession
+                    ? const SizedBox(width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                    : const Icon(Icons.share_location, color: Colors.black),
+                label: Text(
+                  _isStartingSession ? "Starting session…" : "Start Live Tracking Session",
+                  style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.teal,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                onPressed: (_isLoading || _isStartingSession) ? null : _startLiveTracking,
+              )
+            else
+              ElevatedButton.icon(
+                icon: const Icon(Icons.stop_circle_outlined, color: Colors.white),
+                label: const Text("Stop Live Tracking", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                onPressed: () => _stopTracking(),
               ),
-              onPressed: _isLoading ? null : _shareLocation,
-            ),
 
             const SizedBox(height: 12),
 
+            // ── Secondary: static one-shot share ─────────────────────────
             OutlinedButton.icon(
-              icon: const Icon(Icons.navigation, color: AppColors.blue),
-              label: const Text("Open in Google Maps", style: TextStyle(color: Colors.white)),
+              icon: const Icon(Icons.send, color: AppColors.blue),
+              label: const Text("Share Current Location (One-shot)", style: TextStyle(color: Colors.white)),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: AppColors.blue),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               ),
+              onPressed: _isTracking ? null : _shareStaticLocation,
+            ),
+
+            const SizedBox(height: 12),
+
+            OutlinedButton.icon(
+              icon: const Icon(Icons.navigation, color: Colors.white60),
+              label: const Text("Open in Google Maps", style: TextStyle(color: Colors.white60)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.white24),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
               onPressed: _openGoogleMaps,
             ),
+
+            if (_isTracking) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.greenAccent.withOpacity(0.07),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.greenAccent.withOpacity(0.2)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: Colors.greenAccent, size: 18),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        "Guardians with your share link are receiving your real-time location every 10 seconds via the SafeSphere WebSocket channel.",
+                        style: TextStyle(fontSize: 12, color: Colors.white70),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -377,11 +647,13 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
 }
 
 class _LocationGridPainter extends CustomPainter {
+  final bool isActive;
+  const _LocationGridPainter({this.isActive = false});
+
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0x1A2FE0C9)
-      ..strokeWidth = 1;
+    final gridColor = isActive ? const Color(0x1A69FF8C) : const Color(0x1A2FE0C9);
+    final paint = Paint()..color = gridColor..strokeWidth = 1;
 
     const step = 24.0;
     for (double x = 0; x < size.width; x += step) {
@@ -392,7 +664,7 @@ class _LocationGridPainter extends CustomPainter {
     }
 
     final circlePaint = Paint()
-      ..color = const Color(0x1A2FE0C9)
+      ..color = gridColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
 
@@ -402,5 +674,5 @@ class _LocationGridPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _LocationGridPainter old) => old.isActive != isActive;
 }

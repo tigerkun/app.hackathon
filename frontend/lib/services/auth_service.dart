@@ -39,7 +39,7 @@ class OtpSendResult {
 
 class AuthService {
   final String baseUrl;
-  final IStorageService storage;
+  final IStorageService storage; // exposed for direct token reads in tracking/emergency pages
 
   static const String keyToken = 'safesphere_access_token';
   static const String keyRefreshToken = 'safesphere_refresh_token';
@@ -48,6 +48,9 @@ class AuthService {
   static const String keyBio = 'safesphere_bio_enabled';
 
   static AuthService? _singleton;
+
+  /// Shared singleton instance for callers that do not need custom config.
+  static AuthService get instance => AuthService();
 
   factory AuthService({
     String? baseUrl,
@@ -194,40 +197,10 @@ class AuthService {
       return AuthResult(success: true, message: 'Registration successful', user: user, tokens: tokens);
     }
 
-    // Offline / demo fallback
-    if (name.isNotEmpty && email.isNotEmpty && password.isNotEmpty) {
-      final fallbackUser = UserModel(
-        id: 'usr_${DateTime.now().millisecondsSinceEpoch}',
-        name: name,
-        email: email,
-        phone: phone,
-        emergencyContactPhone: emergencyContactPhone ?? (contacts.isNotEmpty ? contacts.first.phone : null),
-        emergencyContactName: emergencyContactName ?? (contacts.isNotEmpty ? contacts.first.name : null),
-        emergencyContacts: contacts,
-        hasPin: pin != null && pin.isNotEmpty,
-        createdAt: DateTime.now(),
-      );
-      final fallbackTokens = AuthTokens(
-        accessToken: 'fallback_access_token_${DateTime.now().millisecondsSinceEpoch}',
-        refreshToken: 'fallback_refresh_token_${DateTime.now().millisecondsSinceEpoch}',
-        expiresIn: 3600,
-      );
-      await storage.setString(keyToken, fallbackTokens.accessToken);
-      await storage.setString(keyRefreshToken, fallbackTokens.refreshToken);
-      await storage.setString(keyUser, jsonEncode(fallbackUser.toJson()));
-      if (pin != null && pin.isNotEmpty) {
-        await storage.setString(keyPin, pin);
-      }
-      _currentUser = fallbackUser;
-      return AuthResult(
-        success: true,
-        message: 'Registered in local security session',
-        user: fallbackUser,
-        tokens: fallbackTokens,
-      );
-    }
-
-    final errMsg = res?['error']?['message'] as String? ?? 'Registration failed';
+    // NOTE: Removed dangerous fabricated offline auth fallback (fake tokens and simulated user).
+    // An offline or unreachable backend must return an honest error instead of granting a phantom authenticated state.
+    // TODO(REAL_BACKEND): Ensure backend /api/v1/auth/register endpoint is reachable and healthy.
+    final errMsg = res?['error']?['message'] as String? ?? 'Registration failed. Backend is unreachable or returned an error.';
     return AuthResult(success: false, message: errMsg);
   }
 
@@ -264,36 +237,9 @@ class AuthService {
       return AuthResult(success: true, message: 'Login successful', user: user, tokens: tokens);
     }
 
-    // Offline / demo fallback for demo login
-    if (emailOrPhone.isNotEmpty && password.length >= 6) {
-      final fallbackUser = UserModel(
-        id: 'usr_demo_${DateTime.now().millisecondsSinceEpoch}',
-        name: emailOrPhone.contains('@') ? emailOrPhone.split('@').first : 'Citizen',
-        email: emailOrPhone.contains('@') ? emailOrPhone : '$emailOrPhone@safesphere.org',
-        phone: emailOrPhone.contains('@') ? '+91 9876543210' : emailOrPhone,
-        hasPin: true,
-        biometricsEnabled: true,
-        createdAt: DateTime.now(),
-      );
-      final fallbackTokens = AuthTokens(
-        accessToken: 'fallback_jwt_${DateTime.now().millisecondsSinceEpoch}',
-        refreshToken: 'fallback_refresh_${DateTime.now().millisecondsSinceEpoch}',
-        expiresIn: 3600,
-      );
-      await storage.setString(keyToken, fallbackTokens.accessToken);
-      await storage.setString(keyRefreshToken, fallbackTokens.refreshToken);
-      await storage.setString(keyUser, jsonEncode(fallbackUser.toJson()));
-      _currentUser = fallbackUser;
-      _isPinLocked = false;
-      return AuthResult(
-        success: true,
-        message: 'Signed in with local fallback credentials',
-        user: fallbackUser,
-        tokens: fallbackTokens,
-      );
-    }
-
-    final errMsg = res?['error']?['message'] as String? ?? 'Invalid credentials';
+    // NOTE: Removed dangerous fabricated login fallback (phantom JWTs on error/offline).
+    // TODO(REAL_BACKEND): Verify credentials against real backend POST /api/v1/auth/login.
+    final errMsg = res?['error']?['message'] as String? ?? 'Login failed. Please verify credentials or connection.';
     return AuthResult(success: false, message: errMsg);
   }
 
@@ -319,19 +265,10 @@ class AuthService {
       );
     }
 
-    // Graceful offline fallback
-    if (phone.isNotEmpty) {
-      return OtpSendResult(
-        success: true,
-        message: 'OTP simulated successfully (Code: 123456)',
-        phone: phone,
-        expiresInSeconds: 300,
-        cooldownSeconds: 60,
-        devOtp: '123456',
-      );
-    }
-
-    final errMsg = res?['error']?['message'] as String? ?? 'Failed to send OTP';
+    // NOTE: Removed hardcoded fake devOtp '123456' offline fallback.
+    // Real SMS OTP requires an operational backend SMS gateway / provider integration.
+    // TODO(REAL_BACKEND): Wire to active SMS gateway endpoint.
+    final errMsg = res?['error']?['message'] as String? ?? 'Failed to send OTP. SMS gateway connection failed.';
     return OtpSendResult(success: false, message: errMsg);
   }
 
@@ -371,36 +308,10 @@ class AuthService {
       return AuthResult(success: true, message: 'OTP verified successfully', user: user, tokens: tokens);
     }
 
-    // Offline simulation test fallback
-    if (code.length == 6) {
-      final fallbackUser = UserModel(
-        id: 'usr_otp_${DateTime.now().millisecondsSinceEpoch}',
-        name: 'Verified Citizen',
-        email: '$phone@safesphere.org',
-        phone: phone,
-        hasPin: true,
-        createdAt: DateTime.now(),
-      );
-      final fallbackTokens = AuthTokens(
-        accessToken: 'fallback_otp_jwt_${DateTime.now().millisecondsSinceEpoch}',
-        refreshToken: 'fallback_otp_refresh_${DateTime.now().millisecondsSinceEpoch}',
-        expiresIn: 3600,
-      );
-      await storage.setString(keyToken, fallbackTokens.accessToken);
-      await storage.setString(keyRefreshToken, fallbackTokens.refreshToken);
-      await storage.setString(keyUser, jsonEncode(fallbackUser.toJson()));
-
-      _currentUser = fallbackUser;
-      _isPinLocked = false;
-      return AuthResult(
-        success: true,
-        message: 'OTP verified in local simulation',
-        user: fallbackUser,
-        tokens: fallbackTokens,
-      );
-    }
-
-    final errMsg = res?['error']?['message'] as String? ?? 'Invalid OTP code';
+    // NOTE: Removed dangerous fabricated OTP verification fallback.
+    // Unverified codes must never create authenticated sessions or fake JWT tokens.
+    // TODO(REAL_BACKEND): Verify OTP code against backend POST /api/v1/auth/otp/verify.
+    final errMsg = res?['error']?['message'] as String? ?? 'Invalid OTP code or network error.';
     return AuthResult(success: false, message: errMsg);
   }
 
@@ -507,11 +418,8 @@ class AuthService {
   Future<bool> verifyPin(String pin) async {
     final storedPin = await storage.getString(keyPin);
     if (storedPin == null || storedPin.isEmpty) {
-      // Default initial pin for testing
-      if (pin == '1234') {
-        _isPinLocked = false;
-        return true;
-      }
+      // NOTE: Removed hardcoded '1234' testing PIN bypass. If no PIN is configured, verify returns false.
+      // TODO(REAL_BACKEND): Verify PIN against POST /api/v1/auth/login-pin when connected.
       return false;
     }
     if (storedPin == pin.trim()) {
@@ -527,10 +435,11 @@ class AuthService {
   }
 
   Future<bool> verifyBiometrics() async {
-    // Biometric stub with mock validation
-    await Future.delayed(const Duration(milliseconds: 300));
-    _isPinLocked = false;
-    return true;
+    // NOTE: Removed fake mock validation (Future.delayed 300ms returning true unconditionally).
+    // TODO(REAL_HARDWARE): Integrate real hardware biometric scanning via local_auth package.
+    // For now, return false so unauthorized biometric bypass is blocked.
+    _isPinLocked = true;
+    return false;
   }
 
   // ---------------------------------------------------------------------------
@@ -542,6 +451,176 @@ class AuthService {
 
   Future<bool> loginWithBiometrics() async {
     return verifyBiometrics();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Emergency SOS Real API Integration (/api/v1/sos)
+  // ---------------------------------------------------------------------------
+  Future<Map<String, dynamic>?> triggerSos({
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+    int? batteryLevel,
+    String? alertType,
+    String? notes,
+  }) async {
+    final token = await storage.getString(keyToken);
+    final body = <String, dynamic>{
+      'latitude': latitude,
+      'longitude': longitude,
+      'accuracy': accuracy,
+      'batteryLevel': batteryLevel,
+      'alertType': alertType ?? 'CRITICAL_SOS',
+      'notes': notes,
+    };
+
+    final res = await _request(
+      method: 'POST',
+      path: '/api/v1/sos/trigger',
+      body: body,
+      token: token,
+    );
+
+    if (res != null && res['success'] == true) {
+      final alertId = res['data']?['id'] as String? ?? res['id'] as String?;
+      if (alertId != null) {
+        await storage.setString('safesphere_active_sos_id', alertId);
+      }
+      return res;
+    }
+    return null;
+  }
+
+  Future<bool> resolveSos({String? alertId, String? notes}) async {
+    final token = await storage.getString(keyToken);
+    final targetId = alertId ?? await storage.getString('safesphere_active_sos_id');
+    if (targetId == null || targetId.isEmpty) return false;
+
+    final body = <String, dynamic>{
+      'id': targetId,
+      'notes': notes ?? 'Citizen marked safe',
+    };
+
+    final res = await _request(
+      method: 'POST',
+      path: '/api/v1/sos/$targetId/resolve',
+      body: body,
+      token: token,
+    );
+
+    if (res != null && res['success'] == true) {
+      await storage.remove('safesphere_active_sos_id');
+      return true;
+    }
+    return false;
+  }
+
+  Future<String?> getActiveSosId() async {
+    return await storage.getString('safesphere_active_sos_id');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reports API (/api/v1/reports)
+  // ---------------------------------------------------------------------------
+
+  /// Fetches live community incident reports from the backend.
+  /// Optional filters: type (e.g. "Theft"), status (e.g. "pending"), limit.
+  Future<List<Map<String, dynamic>>> fetchReports({
+    String? type,
+    String? status,
+    int? limit,
+  }) async {
+    final token = await storage.getString(keyToken);
+    final queryParams = <String, String>{};
+    if (type != null) queryParams['type'] = type;
+    if (status != null) queryParams['status'] = status;
+    if (limit != null) queryParams['limit'] = '$limit';
+
+    final queryString = queryParams.isNotEmpty
+        ? '?' + queryParams.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&')
+        : '';
+
+    final res = await _request(
+      method: 'GET',
+      path: '/api/v1/reports$queryString',
+      token: token,
+    );
+
+    if (res != null && res['success'] == true) {
+      final data = res['data'];
+      if (data is List) {
+        return data.cast<Map<String, dynamic>>();
+      }
+    }
+    return [];
+  }
+
+  /// Submits a new incident report to the backend.
+  Future<Map<String, dynamic>?> submitReport({
+    required String type,
+    required String description,
+    required String location,
+    double? latitude,
+    double? longitude,
+  }) async {
+    final token = await storage.getString(keyToken);
+    final body = <String, dynamic>{
+      'type': type,
+      'description': description,
+      'location': location,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+    };
+
+    final res = await _request(
+      method: 'POST',
+      path: '/api/v1/reports',
+      body: body,
+      token: token,
+    );
+
+    if (res != null && res['success'] == true) {
+      return res['data'] as Map<String, dynamic>?;
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Markers API (/api/v1/markers)
+  // ---------------------------------------------------------------------------
+
+  /// Fetches safety markers (police stations, hospitals, safe zones) sorted by proximity.
+  Future<List<Map<String, dynamic>>> fetchNearbyMarkers({
+    required double latitude,
+    required double longitude,
+    double? radiusKm,
+    String? type,
+    int? limit,
+  }) async {
+    final token = await storage.getString(keyToken);
+    // Backend markerController accepts lat + (lon | longitude); 'lng' is NOT a recognized alias.
+    final queryParams = <String, String>{
+      'lat': '$latitude',
+      'lon': '$longitude',
+      if (radiusKm != null) 'radius': '$radiusKm',
+      if (type != null) 'type': type,
+      if (limit != null) 'limit': '$limit',
+    };
+    final queryString = '?' + queryParams.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
+
+    final res = await _request(
+      method: 'GET',
+      path: '/api/v1/markers/nearby$queryString',
+      token: token,
+    );
+
+    if (res != null && res['success'] == true) {
+      final data = res['data'];
+      if (data is List) {
+        return data.cast<Map<String, dynamic>>();
+      }
+    }
+    return [];
   }
 
   Future<bool> signup({

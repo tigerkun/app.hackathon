@@ -45,8 +45,37 @@ function createAlert({
   };
 }
 
+function toSafeAlert(alert, isOwnerOrAdmin = false) {
+  if (!alert) return null;
+  if (isOwnerOrAdmin) return alert;
+
+  // Mask sensitive victim PII (phone number, exact user identification)
+  let maskedPhone = '';
+  if (alert.userPhone && alert.userPhone.length > 4) {
+    maskedPhone = alert.userPhone.slice(0, 3) + '****' + alert.userPhone.slice(-2);
+  }
+
+  return {
+    id: alert.id,
+    userId: alert.userId === 'anonymous' ? 'anonymous' : 'protected_user',
+    userName: alert.userName || 'SafeSphere Citizen',
+    userPhone: maskedPhone,
+    latitude: alert.latitude,
+    longitude: alert.longitude,
+    accuracy: alert.accuracy,
+    batteryLevel: alert.batteryLevel,
+    alertType: alert.alertType,
+    status: alert.status,
+    triggeredAt: alert.triggeredAt,
+    resolvedAt: alert.resolvedAt,
+    emergencyContactsNotified: alert.emergencyContactsNotified,
+    notes: alert.notes
+  };
+}
+
 module.exports = {
   createAlert,
   generateAlertId,
+  toSafeAlert,
   VALID_ALERT_STATUSES
 };

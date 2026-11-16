@@ -1,14 +1,117 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/app_drawer.dart';
-import 'login_page.dart';
+import '../services/auth_service.dart';
+import '../services/map_config.dart';
+import 'auth/login_page.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  bool _isLoading = false;
+  String _locationLabel = "Detecting location...";
+  double _userLat = SafeSphereMapConfig.defaultLatitude;
+  double _userLng = SafeSphereMapConfig.defaultLongitude;
+  List<Map<String, dynamic>> _reports = [];
+  DateTime? _lastFetchTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshDashboard();
+  }
+
+  Future<void> _refreshDashboard() async {
+    setState(() => _isLoading = true);
+
+    try {
+      // 1. Detect user position if permitted
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+        final pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 4)),
+        ).timeout(const Duration(seconds: 4));
+
+        _userLat = pos.latitude;
+        _userLng = pos.longitude;
+        _locationLabel = "GPS: ${_userLat.toStringAsFixed(2)}, ${_userLng.toStringAsFixed(2)}";
+      } else {
+        _locationLabel = "Delhi NCR (Default)";
+      }
+    } catch (_) {
+      _locationLabel = "Delhi NCR (Default)";
+    }
+
+    try {
+      // 2. Fetch live community reports from real backend
+      final fetched = await AuthService.instance.fetchReports(limit: 10);
+      if (mounted) {
+        setState(() {
+          _reports = fetched;
+          _lastFetchTime = DateTime.now();
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _lastFetchTime = DateTime.now();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  String _calculateSafetyLevel() {
+    final count = _reports.length;
+    if (count == 0) return "Safety Level: High";
+    if (count <= 3) return "Safety Level: Moderate";
+    return "Safety Level: High Caution";
+  }
+
+  Color _getSafetyLevelColor() {
+    final count = _reports.length;
+    if (count == 0) return AppColors.teal;
+    if (count <= 3) return AppColors.amber;
+    return AppColors.red;
+  }
+
+  String _formatRelativeTime(dynamic isoString) {
+    if (isoString == null) return "recently";
+    try {
+      final dt = DateTime.parse(isoString.toString());
+      final diff = DateTime.now().difference(dt);
+      if (diff.inMinutes < 1) return "just now";
+      if (diff.inMinutes < 60) return "${diff.inMinutes}m ago";
+      if (diff.inHours < 24) return "${diff.inHours}h ago";
+      return "${diff.inDays}d ago";
+    } catch (_) {
+      return "recently";
+    }
+  }
+
+  IconData _iconForReportType(String? type) {
+    final t = (type ?? '').toLowerCase();
+    if (t.contains('theft')) return Icons.report_problem;
+    if (t.contains('harass')) return Icons.visibility;
+    if (t.contains('accident')) return Icons.car_crash;
+    if (t.contains('light') || t.contains('dark')) return Icons.lightbulb_outline;
+    return Icons.warning_amber_rounded;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final safetyLevel = _calculateSafetyLevel();
+    final safetyColor = _getSafetyLevelColor();
+    final recentReports = _reports.take(3).toList();
+
     return Scaffold(
       drawer: const AppDrawer(),
       appBar: AppBar(
@@ -21,10 +124,16 @@ class HomePage extends StatelessWidget {
           ),
         ),
         title: Row(
-          children: const [
-            Icon(Icons.location_on, size: 18),
-            SizedBox(width: 6),
-            Text("New Delhi"),
+          children: [
+            const Icon(Icons.location_on, size: 18, color: AppColors.teal),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                _locationLabel,
+                style: const TextStyle(fontSize: 14),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         actions: [
@@ -40,7 +149,6 @@ class HomePage extends StatelessWidget {
           ),
         ],
       ),
-
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.purple,
         child: const Icon(Icons.smart_toy),
@@ -48,260 +156,277 @@ class HomePage extends StatelessWidget {
           Navigator.pushNamed(context, '/ai-assistant');
         },
       ),
-
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          /// 1️⃣ INTENT HEADLINE
-          const Text(
-            "How can we help you stay safe today?",
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            "Real-time safety insights from your community",
-            style: TextStyle(color: Colors.white60),
-          ),
-
-          const SizedBox(height: 20),
-
-          /// 2️⃣ LOCAL SAFETY STATUS (ANCHOR CARD)
-          GlassContainer(
-            borderColor: AppColors.teal,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  const Icon(Icons.shield, size: 40, color: AppColors.teal),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          "Safety Level: Moderate",
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          "Based on recent verified reports",
-                          style: TextStyle(color: Colors.white60),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          "Last updated: 10 mins ago",
-                          style: TextStyle(
-                            color: Colors.white38,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          /// 3️⃣ PRIMARY ACTIONS
-          Row(
-            children: [
-              Expanded(
-                child: _ActionCard(
-                  icon: Icons.report,
-                  title: "Report Near Me",
-                  subtitle: "Submit a safety concern",
-                  color: AppColors.amber,
-                  onTap: () =>
-                      Navigator.pushNamed(context, '/report'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _ActionCard(
-                  icon: Icons.map,
-                  title: "Safety Map",
-                  subtitle: "View nearby alerts",
-                  color: AppColors.blue,
-                  onTap: () =>
-                      Navigator.pushNamed(context, '/safety-map'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          /// 🤖 AI SAFETY RECOMMENDATIONS
-          GestureDetector(
-            onTap: () => Navigator.pushNamed(context, '/ai-assistant'),
-            child: GlassContainer(
-              borderColor: AppColors.purple,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.purple.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.smart_toy,
-                        color: AppColors.purple,
-                        size: 28,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "AI Safety Recommendations",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            "Personalized insights based on real-time activity",
-                            style: TextStyle(
-                              color: Colors.white60,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Icon(Icons.arrow_forward_ios,
-                        size: 16, color: Colors.white38),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-
-          const SizedBox(height: 20),
-
-          /// 4️⃣ RECENT LOCAL ACTIVITY
-          const Text(
-            "Recent Local Activity",
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 10),
-
-          _ActivityItem(
-            icon: Icons.lightbulb,
-            text: "Poor street lighting reported",
-            time: "30 mins ago",
-          ),
-          _ActivityItem(
-            icon: Icons.visibility,
-            text: "Suspicious activity flagged",
-            time: "1 hr ago",
-          ),
-
-          const SizedBox(height: 16),
-
-          /// 5️⃣ COMMUNITY ALERTS PREVIEW
-          GestureDetector(
-            onTap: () => Navigator.pushNamed(context, '/alerts'),
-            child: GlassContainer(
-              borderColor: AppColors.red,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.red.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.notifications_active,
-                          color: AppColors.red),
-                    ),
-                    const SizedBox(width: 14),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Community Alerts",
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            "3 new verified alerts near your area",
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white60,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.red,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text(
-                        "3",
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    )
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-
-          const SizedBox(height: 16),
-
-          /// 6️⃣ SAFETY TIP
-          GlassContainer(
-            borderColor: AppColors.teal,
-            child: const ListTile(
-              leading: Icon(Icons.info, color: AppColors.teal),
-              title: Text(
-                "Prefer well-lit routes while traveling at night",
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          /// 7️⃣ EMERGENCY STRIP
-          const Center(
-            child: Text(
-              "For immediate danger, contact emergency services.",
+      body: RefreshIndicator(
+        onRefresh: _refreshDashboard,
+        color: AppColors.teal,
+        backgroundColor: const Color(0xFF101A33),
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            /// 1️⃣ INTENT HEADLINE
+            const Text(
+              "How can we help you stay safe today?",
               style: TextStyle(
-                color: Colors.white38,
-                fontSize: 12,
+                fontSize: 22,
+                fontWeight: FontWeight.w600,
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 6),
+            const Text(
+              "Real-time safety insights from your community",
+              style: TextStyle(color: Colors.white60),
+            ),
+
+            const SizedBox(height: 20),
+
+            /// 2️⃣ LOCAL SAFETY STATUS (ANCHOR CARD)
+            GlassContainer(
+              borderColor: safetyColor,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(Icons.shield, size: 40, color: safetyColor),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            safetyLevel,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "Based on ${_reports.length} verified community report(s)",
+                            style: const TextStyle(color: Colors.white60),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _lastFetchTime != null
+                                ? "Last synced: ${_formatRelativeTime(_lastFetchTime!.toIso8601String())}"
+                                : "Syncing live telemetry...",
+                            style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            /// 3️⃣ PRIMARY ACTIONS
+            Row(
+              children: [
+                Expanded(
+                  child: _ActionCard(
+                    icon: Icons.report,
+                    title: "Report Near Me",
+                    subtitle: "Submit a safety concern",
+                    color: AppColors.amber,
+                    onTap: () => Navigator.pushNamed(context, '/report'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _ActionCard(
+                    icon: Icons.map,
+                    title: "Safety Map",
+                    subtitle: "View nearby alerts",
+                    color: AppColors.blue,
+                    onTap: () => Navigator.pushNamed(context, '/safety-map'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            /// 🤖 AI SAFETY RECOMMENDATIONS
+            GestureDetector(
+              onTap: () => Navigator.pushNamed(context, '/ai-assistant'),
+              child: GlassContainer(
+                borderColor: AppColors.purple,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.purple.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.smart_toy,
+                          color: AppColors.purple,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "AI Safety Assistant",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              "Interactive guidance and emergency escalation",
+                              style: TextStyle(
+                                color: Colors.white60,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.white38),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            /// 4️⃣ RECENT LOCAL ACTIVITY
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  "Recent Local Activity",
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                if (_isLoading)
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.teal),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            if (recentReports.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.check_circle_outline, color: AppColors.teal, size: 22),
+                  title: Text("No recent incidents reported nearby", style: TextStyle(color: Colors.white70)),
+                  subtitle: Text("Area is calm • Stay vigilant", style: TextStyle(color: Colors.white38, fontSize: 12)),
+                ),
+              )
+            else
+              for (final report in recentReports)
+                _ActivityItem(
+                  icon: _iconForReportType(report['type']?.toString()),
+                  text: "${report['type'] ?? 'Alert'}: ${report['description'] ?? report['location'] ?? ''}",
+                  time: _formatRelativeTime(report['createdAt']),
+                ),
+
+            const SizedBox(height: 16),
+
+            /// 5️⃣ COMMUNITY ALERTS PREVIEW
+            GestureDetector(
+              onTap: () => Navigator.pushNamed(context, '/alerts'),
+              child: GlassContainer(
+                borderColor: AppColors.red,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.red.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.notifications_active, color: AppColors.red),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Community Alerts",
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "${_reports.length} verified alert(s) in active area",
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white60,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.red,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          "${_reports.length}",
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            /// 6️⃣ SAFETY TIP
+            GlassContainer(
+              borderColor: AppColors.teal,
+              child: const ListTile(
+                leading: Icon(Icons.info, color: AppColors.teal),
+                title: Text(
+                  "Prefer well-lit routes while traveling at night",
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            /// 7️⃣ EMERGENCY STRIP
+            const Center(
+              child: Text(
+                "For immediate danger, contact emergency services (112).",
+                style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -374,7 +499,11 @@ class _ActivityItem extends StatelessWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(icon, size: 20),
-      title: Text(text),
+      title: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       trailing: Text(
         time,
         style: const TextStyle(color: Colors.white38, fontSize: 12),

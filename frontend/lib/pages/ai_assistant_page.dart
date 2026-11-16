@@ -129,16 +129,26 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
       _controller.clear();
     });
 
-    late final Timer timer;
-    timer = Timer(const Duration(milliseconds: 900), () {
-      _pendingTimers.remove(timer);
-      if (!mounted) return;
+    _sendPromptToRealAiBackend(text, userMsgId, typingMsgId, timestamp, seq);
+  }
 
+  Future<void> _sendPromptToRealAiBackend(
+    String prompt,
+    String userMsgId,
+    String typingMsgId,
+    String timestamp,
+    int seq,
+  ) async {
+    // NOTE: Removed hardcoded 4-keyword matcher ("follow", "unsafe", "accident") and fake 900ms timer.
+    // TODO(REAL_BACKEND): Wire to real Gemini / LLM safety agent endpoint with location context & emergency escalation.
+    try {
+      // Placeholder response indicating real backend integration requirement:
+      if (!mounted) return;
       setState(() {
         final typingIndex = messages.indexWhere((m) => m.id == typingMsgId);
         final replyMsg = _ChatMessage(
           id: 'ai_${timestamp}_$seq',
-          text: _generateReply(text),
+          text: "AI Safety Assistant is awaiting connection to live intelligence backend. For immediate assistance, dial 112 or use the Emergency tab.",
           isUser: false,
         );
         if (typingIndex != -1) {
@@ -147,21 +157,18 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
           messages.add(replyMsg);
         }
       });
-    });
-    _pendingTimers.add(timer);
-  }
-
-  String _generateReply(String input) {
-    input = input.toLowerCase();
-
-    if (input.contains("follow")) {
-      return "If you feel followed, move to a crowded or well-lit area and keep your phone accessible.";
-    } else if (input.contains("unsafe") || input.contains("scared")) {
-      return "You’re not alone. Stay calm, trust your instincts, and consider sharing your live location.";
-    } else if (input.contains("accident")) {
-      return "If there’s an accident, ensure you’re safe first. I can guide you to nearby help.";
-    } else {
-      return "I’m here with you. Can you tell me where you are or what you’re experiencing?";
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        final typingIndex = messages.indexWhere((m) => m.id == typingMsgId);
+        if (typingIndex != -1) {
+          messages[typingIndex] = _ChatMessage(
+            id: 'err_${timestamp}_$seq',
+            text: "Connection error contacting AI safety service.",
+            isUser: false,
+          );
+        }
+      });
     }
   }
 

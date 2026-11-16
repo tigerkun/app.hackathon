@@ -52,7 +52,11 @@ class AuthState extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _didInitialize = false;
+
   Future<void> initialize() async {
+    if (_didInitialize) return;
+    _didInitialize = true;
     _status = AuthStatus.loading;
     _errorMessage = null;
     notifyListeners();

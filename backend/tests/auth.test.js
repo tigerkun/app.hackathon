@@ -5,6 +5,7 @@
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
+const bcrypt = require('bcryptjs');
 const { startTestServer } = require('./helpers/testApp');
 const { db } = require('../src/data/store');
 
@@ -56,6 +57,40 @@ describe('SafeSphere Authentication API & Service Tests', () => {
       assert.equal(res.body.data.user.hasPin, true);
       assert.equal(res.body.data.user.emergencyContacts.length, 1);
       assert.equal(res.body.data.user.passwordHash, undefined, 'passwordHash must never be exposed');
+      assert.equal(res.body.data.user.pin, undefined, 'pin must never be exposed');
+      assert.equal(res.body.data.user.pinHash, undefined, 'pinHash must never be exposed');
+
+      // Verify bcrypt PIN hashing in database
+      const storedUser = db.findUserByEmail('aarav@safesphere.org');
+      assert.ok(storedUser, 'User should be persisted in datastore');
+      assert.notEqual(storedUser.pin, '4321', 'Stored PIN must never be plain text');
+      assert.match(storedUser.pin, /^\$2[ab]\$\d{2}\$/, 'Stored PIN must match bcrypt hash pattern');
+      assert.equal(storedUser.pin, storedUser.pinHash, 'Both pin and pinHash should hold bcrypt hash');
+      assert.equal(bcrypt.compareSync('4321', storedUser.pin), true, 'Bcrypt compare must succeed for valid PIN');
+
+      // Verify user registered with PIN can login via /api/v1/auth/login-pin
+      const pinLoginRes = await serverHarness.request('/api/v1/auth/login-pin', {
+        method: 'POST',
+        body: {
+          emailOrPhone: 'aarav@safesphere.org',
+          pin: '4321'
+        }
+      });
+      assert.equal(pinLoginRes.status, 200, `Expected 200 OK on PIN login, got ${pinLoginRes.status}`);
+      assert.equal(pinLoginRes.body.success, true);
+      assert.ok(pinLoginRes.body.data.accessToken);
+      assert.equal(pinLoginRes.body.data.user.email, 'aarav@safesphere.org');
+
+      // Verify invalid PIN is rejected
+      const badPinLoginRes = await serverHarness.request('/api/v1/auth/login-pin', {
+        method: 'POST',
+        body: {
+          emailOrPhone: 'aarav@safesphere.org',
+          pin: '9999'
+        }
+      });
+      assert.equal(badPinLoginRes.status, 401);
+      assert.equal(badPinLoginRes.body.error.code, 'INVALID_PIN');
     });
 
     it('rejects registration with duplicate email with 409 Conflict', async () => {

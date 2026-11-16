@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../data/auth_state.dart';
 import '../routes/app_routes.dart';
 import '../theme/app_colors.dart';
@@ -247,13 +248,34 @@ class AppDrawer extends StatelessWidget {
               leading: const Icon(Icons.phone_in_talk, color: AppColors.red),
               title: Text(contactName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               subtitle: Text(contact, style: const TextStyle(color: AppColors.amber)),
+              trailing: const Icon(Icons.call, color: AppColors.teal, size: 20),
+              onTap: () async {
+                final cleanPhone = contact.replaceAll(RegExp(r'[^0-9+]'), '');
+                final uri = Uri.parse('tel:$cleanPhone');
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri);
+                } else {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Cannot initiate call to $contact')),
+                    );
+                  }
+                }
+              },
             ),
             const Divider(color: AppColors.border),
-            const ListTile(
+            ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.support_agent, color: AppColors.teal),
-              title: Text('National Emergency Service', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              subtitle: Text('112', style: TextStyle(color: AppColors.teal)),
+              leading: const Icon(Icons.support_agent, color: AppColors.teal),
+              title: const Text('National Emergency Service', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              subtitle: const Text('112', style: TextStyle(color: AppColors.teal)),
+              trailing: const Icon(Icons.call, color: AppColors.teal, size: 20),
+              onTap: () async {
+                final uri = Uri.parse('tel:112');
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri);
+                }
+              },
             ),
           ],
         ),

@@ -34,6 +34,9 @@ async function register({
 
   const saltRounds = config.saltRounds;
   const passwordHash = bcrypt.hashSync(password, saltRounds);
+  const pinHash = (pin !== undefined && pin !== null && String(pin).trim() !== '')
+    ? bcrypt.hashSync(String(pin).trim(), saltRounds)
+    : null;
 
   // Format emergency contacts
   let contactsList = [];
@@ -55,7 +58,8 @@ async function register({
     email: normalizedEmail,
     phone: normalizedPhone,
     passwordHash,
-    pin: pin || null,
+    pin: pinHash,
+    pinHash,
     emergencyContacts: contactsList,
     isActive: true
   });
@@ -133,7 +137,8 @@ async function login({ emailOrPhone, password, userAgent, ipAddress }) {
 
 async function loginPin({ emailOrPhone, pin, userAgent, ipAddress }) {
   const user = db.findUserByEmailOrPhone(emailOrPhone);
-  if (!user || !user.pin) {
+  const storedPin = user ? (user.pinHash || user.pin) : null;
+  if (!user || !storedPin) {
     const error = new Error('Invalid credentials or PIN not configured');
     error.status = 401;
     error.code = 'INVALID_PIN_CREDENTIALS';
@@ -148,7 +153,11 @@ async function loginPin({ emailOrPhone, pin, userAgent, ipAddress }) {
   }
 
   const inputPin = String(pin).trim();
-  if (user.pin !== inputPin) {
+  const isPinValid = (typeof storedPin === 'string' && (storedPin.startsWith('$2a$') || storedPin.startsWith('$2b$')))
+    ? bcrypt.compareSync(inputPin, storedPin)
+    : (storedPin === inputPin);
+
+  if (!isPinValid) {
     const error = new Error('Invalid PIN provided');
     error.status = 401;
     error.code = 'INVALID_PIN';

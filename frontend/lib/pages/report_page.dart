@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../data/report_store.dart';
 import '../models/report_model.dart';
+import '../services/auth_service.dart';
 import '../widgets/map_placeholder.dart';
 import '../widgets/glass_container.dart';
 import '../theme/app_colors.dart';
@@ -16,7 +17,10 @@ class ReportPage extends StatefulWidget {
 class _ReportPageState extends State<ReportPage> {
   String selectedType = "Theft";
   final TextEditingController _descriptionController = TextEditingController();
-  String _locationTag = "28.6139, 77.2090 (GPS Verified)";
+  String _locationTag = "Acquiring GPS location...";
+  double? _latitude;
+  double? _longitude;
+  bool _isSubmitting = false;
 
   final incidents = const [
     {"label": "Theft", "icon": Icons.shopping_bag},
@@ -33,13 +37,40 @@ class _ReportPageState extends State<ReportPage> {
 
   Future<void> _detectLocation() async {
     try {
-      final pos = await Geolocator.getLastKnownPosition();
-      if (pos != null && mounted) {
+      LocationPermission perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.whileInUse || perm == LocationPermission.always) {
+        final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 6),
+        );
+        if (mounted) {
+          setState(() {
+            _latitude = pos.latitude;
+            _longitude = pos.longitude;
+            _locationTag = "${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)} (GPS Verified)";
+          });
+        }
+        return;
+      }
+      // Try last known as fallback if permission was already granted before
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null && mounted) {
         setState(() {
-          _locationTag = "${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)} (GPS Verified)";
+          _latitude = last.latitude;
+          _longitude = last.longitude;
+          _locationTag = "${last.latitude.toStringAsFixed(5)}, ${last.longitude.toStringAsFixed(5)} (Last Known GPS)";
         });
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _locationTag = "GPS unavailable — location will not be attached";
+        });
+      }
+    }
   }
 
   @override
@@ -48,7 +79,7 @@ class _ReportPageState extends State<ReportPage> {
     super.dispose();
   }
 
-  void _submitReport() {
+  Future<void> _submitReport() async {
     final description = _descriptionController.text;
     if (description.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -60,24 +91,47 @@ class _ReportPageState extends State<ReportPage> {
       return;
     }
 
-    final newReport = Report(
-      id: "rep_${DateTime.now().millisecondsSinceEpoch}",
+    setState(() => _isSubmitting = true);
+    final messenger = ScaffoldMessenger.of(context);
+
+    // 1. Submit to real backend via AuthService
+    final authService = AuthService.instance;
+    final backendReport = await authService.submitReport(
+      type: selectedType,
+      description: description,
+      location: _locationTag,
+      latitude: _latitude,
+      longitude: _longitude,
+    );
+
+    // 2. Add to local cache for immediate in-app visibility
+    final localReport = Report(
+      id: backendReport?['id'] as String? ?? "rep_${DateTime.now().millisecondsSinceEpoch}",
       type: selectedType,
       location: _locationTag,
       description: description,
       time: DateTime.now(),
       status: ReportStatus.pending,
     );
-
-    ReportStore.addReport(newReport);
+    ReportStore.addReport(localReport);
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Incident report submitted successfully"),
-          backgroundColor: Colors.green,
-        ),
-      );
+      setState(() => _isSubmitting = false);
+      if (backendReport != null) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text("Incident report submitted to SafeSphere network successfully."),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text("Report saved locally. Will sync when backend is reachable."),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
       if (Navigator.canPop(context)) {
         Navigator.pop(context);
       }
@@ -288,15 +342,24 @@ class _ReportPageState extends State<ReportPage> {
                               shadowColor:
                               AppColors.amber.withValues(alpha: 0.5),
                             ),
-                            onPressed: _submitReport,
-                            child: const Text(
-                              "Submit Report",
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black,
-                              ),
-                            ),
+                            onPressed: _isSubmitting ? null : _submitReport,
+                            child: _isSubmitting
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: Colors.black,
+                                    ),
+                                  )
+                                : const Text(
+                                    "Submit Report",
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black,
+                                    ),
+                                  ),
                           ),
                         ),
                       ],
