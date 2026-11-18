@@ -80,6 +80,32 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
     };
   }
 
+  // Wait for the first incoming WS frame satisfying `predicate`, or reject on timeout.
+  function waitForMessage(ws, predicate, timeoutMs = 1500) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        ws.removeListener('message', onMessage);
+        reject(new Error('Timed out waiting for expected WebSocket message'));
+      }, timeoutMs);
+
+      function onMessage(data) {
+        let msg;
+        try {
+          msg = JSON.parse(data.toString());
+        } catch (_) {
+          return;
+        }
+        if (predicate(msg)) {
+          clearTimeout(timer);
+          ws.removeListener('message', onMessage);
+          resolve(msg);
+        }
+      }
+
+      ws.on('message', onMessage);
+    });
+  }
+
   // =========================================================================
   // 1. REST API: Share Session Creation (/api/v1/location/share-session)
   // =========================================================================
@@ -155,9 +181,10 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
         }
       });
       const sessionId = createRes.body.sessionId;
+      const token = createRes.body.token;
 
-      // 2. Query session
-      const trackRes = await apiRequest(`/api/v1/location/track/${sessionId}`);
+      // 2. Query session with valid token (via query param)
+      const trackRes = await apiRequest(`/api/v1/location/track/${sessionId}?token=${token}`);
       assert.equal(trackRes.status, 200);
       assert.equal(trackRes.body.success, true);
       assert.equal(trackRes.body.data.sessionId, sessionId);
@@ -166,11 +193,50 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
       assert.equal(trackRes.body.data.breadcrumbs.length, 1);
     });
 
+    it('accepts the tracking token via Authorization: Bearer header', async () => {
+      const createRes = await apiRequest('/api/v1/location/share-session', {
+        method: 'POST',
+        body: { latitude: 28.6139, longitude: 77.2090 }
+      });
+      const sessionId = createRes.body.sessionId;
+
+      const res = await apiRequest(`/api/v1/location/track/${sessionId}`, {
+        headers: { Authorization: `Bearer ${createRes.body.token}` }
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.data.sessionId, sessionId);
+    });
+
     it('returns 404 SESSION_NOT_FOUND when requesting non-existent tracking session', async () => {
       const res = await apiRequest('/api/v1/location/track/trk_non_existent_9999');
       assert.equal(res.status, 404);
       assert.equal(res.body.success, false);
       assert.equal(res.body.error.code, 'SESSION_NOT_FOUND');
+    });
+
+    it('rejects retrieval with a wrong tracking token returning 401 INVALID_TRACKING_TOKEN', async () => {
+      const createRes = await apiRequest('/api/v1/location/share-session', {
+        method: 'POST',
+        body: { latitude: 28.6139, longitude: 77.2090 }
+      });
+      const sessionId = createRes.body.sessionId;
+
+      const res = await apiRequest(`/api/v1/location/track/${sessionId}?token=deadbeefwrongtoken`);
+      assert.equal(res.status, 401);
+      assert.equal(res.body.success, false);
+      assert.equal(res.body.error.code, 'INVALID_TRACKING_TOKEN');
+    });
+
+    it('rejects retrieval without any tracking token returning 401 MISSING_TRACKING_TOKEN', async () => {
+      const createRes = await apiRequest('/api/v1/location/share-session', {
+        method: 'POST',
+        body: { latitude: 28.6139, longitude: 77.2090 }
+      });
+      const sessionId = createRes.body.sessionId;
+
+      const res = await apiRequest(`/api/v1/location/track/${sessionId}`);
+      assert.equal(res.status, 401);
+      assert.equal(res.body.error.code, 'MISSING_TRACKING_TOKEN');
     });
   });
 
@@ -189,10 +255,12 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
         }
       });
       const sessionId = createRes.body.sessionId;
+      const authHeaders = { Authorization: `Bearer ${createRes.body.token}` };
 
       // 2. Send ping 1
       const ping1 = await apiRequest('/api/v1/location/ping', {
         method: 'POST',
+        headers: authHeaders,
         body: {
           sessionId,
           latitude: 28.6145,
@@ -209,6 +277,7 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
       // 3. Send ping 2
       const ping2 = await apiRequest('/api/v1/location/ping', {
         method: 'POST',
+        headers: authHeaders,
         body: {
           sessionId,
           latitude: 28.6152,
@@ -222,10 +291,45 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
       assert.equal(ping2.body.data.pointCount, 3);
 
       // 4. Verify full trail via track endpoint
-      const trackRes = await apiRequest(`/api/v1/location/track/${sessionId}`);
+      const trackRes = await apiRequest(`/api/v1/location/track/${sessionId}`, { headers: authHeaders });
       assert.equal(trackRes.body.data.breadcrumbs.length, 3);
       assert.equal(trackRes.body.data.currentLocation.latitude, 28.6152);
       assert.equal(trackRes.body.data.currentLocation.speed, 24.1);
+    });
+
+    it('rejects a ping carrying a wrong tracking token returning 401 INVALID_TRACKING_TOKEN', async () => {
+      const createRes = await apiRequest('/api/v1/location/share-session', {
+        method: 'POST',
+        body: { latitude: 28.6139, longitude: 77.2090 }
+      });
+      const sessionId = createRes.body.sessionId;
+
+      const res = await apiRequest('/api/v1/location/ping', {
+        method: 'POST',
+        body: {
+          sessionId,
+          latitude: 28.6145,
+          longitude: 77.2095,
+          token: 'totally-wrong-token'
+        }
+      });
+      assert.equal(res.status, 401);
+      assert.equal(res.body.error.code, 'INVALID_TRACKING_TOKEN');
+    });
+
+    it('rejects a ping on an existing session with no tracking token returning 401 MISSING_TRACKING_TOKEN', async () => {
+      const createRes = await apiRequest('/api/v1/location/share-session', {
+        method: 'POST',
+        body: { latitude: 28.6139, longitude: 77.2090 }
+      });
+      const sessionId = createRes.body.sessionId;
+
+      const res = await apiRequest('/api/v1/location/ping', {
+        method: 'POST',
+        body: { sessionId, latitude: 28.6145, longitude: 77.2095 }
+      });
+      assert.equal(res.status, 401);
+      assert.equal(res.body.error.code, 'MISSING_TRACKING_TOKEN');
     });
 
     it('rejects ping without sessionId with 400 MISSING_SESSION_ID', async () => {
@@ -259,13 +363,19 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
         body: { latitude: 28.6139, longitude: 77.2090 }
       });
       const sessionId = createRes.body.sessionId;
+      const authHeaders = { Authorization: `Bearer ${createRes.body.token}` };
 
-      // Terminate session
-      await apiRequest(`/api/v1/location/terminate/${sessionId}`, { method: 'POST' });
+      // Terminate session (token required)
+      const termRes = await apiRequest(`/api/v1/location/terminate/${sessionId}`, {
+        method: 'POST',
+        headers: authHeaders
+      });
+      assert.equal(termRes.status, 200);
 
       // Ping after termination
       const pingRes = await apiRequest('/api/v1/location/ping', {
         method: 'POST',
+        headers: authHeaders,
         body: {
           sessionId,
           latitude: 28.6145,
@@ -274,6 +384,25 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
       });
       assert.equal(pingRes.status, 400);
       assert.equal(pingRes.body.error.code, 'SESSION_ENDED');
+    });
+
+    it('rejects termination with a wrong tracking token returning 401 INVALID_TRACKING_TOKEN', async () => {
+      const createRes = await apiRequest('/api/v1/location/share-session', {
+        method: 'POST',
+        body: { latitude: 28.6139, longitude: 77.2090 }
+      });
+      const sessionId = createRes.body.sessionId;
+
+      const res = await apiRequest(`/api/v1/location/terminate/${sessionId}`, {
+        method: 'POST',
+        body: { token: 'nope-not-the-token' }
+      });
+      assert.equal(res.status, 401);
+      assert.equal(res.body.error.code, 'INVALID_TRACKING_TOKEN');
+
+      // Session must remain active after a rejected termination
+      const trackRes = await apiRequest(`/api/v1/location/track/${sessionId}?token=${createRes.body.token}`);
+      assert.equal(trackRes.body.data.status, 'active');
     });
   });
 
@@ -292,6 +421,7 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
         }
       });
       const sessionId = createRes.body.sessionId;
+      const token = createRes.body.token;
 
       const ws = new WebSocket(wsUrl);
 
@@ -310,7 +440,8 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
 
       ws.send(JSON.stringify({
         type: 'SUBSCRIBE_TRACKING',
-        sessionId
+        sessionId,
+        token
       }));
 
       await subPromise;
@@ -332,6 +463,7 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
         body: { latitude: 28.6139, longitude: 77.2090 }
       });
       const sessionId = createRes.body.sessionId;
+      const token = createRes.body.token;
 
       const broadcaster = new WebSocket(wsUrl);
       const guardian1 = new WebSocket(wsUrl);
@@ -347,8 +479,8 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
       ]);
 
       // Guardian 1 and Guardian 2 subscribe
-      guardian1.send(JSON.stringify({ type: 'SUBSCRIBE_TRACKING', sessionId }));
-      guardian2.send(JSON.stringify({ type: 'SUBSCRIBE_TRACKING', sessionId }));
+      guardian1.send(JSON.stringify({ type: 'SUBSCRIBE_TRACKING', sessionId, token }));
+      guardian2.send(JSON.stringify({ type: 'SUBSCRIBE_TRACKING', sessionId, token }));
 
       // Wait a moment for subscription registration
       await new Promise((resolve) => setTimeout(resolve, 30));
@@ -380,6 +512,7 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
       broadcaster.send(JSON.stringify({
         type: 'LOCATION_STREAM_UPDATE',
         sessionId,
+        token,
         latitude: 28.6200,
         longitude: 77.2150,
         speed: 25.4,
@@ -413,11 +546,12 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
         body: { latitude: 28.6139, longitude: 77.2090 }
       });
       const sessionId = createRes.body.sessionId;
+      const token = createRes.body.token;
 
       const guardian = new WebSocket(wsUrl);
       await new Promise((resolve) => guardian.once('message', resolve));
 
-      guardian.send(JSON.stringify({ type: 'SUBSCRIBE_TRACKING', sessionId }));
+      guardian.send(JSON.stringify({ type: 'SUBSCRIBE_TRACKING', sessionId, token }));
       await new Promise((resolve) => setTimeout(resolve, 30));
 
       const updatePromise = new Promise((resolve) => {
@@ -430,6 +564,7 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
       // Broadcaster sends REST ping
       await apiRequest('/api/v1/location/ping', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
         body: {
           sessionId,
           latitude: 28.6250,
@@ -454,6 +589,7 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
         body: { latitude: 28.6139, longitude: 77.2090 }
       });
       const sessionId = createRes.body.sessionId;
+      const token = createRes.body.token;
 
       const broadcaster = new WebSocket(wsUrl);
       const guardian = new WebSocket(wsUrl);
@@ -463,7 +599,7 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
         new Promise((resolve) => guardian.once('message', resolve))
       ]);
 
-      guardian.send(JSON.stringify({ type: 'SUBSCRIBE_TRACKING', sessionId }));
+      guardian.send(JSON.stringify({ type: 'SUBSCRIBE_TRACKING', sessionId, token }));
       await new Promise((resolve) => setTimeout(resolve, 30));
 
       const termPromise = new Promise((resolve) => {
@@ -476,6 +612,7 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
       broadcaster.send(JSON.stringify({
         type: 'STREAM_TERMINATE',
         sessionId,
+        token,
         reason: 'User arrived safely at destination'
       }));
 
@@ -486,6 +623,117 @@ describe('Live Guardian Tracking & WebSocket Stream', () => {
 
       broadcaster.close();
       guardian.close();
+    });
+
+    it('rejects SUBSCRIBE_TRACKING with a wrong token returning ERROR INVALID_TRACKING_TOKEN', async () => {
+      const createRes = await apiRequest('/api/v1/location/share-session', {
+        method: 'POST',
+        body: { latitude: 28.6139, longitude: 77.2090 }
+      });
+      const sessionId = createRes.body.sessionId;
+
+      const ws = new WebSocket(wsUrl);
+      await new Promise((resolve) => ws.once('message', resolve));
+
+      const errPromise = waitForMessage(ws, (m) => m.type === 'ERROR');
+      ws.send(JSON.stringify({ type: 'SUBSCRIBE_TRACKING', sessionId, token: 'wrong-subscribe-token' }));
+
+      const err = await errPromise;
+      assert.equal(err.type, 'ERROR');
+      assert.equal(err.code, 'INVALID_TRACKING_TOKEN');
+
+      ws.close();
+    });
+
+    it('rejects SUBSCRIBE_TRACKING without a token returning ERROR MISSING_TRACKING_TOKEN', async () => {
+      const createRes = await apiRequest('/api/v1/location/share-session', {
+        method: 'POST',
+        body: { latitude: 28.6139, longitude: 77.2090 }
+      });
+      const sessionId = createRes.body.sessionId;
+
+      const ws = new WebSocket(wsUrl);
+      await new Promise((resolve) => ws.once('message', resolve));
+
+      const errPromise = waitForMessage(ws, (m) => m.type === 'ERROR');
+      ws.send(JSON.stringify({ type: 'SUBSCRIBE_TRACKING', sessionId }));
+
+      const err = await errPromise;
+      assert.equal(err.code, 'MISSING_TRACKING_TOKEN');
+
+      ws.close();
+    });
+
+    it('rejects LOCATION_STREAM_UPDATE with a wrong token and does not broadcast to guardians', async () => {
+      const createRes = await apiRequest('/api/v1/location/share-session', {
+        method: 'POST',
+        body: { latitude: 28.6139, longitude: 77.2090 }
+      });
+      const sessionId = createRes.body.sessionId;
+      const token = createRes.body.token;
+
+      const broadcaster = new WebSocket(wsUrl);
+      const guardian = new WebSocket(wsUrl);
+      await Promise.all([
+        new Promise((resolve) => broadcaster.once('message', resolve)),
+        new Promise((resolve) => guardian.once('message', resolve))
+      ]);
+
+      guardian.send(JSON.stringify({ type: 'SUBSCRIBE_TRACKING', sessionId, token }));
+      await waitForMessage(guardian, (m) => m.type === 'SUBSCRIBED_TRACKING');
+
+      let guardianSawUpdate = false;
+      guardian.on('message', (data) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === 'LOCATION_STREAM_UPDATE') guardianSawUpdate = true;
+      });
+
+      const errPromise = waitForMessage(broadcaster, (m) => m.type === 'ERROR');
+      broadcaster.send(JSON.stringify({
+        type: 'LOCATION_STREAM_UPDATE',
+        sessionId,
+        token: 'bad-stream-token',
+        latitude: 28.6200,
+        longitude: 77.2150
+      }));
+
+      const err = await errPromise;
+      assert.equal(err.code, 'INVALID_TRACKING_TOKEN');
+
+      // Give any (incorrect) broadcast a chance to arrive before asserting absence
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(guardianSawUpdate, false, 'Unauthorized update must not reach subscribers');
+
+      broadcaster.close();
+      guardian.close();
+    });
+
+    it('rejects STREAM_TERMINATE with a wrong token returning ERROR INVALID_TRACKING_TOKEN', async () => {
+      const createRes = await apiRequest('/api/v1/location/share-session', {
+        method: 'POST',
+        body: { latitude: 28.6139, longitude: 77.2090 }
+      });
+      const sessionId = createRes.body.sessionId;
+
+      const broadcaster = new WebSocket(wsUrl);
+      await new Promise((resolve) => broadcaster.once('message', resolve));
+
+      const errPromise = waitForMessage(broadcaster, (m) => m.type === 'ERROR');
+      broadcaster.send(JSON.stringify({
+        type: 'STREAM_TERMINATE',
+        sessionId,
+        token: 'wrong-terminate-token',
+        reason: 'should not apply'
+      }));
+
+      const err = await errPromise;
+      assert.equal(err.code, 'INVALID_TRACKING_TOKEN');
+
+      // Session must remain active after a rejected WebSocket termination
+      const trackRes = await apiRequest(`/api/v1/location/track/${sessionId}?token=${createRes.body.token}`);
+      assert.equal(trackRes.body.data.status, 'active');
+
+      broadcaster.close();
     });
   });
 });

@@ -18,6 +18,8 @@
 	<string>SafeSphere needs your location to share your live coordinates during emergencies.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>SafeSphere needs your location to protect your journey and share distress alerts.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>SafeSphere uses Face ID to authenticate and secure emergency access.</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>tel</string>

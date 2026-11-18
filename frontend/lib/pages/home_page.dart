@@ -33,7 +33,10 @@ class _HomePageState extends State<HomePage> {
 
     try {
       // 1. Detect user position if permitted
-      final permission = await Geolocator.checkPermission();
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
       if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
         final pos = await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 4)),
@@ -43,33 +46,39 @@ class _HomePageState extends State<HomePage> {
         _userLng = pos.longitude;
         _locationLabel = "GPS: ${_userLat.toStringAsFixed(2)}, ${_userLng.toStringAsFixed(2)}";
       } else {
-        _locationLabel = "Delhi NCR (Default)";
+        _locationLabel = "Unavailable — enable location";
       }
     } catch (_) {
-      _locationLabel = "Delhi NCR (Default)";
+      _locationLabel = "Unavailable — enable location";
     }
 
     try {
       // 2. Fetch live community reports from real backend
-      final fetched = await AuthService.instance.fetchReports(limit: 10);
+      final auth = AuthService.instance;
+      final fetched = await auth.fetchReports(limit: 10);
       if (mounted) {
         setState(() {
-          _reports = fetched;
-          _lastFetchTime = DateTime.now();
+          if (!auth.lastFetchFailed) {
+            _reports = fetched;
+            _lastFetchTime = DateTime.now();
+          }
           _isLoading = false;
         });
       }
     } catch (_) {
       if (mounted) {
         setState(() {
-          _lastFetchTime = DateTime.now();
           _isLoading = false;
         });
       }
     }
   }
 
+  bool get _isBackendUnavailable => AuthService.instance.lastFetchFailed;
+
   String _calculateSafetyLevel() {
+    if (_isBackendUnavailable) return "Unavailable — connect to backend";
+    if (_lastFetchTime == null && _isLoading) return "Assessing local safety...";
     final count = _reports.length;
     if (count == 0) return "Safety Level: High";
     if (count <= 3) return "Safety Level: Moderate";
@@ -77,6 +86,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Color _getSafetyLevelColor() {
+    if (_isBackendUnavailable) return AppColors.amber;
+    if (_lastFetchTime == null && _isLoading) return AppColors.textSecondary;
     final count = _reports.length;
     if (count == 0) return AppColors.teal;
     if (count <= 3) return AppColors.amber;
@@ -186,7 +197,7 @@ class _HomePageState extends State<HomePage> {
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
-                    Icon(Icons.shield, size: 40, color: safetyColor),
+                    Icon(_isBackendUnavailable ? Icons.cloud_off : Icons.shield, size: 40, color: safetyColor),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
@@ -201,14 +212,22 @@ class _HomePageState extends State<HomePage> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            "Based on ${_reports.length} verified community report(s)",
+                            _isBackendUnavailable
+                                ? "Connect to backend to assess local safety"
+                                : (_lastFetchTime == null && _isLoading)
+                                    ? "Connecting to live safety telemetry..."
+                                    : "Based on ${_reports.length} verified community report(s)",
                             style: const TextStyle(color: Colors.white60),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            _lastFetchTime != null
-                                ? "Last synced: ${_formatRelativeTime(_lastFetchTime!.toIso8601String())}"
-                                : "Syncing live telemetry...",
+                            _isBackendUnavailable
+                                ? (_lastFetchTime != null
+                                    ? "Last synced: ${_formatRelativeTime(_lastFetchTime!.toIso8601String())} (Offline)"
+                                    : "Sync failed — pull down to retry")
+                                : (_lastFetchTime != null
+                                    ? "Last synced: ${_formatRelativeTime(_lastFetchTime!.toIso8601String())}"
+                                    : "Syncing live telemetry..."),
                             style: const TextStyle(
                               color: Colors.white38,
                               fontSize: 12,
@@ -321,7 +340,17 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 10),
 
-            if (recentReports.isEmpty)
+            if (_isBackendUnavailable)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.cloud_off, color: AppColors.amber, size: 22),
+                  title: Text("Activity feed unavailable — connect to backend", style: TextStyle(color: Colors.white70)),
+                  subtitle: Text("Connect to backend to view recent activity", style: TextStyle(color: Colors.white38, fontSize: 12)),
+                ),
+              )
+            else if (recentReports.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: ListTile(
@@ -371,7 +400,9 @@ class _HomePageState extends State<HomePage> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              "${_reports.length} verified alert(s) in active area",
+                              _isBackendUnavailable
+                                  ? "Unavailable — connect to backend"
+                                  : "${_reports.length} verified alert(s) in active area",
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Colors.white60,
@@ -387,7 +418,7 @@ class _HomePageState extends State<HomePage> {
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
-                          "${_reports.length}",
+                          _isBackendUnavailable ? "—" : "${_reports.length}",
                           style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,

@@ -82,18 +82,25 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
         AuthService.instance.fetchNearbyMarkers(
           latitude: _userLat,
           longitude: _userLng,
-          radiusKm: 25.0,
+          radiusKm: 10,
         ),
         AuthService.instance.fetchReports(limit: 50),
       ]);
 
-      if (mounted) {
+      if (!mounted) return;
+      if (AuthService.instance.lastFetchFailed && results[0].isEmpty) {
         setState(() {
-          _markers = results[0];
-          _reports = results[1];
+          _errorMessage = "Could not fetch nearby safety data.";
           _isLoading = false;
         });
+        return;
       }
+
+      setState(() {
+        _markers = results[0];
+        _reports = results[1];
+        _isLoading = false;
+      });
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -410,6 +417,31 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
               color: const Color(0xFF070B14),
               child: CustomPaint(
                 painter: _DarkVectorMapPainter(layer: "Safety"),
+              ),
+            ),
+
+            // Radar mode indicator
+            Positioned(
+              top: 56,
+              left: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.teal.withValues(alpha: 0.35)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.radar, size: 12, color: AppColors.teal),
+                    SizedBox(width: 5),
+                    Text(
+                      "Radar Proximity View (10km)",
+                      style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
               ),
             ),
 

@@ -391,8 +391,10 @@ class EmergencyPage extends StatelessWidget {
                 if (permission == LocationPermission.whileInUse ||
                     permission == LocationPermission.always) {
                   final position = await Geolocator.getCurrentPosition(
-                    desiredAccuracy: LocationAccuracy.high,
-                    timeLimit: const Duration(seconds: 5),
+                    locationSettings: const LocationSettings(
+                      accuracy: LocationAccuracy.high,
+                      timeLimit: Duration(seconds: 5),
+                    ),
                   );
                   lat = position.latitude;
                   lng = position.longitude;

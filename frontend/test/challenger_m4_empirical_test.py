@@ -268,10 +268,17 @@ class Report:
 
 class SimulatedReportStore:
     reports: List[Report] = []
+    _seq: int = 0
 
     @classmethod
     def clear(cls):
         cls.reports.clear()
+        cls._seq = 0
+
+    @classmethod
+    def next_id(cls) -> str:
+        cls._seq += 1
+        return f"rep_{int(time.time() * 1000)}_{cls._seq}"
 
     @classmethod
     def add_report(cls, report: Report):
@@ -319,7 +326,7 @@ class SimulatedReportPage:
             return
 
         new_report = Report(
-            id=f"rep_{int(time.time() * 1000)}_{random.randint(1000, 9999)}",
+            id=SimulatedReportStore.next_id(),
             type=self.selected_type,
             location="Using current location",
             description=desc,
@@ -481,23 +488,24 @@ class TestMilestone4EmpiricalChallenger(unittest.TestCase):
         self.assertIn("class ShareLocationPage extends StatefulWidget", self.share_code)
         self.assertIn("class _ShareLocationPageState extends State<ShareLocationPage>", self.share_code)
 
-        # 3. Timeout configuration (6 seconds)
-        self.assertIn("LocationSettings(\n                timeLimit: Duration(seconds: 6),", self.share_code)
-        self.assertIn(".timeout(const Duration(seconds: 6))", self.share_code)
+        # 3. Timeout configuration (6s fix budget inside a 7s outer timeout)
+        self.assertIn("timeLimit: Duration(seconds: 6)", self.share_code)
+        self.assertIn(".timeout(const Duration(seconds: 7))", self.share_code)
 
         # 4. Fallback to getLastKnownPosition
         self.assertIn("Geolocator.getLastKnownPosition()", self.share_code)
 
-        # 5. Default coordinates: Delhi 28.6139, 77.2090
-        self.assertIn("lat = 28.6139;", self.share_code)
-        self.assertIn("lng = 77.2090;", self.share_code)
+        # 5. No fabricated coordinates: GPS failure must surface an honest
+        #    error, never silently fall back to hardcoded Delhi coordinates.
+        self.assertNotIn("28.6139", self.share_code)
+        self.assertNotIn("77.2090", self.share_code)
 
         # 6. Re-entrancy protection
-        self.assertIn("_isLoading ? null : _shareLocation", self.share_code)
+        self.assertIn("_isLoading ? null : _fetchCurrentLocation", self.share_code)
 
         # 7. Mounted guard on SnackBar and setState
         self.assertIn("if (mounted)", self.share_code)
-        self.assertIn("GPS unavailable or permission denied. Using default coordinates.", self.share_code)
+        self.assertIn("GPS unavailable", self.share_code)
 
     def test_ch2_2_dynamic_gps_success_worldwide_fuzzing(self):
         """Stress-tests dynamic GPS coordinate retrieval with coordinates across the globe."""
@@ -634,13 +642,15 @@ class TestMilestone4EmpiricalChallenger(unittest.TestCase):
         self.assertIn("Please enter a description for the incident.", self.report_code)
         self.assertIn("Colors.redAccent", self.report_code)
 
-        # 3. Model construction & store persistence
-        self.assertIn("ReportStore.addReport(newReport);", self.report_code)
-        self.assertIn("id: \"rep_${DateTime.now().millisecondsSinceEpoch}\"", self.report_code)
+        # 3. Backend submit + local cache persistence
+        self.assertIn("authService.submitReport(", self.report_code)
+        self.assertIn("ReportStore.addReport(localReport);", self.report_code)
+        self.assertIn('rep_${DateTime.now().millisecondsSinceEpoch}', self.report_code)
         self.assertIn("status: ReportStatus.pending", self.report_code)
 
-        # 4. Success SnackBar & safe pop
-        self.assertIn("Incident report submitted successfully", self.report_code)
+        # 4. Success SnackBar & safe pop (honest offline degradation included)
+        self.assertIn("Incident report submitted to SafeSphere network successfully.", self.report_code)
+        self.assertIn("Report saved locally", self.report_code)
         self.assertIn("Colors.green", self.report_code)
         self.assertIn("if (Navigator.canPop(context))", self.report_code)
 

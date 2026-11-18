@@ -390,7 +390,52 @@ describe('SafeSphere Authentication API & Service Tests', () => {
       assert.equal(refreshRes.status, 200);
       assert.equal(refreshRes.body.success, true);
       assert.ok(refreshRes.body.data.accessToken, 'New access token must be generated');
+      assert.ok(refreshRes.body.data.refreshToken, 'New refresh token must be rotated');
       assert.equal(refreshRes.body.data.tokenType, 'Bearer');
+    });
+
+    it('rotates refresh token and invalidates old token on refresh', async () => {
+      const loginRes = await serverHarness.request('/api/v1/auth/login', {
+        method: 'POST',
+        body: {
+          emailOrPhone: 'demo@safesphere.org',
+          password: 'SafeSphere@2026'
+        }
+      });
+      const initialRefreshToken = loginRes.body.data.refreshToken;
+
+      // 1st Refresh: Exchanges initialRefreshToken for a brand new pair
+      const refresh1 = await serverHarness.request('/api/v1/auth/refresh', {
+        method: 'POST',
+        body: { refreshToken: initialRefreshToken }
+      });
+      assert.equal(refresh1.status, 200);
+      const rotatedRefreshToken = refresh1.body.data.refreshToken;
+      assert.notEqual(rotatedRefreshToken, initialRefreshToken, 'Refresh token must be rotated');
+
+      // 2nd Refresh using the newly rotated token succeeds
+      const refresh2 = await serverHarness.request('/api/v1/auth/refresh', {
+        method: 'POST',
+        body: { refreshToken: rotatedRefreshToken }
+      });
+      assert.equal(refresh2.status, 200);
+      assert.ok(refresh2.body.data.accessToken);
+
+      // Reusing initialRefreshToken must be detected and rejected
+      const reuseAttempt = await serverHarness.request('/api/v1/auth/refresh', {
+        method: 'POST',
+        body: { refreshToken: initialRefreshToken }
+      });
+      assert.equal(reuseAttempt.status, 401);
+      assert.equal(reuseAttempt.body.error.code, 'INVALID_SESSION');
+
+      // Reuse detection revokes all sessions for that user: even latest token is now revoked
+      const afterRevocationAttempt = await serverHarness.request('/api/v1/auth/refresh', {
+        method: 'POST',
+        body: { refreshToken: refresh2.body.data.refreshToken }
+      });
+      assert.equal(afterRevocationAttempt.status, 401);
+      assert.equal(afterRevocationAttempt.body.error.code, 'INVALID_SESSION');
     });
 
     it('rejects tampered or forged refresh token returning 401 Unauthorized', async () => {

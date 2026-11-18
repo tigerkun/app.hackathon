@@ -25,7 +25,8 @@ function createAlert({
   triggeredAt = new Date().toISOString(),
   resolvedAt = null,
   emergencyContactsNotified = 0,
-  notes = null
+  notes = null,
+  resolveTokenHash = null
 }) {
   return {
     id,
@@ -41,7 +42,8 @@ function createAlert({
     triggeredAt,
     resolvedAt: resolvedAt ? String(resolvedAt) : null,
     emergencyContactsNotified: Number(emergencyContactsNotified || 0),
-    notes: notes ? String(notes).trim() : null
+    notes: notes ? String(notes).trim() : null,
+    resolveTokenHash: resolveTokenHash || null
   };
 }
 

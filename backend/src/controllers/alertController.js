@@ -5,6 +5,15 @@
 
 const sosService = require('../services/sosService');
 const { toSafeAlert } = require('../models/alertModel');
+const crypto = require('crypto');
+
+function verifyResolveToken(alert, presentedToken) {
+  if (!presentedToken || !alert.resolveTokenHash) return false;
+  const presentedHash = crypto.createHash('sha256').update(String(presentedToken)).digest('hex');
+  const a = Buffer.from(presentedHash, 'utf8');
+  const b = Buffer.from(String(alert.resolveTokenHash), 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 // Lazy-reference broadcastSosAlert to avoid circular dependency issues at boot
 function getBroadcastHelper() {
@@ -64,7 +73,8 @@ function active(req, res, next) {
   try {
     const rawAlerts = sosService.getActiveAlerts();
     const isPrivileged = !!(req.user && (req.user.role === 'admin' || req.user.role === 'first_responder'));
-    const alerts = rawAlerts.map(a => {
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 50), 100);
+    const alerts = rawAlerts.slice(0, limit).map(a => {
       const isOwner = req.user && req.user.id === a.userId;
       return toSafeAlert(a, isOwner || isPrivileged);
     });
@@ -83,7 +93,8 @@ function list(req, res, next) {
   try {
     const rawAlerts = sosService.getAllAlerts();
     const isPrivileged = !!(req.user && (req.user.role === 'admin' || req.user.role === 'first_responder'));
-    const alerts = rawAlerts.map(a => {
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 50), 100);
+    const alerts = rawAlerts.slice(0, limit).map(a => {
       const isOwner = req.user && req.user.id === a.userId;
       return toSafeAlert(a, isOwner || isPrivileged);
     });
@@ -131,11 +142,28 @@ function resolve(req, res, next) {
     }
 
     const existing = sosService.getAlertById(alertId);
+    const isAnonymousAlert = !existing.userId || existing.userId === 'anonymous';
+    const isPrivileged = !!(req.user && (req.user.role === 'admin' || req.user.role === 'first_responder'));
 
-    // Alerts owned by a registered user may ONLY be resolved by that owner or an admin role.
-    // Anonymous/guest alerts carry no owner identity and remain resolvable without auth
-    // (the guest who triggered them has no account to authenticate with).
-    if (existing.userId && existing.userId !== 'anonymous') {
+    if (isAnonymousAlert) {
+      // Anonymous alerts: admin/first_responder OR possession of the per-alert
+      // resolveToken issued at trigger time (the victim's "I'm Safe Now"
+      // credential). Guests have no account, so the token is the only path.
+      const presentedToken = req.body && (req.body.resolveToken || req.body.resolve_token || req.body.token);
+      if (!isPrivileged && !verifyResolveToken(existing, presentedToken)) {
+        return res.status(req.user ? 403 : 401).json({
+          success: false,
+          error: {
+            code: req.user ? 'FORBIDDEN_RESOLVE' : 'UNAUTHORIZED_RESOLVE',
+            message: req.user
+              ? 'Only responders, administrators, or the alert resolve token may resolve anonymous SOS alerts'
+              : 'Authentication or a valid resolve token is required to resolve this SOS alert',
+            details: []
+          }
+        });
+      }
+    } else {
+      // Owned alerts require authentication.
       if (!req.user) {
         return res.status(401).json({
           success: false,
@@ -147,8 +175,7 @@ function resolve(req, res, next) {
         });
       }
       const isOwner = req.user.id === existing.userId;
-      const isAdmin = req.user.role === 'admin' || req.user.role === 'first_responder';
-      if (!isOwner && !isAdmin) {
+      if (!isOwner && !isPrivileged) {
         return res.status(403).json({
           success: false,
           error: {

@@ -3,8 +3,50 @@
  * Business logic for live guardian tracking sessions and breadcrumb telemetry.
  */
 
+const crypto = require('crypto');
 const { db } = require('../data/store');
 const { createTrackingSession } = require('../models/trackingModel');
+
+/**
+ * Constant-time comparison of a provided tracking token against the session's
+ * secret token. The session token IS the credential (guest/anonymous included).
+ */
+function safeTokenEquals(expected, provided) {
+  if (expected === undefined || expected === null || provided === undefined || provided === null) {
+    return false;
+  }
+  const a = Buffer.from(String(expected));
+  const b = Buffer.from(String(provided));
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * Throws a 401 error unless the provided token matches the session token.
+ */
+function assertTrackingToken(session, token) {
+  if (token === undefined || token === null || token === '') {
+    const error = new Error('A tracking token is required to access this tracking session');
+    error.status = 401;
+    error.code = 'MISSING_TRACKING_TOKEN';
+    throw error;
+  }
+  if (!safeTokenEquals(session.token, token)) {
+    const error = new Error('Invalid tracking token for this tracking session');
+    error.status = 401;
+    error.code = 'INVALID_TRACKING_TOKEN';
+    throw error;
+  }
+}
+
+/**
+ * Non-throwing token validation used by the WebSocket layer.
+ */
+function isValidTrackingToken(sessionId, token) {
+  const session = db.findTrackingSessionById(sessionId);
+  if (!session) return false;
+  return safeTokenEquals(session.token, token);
+}
 
 function isValidCoordinate(lat, lng) {
   if (lat === null || lat === undefined || lng === null || lng === undefined) return false;
@@ -65,7 +107,7 @@ function createShareSession({
   db.saveTrackingSession(session);
 
   const cleanBase = (baseUrl || 'http://127.0.0.1:8080').replace(/\/+$/, '');
-  const shareUrl = `${cleanBase}/?session=${encodeURIComponent(session.id)}`;
+  const shareUrl = `${cleanBase}/?session=${encodeURIComponent(session.id)}&token=${encodeURIComponent(session.token)}`;
 
   return {
     sessionId: session.id,
@@ -76,7 +118,7 @@ function createShareSession({
   };
 }
 
-function getTrackingSession(sessionId) {
+function getTrackingSession(sessionId, token) {
   if (!sessionId) {
     const error = new Error('sessionId is required');
     error.status = 400;
@@ -92,6 +134,8 @@ function getTrackingSession(sessionId) {
     throw error;
   }
 
+  assertTrackingToken(session, token);
+
   return session;
 }
 
@@ -102,7 +146,8 @@ function recordPing({
   speed,
   battery,
   accuracy,
-  timestamp
+  timestamp,
+  token
 }) {
   if (!sessionId) {
     const error = new Error('sessionId is required for location ping');
@@ -132,6 +177,8 @@ function recordPing({
     error.code = 'SESSION_NOT_FOUND';
     throw error;
   }
+
+  assertTrackingToken(session, token);
 
   if (session.status === 'ended') {
     const error = new Error('Cannot append ping to an ended tracking session');
@@ -166,7 +213,7 @@ function recordPing({
   };
 }
 
-function terminateTrackingSession(sessionId, reason = null) {
+function terminateTrackingSession(sessionId, reason = null, token) {
   if (!sessionId) {
     const error = new Error('sessionId is required to terminate tracking session');
     error.status = 400;
@@ -182,6 +229,8 @@ function terminateTrackingSession(sessionId, reason = null) {
     throw error;
   }
 
+  assertTrackingToken(session, token);
+
   const updated = db.updateTrackingSession(sessionId, {
     status: 'ended',
     endedAt: new Date().toISOString(),
@@ -196,5 +245,8 @@ module.exports = {
   getTrackingSession,
   recordPing,
   terminateTrackingSession,
-  isValidCoordinate
+  isValidCoordinate,
+  isValidTrackingToken,
+  assertTrackingToken,
+  safeTokenEquals
 };

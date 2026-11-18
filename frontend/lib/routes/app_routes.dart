@@ -10,6 +10,7 @@ class AppRoutes {
   // Unconditional Emergency Routes (Zero Barrier)
   static const String emergency = '/emergency';
   static const String shareLocation = '/share';
+  static const String trackSession = '/track';
 
   // Core App Routes (Guest & Authenticated)
   static const String home = '/home';

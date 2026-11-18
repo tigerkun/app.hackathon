@@ -12,7 +12,10 @@ function list(req, res, next) {
     const filter = {};
     if (type) filter.type = String(type);
     if (status) filter.status = String(status);
-    if (limit) filter.limit = parseInt(limit, 10);
+    const parsedLimit = limit !== undefined
+      ? Math.min(Math.max(1, parseInt(limit, 10) || 100), 100)
+      : 100;
+    filter.limit = parsedLimit;
 
     const reports = db.getAllReports(filter);
 

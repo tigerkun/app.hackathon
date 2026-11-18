@@ -1,0 +1,40 @@
+# ==============================================================================
+# SafeSphere Render Infrastructure Blueprint
+# ==============================================================================
+# Architecture & Persistent Storage Notes:
+# - SafeSphere backend uses SQLite via Node.js built-in `node:sqlite`.
+# - Render "starter" plan supports persistent SSD disks (1 GB mounted at /var/data).
+# - PostgreSQL Alternative (TODO(DEPLOY)):
+#   If deploying to Render's Free tier (where disks are ephemeral and wiped on
+#   container restart/spin-down) or scaling horizontally to multiple web service
+#   instances, migrate the storage layer to Render Managed PostgreSQL (`type: postgres`)
+#   and provide DATABASE_URL. SQLite on persistent disk is single-instance only.
+# ==============================================================================
+
+services:
+  - type: web
+    name: safesphere-backend
+    runtime: node
+    plan: starter
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: node src/server.js
+    disk:
+      name: safesphere-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_PATH
+        value: /var/data/safesphere.db
+      - key: DEMO_MODE
+        value: "false"
+      - key: PORT
+        value: "10000"
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false

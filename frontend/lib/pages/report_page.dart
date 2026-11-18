@@ -15,6 +15,10 @@ class ReportPage extends StatefulWidget {
 }
 
 class _ReportPageState extends State<ReportPage> {
+  // Monotonic suffix keeps offline fallback IDs unique even when several
+  // reports are submitted within the same millisecond.
+  static int _localReportSeq = 0;
+
   String selectedType = "Theft";
   final TextEditingController _descriptionController = TextEditingController();
   String _locationTag = "Acquiring GPS location...";
@@ -43,8 +47,10 @@ class _ReportPageState extends State<ReportPage> {
       }
       if (perm == LocationPermission.whileInUse || perm == LocationPermission.always) {
         final pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-          timeLimit: const Duration(seconds: 6),
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 6),
+          ),
         );
         if (mounted) {
           setState(() {
@@ -96,17 +102,22 @@ class _ReportPageState extends State<ReportPage> {
 
     // 1. Submit to real backend via AuthService
     final authService = AuthService.instance;
+    // Send clean "lat,lng" without the "(GPS Verified)" UI tag in backend payload
+    final cleanPayloadLocation = (_latitude != null && _longitude != null)
+        ? "${_latitude!.toStringAsFixed(5)}, ${_longitude!.toStringAsFixed(5)}"
+        : (_locationTag.contains('(') ? _locationTag.split('(').first.trim() : _locationTag);
     final backendReport = await authService.submitReport(
       type: selectedType,
       description: description,
-      location: _locationTag,
+      location: cleanPayloadLocation,
       latitude: _latitude,
       longitude: _longitude,
     );
 
     // 2. Add to local cache for immediate in-app visibility
     final localReport = Report(
-      id: backendReport?['id'] as String? ?? "rep_${DateTime.now().millisecondsSinceEpoch}",
+      id: backendReport?['id'] as String? ??
+          "rep_${DateTime.now().millisecondsSinceEpoch}_${_localReportSeq++}",
       type: selectedType,
       location: _locationTag,
       description: description,

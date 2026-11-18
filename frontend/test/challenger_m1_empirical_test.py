@@ -345,8 +345,8 @@ class TestFileSystemPruningAndLayout(unittest.TestCase):
 
         self.assertEqual(
             len(all_dart_files),
-            18,
-            f"Expected exactly 18 active Dart files in lib/, found {len(all_dart_files)}: {sorted(all_dart_files)}"
+            34,
+            f"Expected exactly 34 active Dart files in lib/, found {len(all_dart_files)}: {sorted(all_dart_files)}"
         )
 
 

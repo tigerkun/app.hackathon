@@ -41,6 +41,13 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
       final authService = AuthService.instance;
       final reports = await authService.fetchReports(limit: 50);
       if (!mounted) return;
+      if (authService.lastFetchFailed) {
+        setState(() {
+          isLoading = false;
+          errorMessage = 'Unable to fetch community alerts: Check server connection.';
+        });
+        return;
+      }
       setState(() {
         _rawReports = reports;
         isLoading = false;
@@ -112,11 +119,6 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     return _rawReports
         .where((r) => (r['type'] as String? ?? '').toLowerCase() == selectedFilter.toLowerCase())
         .toList();
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
   }
 
   @override

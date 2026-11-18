@@ -9,6 +9,7 @@ import 'pages/report_page.dart';
 import 'pages/ai_assistant_page.dart';
 import 'pages/community_alerts_page.dart';
 import 'pages/share_location_page.dart';
+import 'pages/track_session_page.dart';
 import 'pages/emergency_page.dart';
 import 'pages/about_page.dart';
 
@@ -31,6 +32,7 @@ final Map<String, WidgetBuilder> _appRouteMap = {
   '/alerts': (_) => const CommunityAlertsPage(),
   '/ai-assistant': (_) => const AiAssistantPage(),
   '/share': (_) => const ShareLocationPage(),
+  '/track': (_) => const TrackSessionPage(),
   '/emergency': (_) => const EmergencyPage(),
   '/about': (_) => const AboutPage(),
   '/community': (_) => const CommunityAlertsPage(),

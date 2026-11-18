@@ -9,15 +9,17 @@ const { findNearby } = require('../services/geoService');
 
 function list(req, res, next) {
   try {
-    const { category, isVerified, lat, lon, latitude, longitude, radius } = req.query;
+    const { category, isVerified, lat, lon, latitude, longitude, radius, limit } = req.query;
 
     const targetLat = lat || latitude;
     const targetLon = lon || longitude;
+    const parsedLimit = Math.min(Math.max(1, parseInt(limit, 10) || 100), 100);
 
     // If coordinates are provided in query, perform proximity search
     if (targetLat !== undefined && targetLon !== undefined) {
+      const maxRadius = Math.min(Math.max(0.1, Number(radius) || 10), 100);
       const allMarkers = db.getAllMarkers();
-      const nearbyMarkers = findNearby(allMarkers, targetLat, targetLon, radius || 10);
+      const nearbyMarkers = findNearby(allMarkers, targetLat, targetLon, maxRadius).slice(0, parsedLimit);
 
       return res.status(200).json({
         success: true,
@@ -29,6 +31,7 @@ function list(req, res, next) {
     const filter = {};
     if (category) filter.category = String(category);
     if (isVerified !== undefined) filter.isVerified = isVerified === 'true';
+    filter.limit = parsedLimit;
 
     const markers = db.getAllMarkers(filter);
 
@@ -44,7 +47,7 @@ function list(req, res, next) {
 
 function nearby(req, res, next) {
   try {
-    const { lat, lon, latitude, longitude, radius, category, type } = req.query;
+    const { lat, lon, latitude, longitude, radius, category, type, limit } = req.query;
     const targetLat = lat || latitude;
     const targetLon = lon || longitude;
 
@@ -66,7 +69,9 @@ function nearby(req, res, next) {
         m.category && m.category.toLowerCase().includes(String(filterCat).toLowerCase())
       );
     }
-    const nearbyMarkers = findNearby(allMarkers, targetLat, targetLon, radius || 10);
+    const maxRadius = Math.min(Math.max(0.1, Number(radius) || 10), 100);
+    const parsedLimit = Math.min(Math.max(1, parseInt(limit, 10) || 100), 100);
+    const nearbyMarkers = findNearby(allMarkers, targetLat, targetLon, maxRadius).slice(0, parsedLimit);
 
     res.status(200).json({
       success: true,
@@ -80,7 +85,7 @@ function nearby(req, res, next) {
 
 function create(req, res, next) {
   try {
-    const { name, category, latitude, longitude, address, isVerified } = req.body;
+    const { name, category, latitude, longitude, address } = req.body;
 
     if (!name || latitude === undefined || longitude === undefined) {
       return res.status(400).json({
@@ -106,13 +111,17 @@ function create(req, res, next) {
       });
     }
 
+    const isPrivileged = Boolean(
+      req.user && (req.user.role === 'admin' || req.user.role === 'first_responder')
+    );
+
     const marker = createMarker({
       name,
       category,
       latitude: latNum,
       longitude: lonNum,
       address,
-      isVerified: isVerified !== undefined ? isVerified : true
+      isVerified: isPrivileged
     });
 
     const saved = db.saveMarker(marker);

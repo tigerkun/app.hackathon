@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -30,6 +31,7 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
   String? _sessionId;
   String? _sessionToken;
   String? _shareUrl;
+  String? _expiresAt;
   int _pingCount = 0;
 
   Timer? _pingTimer;
@@ -37,8 +39,13 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
   WebSocket? _ws;
 
   // ── Backend base URL (matches AuthService) ─────────────────────────────────
-  static const String _backendBase = 'http://127.0.0.1:3000';
-  static const String _wsUrl = 'ws://127.0.0.1:3000/ws/sos';
+  static const String _backendBase = AuthService.apiBaseUrl;
+  static String get _wsUrl {
+    final uri = Uri.parse(AuthService.apiBaseUrl);
+    final wsScheme = uri.scheme == 'https' ? 'wss' : 'ws';
+    final portPart = uri.hasPort ? ':${uri.port}' : '';
+    return '$wsScheme://${uri.host}$portPart/ws/sos';
+  }
 
   @override
   void initState() {
@@ -120,52 +127,36 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
     setState(() => _isStartingSession = true);
 
     try {
-      // 1. Create backend tracking session
-      final authService = AuthService.instance;
-      final token = await authService.storage.getString(AuthService.keyToken);
+      // 1. Create backend tracking session via AuthService
+      final sessionData = await AuthService.instance.createTrackingSession(
+        latitude: _latitude!,
+        longitude: _longitude!,
+        accuracy: _accuracy,
+        durationMinutes: 60,
+      );
 
-      final uri = Uri.parse('$_backendBase/api/v1/location/share-session');
-      final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 5);
-      final req = await client.postUrl(uri);
-      req.headers.contentType = ContentType.json;
-      if (token != null && token.isNotEmpty) {
-        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      if (sessionData == null) {
+        throw Exception('Backend rejected session creation');
       }
-      req.write(jsonEncode({
-        'latitude': _latitude,
-        'longitude': _longitude,
-        'accuracy': _accuracy,
-        'durationMinutes': 60,
-      }));
 
-      final res = await req.close().timeout(const Duration(seconds: 6));
-      final body = await res.transform(utf8.decoder).join();
-      client.close();
-
-      final data = jsonDecode(body) as Map<String, dynamic>;
-      if (data['success'] != true) throw Exception('Backend rejected session creation');
-
-      final sessionId = data['sessionId'] as String;
-      final sessionToken = data['token'] as String;
-      final shareUrl = data['shareUrl'] as String? ?? 'https://www.google.com/maps?q=$_latitude,$_longitude';
+      final sessionId = sessionData['sessionId'] as String;
+      final sessionToken = sessionData['token'] as String;
+      final shareUrl = sessionData['shareUrl'] as String? ?? 'https://www.google.com/maps?q=$_latitude,$_longitude';
+      final expiresAt = sessionData['expiresAt'] as String?;
 
       // 2. Connect to WebSocket channel for real-time relay
       final ws = await WebSocket.connect(_wsUrl)
           .timeout(const Duration(seconds: 5));
 
-      // 3. Send join packet as the sharing device
-      ws.add(jsonEncode({
-        'type': 'JOIN_TRACKING_SESSION',
-        'sessionId': sessionId,
-        'token': sessionToken,
-      }));
+      // 3. Every tracking WebSocket frame and REST call is authenticated with the
+      //    session token issued above (the token IS the credential — see below).
 
       if (mounted) {
         setState(() {
           _sessionId = sessionId;
           _sessionToken = sessionToken;
           _shareUrl = shareUrl;
+          _expiresAt = expiresAt;
           _isTracking = true;
           _isStartingSession = false;
           _pingCount = 0;
@@ -173,7 +164,7 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
         });
       }
 
-      // 4. Start continuous GPS stream and ping every 10 seconds
+      // 4. Start continuous GPS stream and periodic 30-second REST ping
       _positionStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
@@ -187,13 +178,16 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
         if (mounted) setState(() {});
       });
 
-      _pingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
         _sendLocationPing();
       });
 
-      // 5. Share the tracking URL immediately via SMS/messaging
+      // 5. Share the tracking URL immediately via SMS/messaging. The URL carries
+      //    the session token (the credential) — the guardian pastes it into
+      //    SafeSphere → "Watch Live Trip".
       await Share.share(
-        '📍 [SafeSphere Live Tracking] I am sharing my real-time location for safety.\nTrack me here: $shareUrl',
+        '📍 [SafeSphere Live Tracking] I am sharing my real-time location for safety.\n'
+        'Track me: open SafeSphere → "Watch Live Trip" and paste this link:\n$shareUrl',
       );
     } catch (e) {
       if (mounted) {
@@ -210,36 +204,35 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
 
   // ── Send a GPS breadcrumb ping ─────────────────────────────────────────────
   Future<void> _sendLocationPing() async {
-    if (_sessionId == null || _latitude == null || _longitude == null) return;
+    if (_sessionId == null || _latitude == null || _longitude == null || _sessionToken == null) return;
 
-    // Relay via WebSocket (fast path)
-    try {
-      _ws?.add(jsonEncode({
-        'type': 'LOCATION_STREAM_UPDATE',
-        'sessionId': _sessionId,
-        'latitude': _latitude,
-        'longitude': _longitude,
-        'accuracy': _accuracy,
-        'timestamp': DateTime.now().toIso8601String(),
-      }));
-    } catch (_) {}
-
-    // Also ping REST endpoint for breadcrumb persistence
-    try {
-      final uri = Uri.parse('$_backendBase/api/v1/location/ping');
-      final client = HttpClient();
-      final req = await client.postUrl(uri);
-      req.headers.contentType = ContentType.json;
-      req.write(jsonEncode({
-        'sessionId': _sessionId,
-        'latitude': _latitude,
-        'longitude': _longitude,
-        'accuracy': _accuracy,
-        'timestamp': DateTime.now().toIso8601String(),
-      }));
-      await req.close().timeout(const Duration(seconds: 4));
-      client.close();
-    } catch (_) {}
+    // TODO(REAL_BACKEND): WS broadcast persists the breadcrumb server-side AND
+    // relays it to subscribed guardians in real time. When the socket is down we
+    // fall back to a REST ping so breadcrumbs keep flowing — never both, or every
+    // point is persisted twice.
+    if (_ws != null && _ws!.readyState == WebSocket.open) {
+      try {
+        _ws!.add(jsonEncode({
+          'type': 'LOCATION_STREAM_UPDATE',
+          'sessionId': _sessionId,
+          'token': _sessionToken,
+          'latitude': _latitude,
+          'longitude': _longitude,
+          'accuracy': _accuracy,
+          'timestamp': DateTime.now().toIso8601String(),
+        }));
+      } catch (_) {}
+    } else {
+      try {
+        await AuthService.instance.sendLocationPing(
+          sessionId: _sessionId!,
+          latitude: _latitude!,
+          longitude: _longitude!,
+          trackingToken: _sessionToken!,
+          accuracy: _accuracy,
+        );
+      } catch (_) {}
+    }
 
     if (mounted) setState(() => _pingCount++);
   }
@@ -253,6 +246,7 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
     _positionStream = null;
 
     final sessId = _sessionId;
+    final sessToken = _sessionToken;
 
     if (sessId != null) {
       // Notify WebSocket channel
@@ -260,19 +254,20 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
         _ws?.add(jsonEncode({
           'type': 'STREAM_TERMINATE',
           'sessionId': sessId,
+          'token': sessToken,
           'reason': 'User ended tracking session',
         }));
       } catch (_) {}
 
-      // Terminate via REST for server-side cleanup
+      // Terminate via REST for server-side cleanup via AuthService
       try {
-        final uri = Uri.parse('$_backendBase/api/v1/location/terminate/$sessId');
-        final client = HttpClient();
-        final req = await client.postUrl(uri);
-        req.headers.contentType = ContentType.json;
-        req.write(jsonEncode({'reason': 'User ended tracking session'}));
-        await req.close().timeout(const Duration(seconds: 4));
-        client.close();
+        if (sessToken != null) {
+          await AuthService.instance.terminateTrackingSession(
+            sessionId: sessId,
+            trackingToken: sessToken,
+            reason: 'User ended tracking session',
+          );
+        }
       } catch (_) {}
     }
 
@@ -287,6 +282,7 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
         _sessionId = null;
         _sessionToken = null;
         _shareUrl = null;
+        _expiresAt = null;
         _pingCount = 0;
       });
       if (notify) {
@@ -478,6 +474,50 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
                         ),
                       ],
                     ),
+                    if (_expiresAt != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.access_time, size: 14, color: Colors.white54),
+                          const SizedBox(width: 6),
+                          Text(
+                            "Expires: $_expiresAt",
+                            style: const TextStyle(fontSize: 11, color: Colors.white60),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (_shareUrl != null) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _shareUrl!,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.teal,
+                                decoration: TextDecoration.underline,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.copy, size: 16, color: AppColors.teal),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            tooltip: "Copy tracking link",
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: _shareUrl!));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("Tracking link copied to clipboard")),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ],
               ),

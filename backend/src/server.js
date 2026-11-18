@@ -62,6 +62,10 @@ wss.on('connection', (ws, req) => {
           }));
         }
 
+        if (!verifyTrackingCredential(ws, sessionId, message.token)) {
+          return;
+        }
+
         if (!trackingRooms.has(sessionId)) {
           trackingRooms.set(sessionId, new Set());
         }
@@ -97,6 +101,10 @@ wss.on('connection', (ws, req) => {
           }));
         }
 
+        if (!verifyTrackingCredential(ws, sessionId, message.token)) {
+          return;
+        }
+
         // Persist breadcrumb in database
         try {
           const trackingService = require('./services/trackingService');
@@ -121,15 +129,25 @@ wss.on('connection', (ws, req) => {
           timestamp
         }, ws);
       } else if (message.type === 'STREAM_TERMINATE') {
-        const { sessionId, reason } = message;
-        if (sessionId) {
-          try {
-            const trackingService = require('./services/trackingService');
-            trackingService.terminateTrackingSession(sessionId, reason);
-          } catch (_) {}
-
-          broadcastStreamTerminate(sessionId, reason, ws);
+        const { sessionId, reason, token } = message;
+        if (!sessionId) {
+          return ws.send(JSON.stringify({
+            type: 'ERROR',
+            code: 'MISSING_SESSION_ID',
+            message: 'sessionId is required to terminate a live tracking stream'
+          }));
         }
+
+        if (!verifyTrackingCredential(ws, sessionId, token)) {
+          return;
+        }
+
+        try {
+          const trackingService = require('./services/trackingService');
+          trackingService.terminateTrackingSession(sessionId, reason, token);
+        } catch (_) {}
+
+        broadcastStreamTerminate(sessionId, reason, ws);
       } else if (message.type === 'PING') {
         ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }));
       }
@@ -187,6 +205,40 @@ if (pingInterval.unref) {
 wss.on('close', () => {
   clearInterval(pingInterval);
 });
+
+/**
+ * Validate a tracking session credential for WebSocket tracking operations.
+ * The session token IS the credential (guest/anonymous sessions included).
+ * Sends an ERROR frame and returns false when the token is missing or invalid.
+ */
+function verifyTrackingCredential(ws, sessionId, token) {
+  if (token === undefined || token === null || token === '') {
+    ws.send(JSON.stringify({
+      type: 'ERROR',
+      code: 'MISSING_TRACKING_TOKEN',
+      message: 'token is required to access this live tracking stream'
+    }));
+    return false;
+  }
+
+  let trackingService;
+  try {
+    trackingService = require('./services/trackingService');
+  } catch (_) {
+    trackingService = null;
+  }
+
+  if (!trackingService || !trackingService.isValidTrackingToken(sessionId, token)) {
+    ws.send(JSON.stringify({
+      type: 'ERROR',
+      code: 'INVALID_TRACKING_TOKEN',
+      message: 'Invalid tracking token for this live tracking session'
+    }));
+    return false;
+  }
+
+  return true;
+}
 
 // Broadcast helper for external invocation
 function broadcastSosAlert(alertData) {
@@ -252,6 +304,47 @@ function broadcastStreamTerminate(sessionId, reason = 'Stream terminated by user
   return sentCount;
 }
 
+/**
+ * Returns the count of actively connected WebSocket clients.
+ */
+function getWebSocketClientCount() {
+  return clients.size;
+}
+
+/**
+ * Gracefully shuts down the HTTP and WebSocket servers and closes the SQLite database connection.
+ * @param {Function} [callback] Optional callback invoked upon clean termination instead of process.exit.
+ */
+const shutdown = (callback) => {
+  console.log('\nGracefully shutting down SafeSphere server...');
+  clearInterval(pingInterval);
+
+  for (const client of clients) {
+    try {
+      client.terminate();
+    } catch (_) {}
+  }
+  clients.clear();
+
+  wss.close(() => {
+    server.close(() => {
+      try {
+        if (db && typeof db.close === 'function') {
+          db.close();
+        }
+      } catch (err) {
+        console.error('Error closing database handle:', err.message);
+      }
+      console.log('SafeSphere server terminated cleanly.');
+      if (typeof callback === 'function') {
+        callback();
+      } else {
+        process.exit(0);
+      }
+    });
+  });
+};
+
 // Start Server if run directly
 if (require.main === module) {
   server.listen(config.port, '0.0.0.0', () => {
@@ -263,24 +356,16 @@ if (require.main === module) {
     console.log(`========================================================`);
   });
 
-  const shutdown = () => {
-    console.log('\nGracefully shutting down SafeSphere server...');
-    clearInterval(pingInterval);
-    wss.close(() => {
-      server.close(() => {
-        console.log('SafeSphere server terminated cleanly.');
-        process.exit(0);
-      });
-    });
-  };
-
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => shutdown());
+  process.on('SIGTERM', () => shutdown());
 }
 
 module.exports = {
   server,
   wss,
+  clients,
+  getWebSocketClientCount,
+  shutdown,
   broadcastSosAlert,
   broadcastLocationUpdate,
   broadcastStreamTerminate,

@@ -36,6 +36,8 @@ dependencies:
   geolocator: ^13.0.0
   google_maps_flutter: ^2.10.0
   path_provider: ^2.1.5
+  # NOTE: Run 'flutter pub get' once Flutter SDK is available; do not edit pubspec.lock by hand.
+  local_auth: ^2.3.0
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

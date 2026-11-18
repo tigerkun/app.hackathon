@@ -28,13 +28,63 @@ app.use(globalLimiter);
 
 // Root System Health Check (for Docker, load balancers, and monitoring)
 app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'healthy',
+  const start = Date.now();
+  let dbStatus = 'OK';
+  let dbReachable = true;
+
+  try {
+    const { db } = require('./data/store');
+    if (!db || !db.db) {
+      dbStatus = 'DOWN';
+      dbReachable = false;
+    } else {
+      const row = db.db.prepare('SELECT 1 AS ok').get();
+      if (!row || row.ok !== 1) {
+        dbStatus = 'ERROR';
+        dbReachable = false;
+      }
+    }
+  } catch (err) {
+    dbStatus = 'ERROR';
+    dbReachable = false;
+  }
+
+  let wsClients = 0;
+  try {
+    const serverModule = require('./server');
+    if (typeof serverModule.getWebSocketClientCount === 'function') {
+      wsClients = serverModule.getWebSocketClientCount();
+    } else if (serverModule.wss && serverModule.wss.clients) {
+      wsClients = serverModule.wss.clients.size;
+    }
+  } catch (_) {
+    wsClients = 0;
+  }
+
+  const uptime = process.uptime();
+  const isHealthy = dbReachable;
+
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? 'healthy' : 'unhealthy',
     timestamp: new Date().toISOString(),
     service: 'safesphere-backend',
     version: '1.0.0',
-    uptimeSeconds: Math.floor(process.uptime())
+    uptime,
+    uptimeSeconds: Math.floor(uptime),
+    database: dbStatus,
+    databaseStatus: dbStatus,
+    db: dbStatus.toLowerCase(),
+    wsClients,
+    wsClientCount: wsClients,
+    isProduction: config.isProduction,
+    demoMode: config.isDemoMode,
+    responseTimeMs: Date.now() - start
   });
+});
+
+// Lightweight Liveness Endpoint (Docker / K8s liveness probe)
+app.get('/healthz', (req, res) => {
+  res.status(200).json({ status: 'ok' });
 });
 
 app.get('/', (req, res) => {

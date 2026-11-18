@@ -349,7 +349,7 @@ class TestMilestone2AdversarialRouting(unittest.TestCase):
                 duplicates.add(k)
             seen.add(k)
         self.assertEqual(len(duplicates), 0, f"Found duplicate route keys in main.dart: {duplicates}")
-        self.assertEqual(len(route_keys), 12, f"Expected exactly 12 route entries in main.dart, found {len(route_keys)}")
+        self.assertEqual(len(route_keys), 13, f"Expected exactly 13 route entries in main.dart, found {len(route_keys)}")
 
     def test_14_route_arguments_fuzzing(self):
         """Fuzz route navigation with arbitrary payload arguments across all valid routes."""
@@ -385,7 +385,7 @@ class TestMilestone2AdversarialRouting(unittest.TestCase):
         """Verify all routes present in AppDrawer and CommunityAlertsPage drawer map to valid routes in main.dart."""
         # AppDrawer routes
         app_drawer_routes = re.findall(r"route:\s*['\"]([^'\"]+)['\"]", self.app_drawer_source)
-        self.assertEqual(len(app_drawer_routes), 8, f"AppDrawer should contain 8 items, found {len(app_drawer_routes)}")
+        self.assertEqual(len(app_drawer_routes), 9, f"AppDrawer should contain 9 items, found {len(app_drawer_routes)}")
         for r in app_drawer_routes:
             self.assertIn(r, self.declared_routes, f"AppDrawer route '{r}' is not in main.dart routes")
 

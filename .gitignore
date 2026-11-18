@@ -3,7 +3,8 @@
 # ==============================================================================
 
 # Teamwork & Agent Metadata (must not be committed to user repos)
-.agents/
+.agents/*
+!.agents/skills/
 
 # Node.js & Monorepo Dependencies
 node_modules/
@@ -25,7 +26,9 @@ lerna-debug.log*
 *.sqlite
 *.sqlite3
 *.db
-backend/data/*.sqlite
+*.db-shm
+*.db-wal
+backend/data/
 backend/*.sqlite
 
 # Flutter, Dart & Mobile Runner Caches

@@ -19,8 +19,8 @@ Spins up the environment, verifies runtimes, checks contracts, and prepares serv
 ## 2. Complete Automation Pipeline (`/automation`)
 
 Runs the end-to-end multi-tier test pipeline:
-- **Stage 1**: Backend API integration test suite (`backend/tests/test_api.py`)
-- **Stage 2**: Adversarial route and navigation state-machine tests (`test/adversarial_r1_challenger_test.py`)
+- **Stage 1**: Backend API integration test suite (`npm --prefix backend test`)
+- **Stage 2**: Adversarial route and navigation state-machine tests (`frontend/test/adversarial_r1_challenger_test.py`)
 - **Stage 3**: Full milestone challenger suites (M2, M3, M4, R5 contrast & permissions)
 - **Stage 4**: Monorepo architecture and OpenAPI contracts validation (`automation/health_check.py`)
 

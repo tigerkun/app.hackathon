@@ -24,7 +24,7 @@ function createMarker({
   latitude,
   longitude,
   address = null,
-  isVerified = true,
+  isVerified = false,
   createdAt = new Date().toISOString()
 }) {
   return {

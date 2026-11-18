@@ -5,6 +5,22 @@
 
 const trackingService = require('../services/trackingService');
 
+/**
+ * Extract the tracking session credential from the request.
+ * Accepts `Authorization: Bearer <token>`, `?token=`, or `body.token`.
+ * The session token IS the credential (guest/anonymous design).
+ */
+function extractTrackingToken(req) {
+  const authHeader = req.headers && req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const bearer = authHeader.slice(7).trim();
+    if (bearer) return bearer;
+  }
+  if (req.query && req.query.token) return String(req.query.token);
+  if (req.body && req.body.token) return String(req.body.token);
+  return null;
+}
+
 function shareSession(req, res, next) {
   try {
     const body = req.body || {};
@@ -55,7 +71,7 @@ function shareSession(req, res, next) {
 function getTrack(req, res, next) {
   try {
     const { sessionId } = req.params;
-    const session = trackingService.getTrackingSession(sessionId);
+    const session = trackingService.getTrackingSession(sessionId, extractTrackingToken(req));
 
     res.status(200).json({
       success: true,
@@ -93,7 +109,8 @@ function ping(req, res, next) {
       speed,
       battery,
       accuracy,
-      timestamp
+      timestamp,
+      token: extractTrackingToken(req)
     });
 
     // Relay location update to active WebSocket guardian subscribers
@@ -124,7 +141,7 @@ function terminate(req, res, next) {
     const sessionId = req.params.sessionId || (req.body && (req.body.sessionId || req.body.session_id));
     const reason = req.body && req.body.reason;
 
-    const session = trackingService.terminateTrackingSession(sessionId, reason);
+    const session = trackingService.terminateTrackingSession(sessionId, reason, extractTrackingToken(req));
 
     // Relay stream termination to active WebSocket subscribers
     try {

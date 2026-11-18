@@ -16,7 +16,7 @@ $ErrorCount = 0
 
 # 1. Backend Integration Tests
 Write-Host "`n[Stage 1] Executing Backend API Integration Tests..." -ForegroundColor Yellow
-python -m unittest "$ProjectRoot\backend\tests\test_api.py"
+npm --prefix "$ProjectRoot\backend" test
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [FAIL] Backend API tests failed!" -ForegroundColor Red
     $ErrorCount++
@@ -26,7 +26,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # 2. Adversarial Routing & Navigation Tests
 Write-Host "`n[Stage 2] Executing Adversarial Navigation & Route Tests..." -ForegroundColor Yellow
-python "$ProjectRoot\test\adversarial_r1_challenger_test.py"
+python "$ProjectRoot\frontend\test\adversarial_r1_challenger_test.py"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [FAIL] Adversarial navigation tests failed!" -ForegroundColor Red
     $ErrorCount++
@@ -37,10 +37,10 @@ if ($LASTEXITCODE -ne 0) {
 # 3. Challenger Test Suites
 Write-Host "`n[Stage 3] Executing Milestone Challenger Suites..." -ForegroundColor Yellow
 $challengers = @(
-    "test\challenger_m2_empirical_test.py",
-    "test\challenger_m3_empirical_test.py",
-    "test\challenger_m4_2_empirical_test.py",
-    "test\test_r5_permissions_contrast.py"
+    "frontend\test\challenger_m2_empirical_test.py",
+    "frontend\test\challenger_m3_empirical_test.py",
+    "frontend\test\challenger_m4_2_empirical_test.py",
+    "frontend\test\test_r5_permissions_contrast.py"
 )
 
 foreach ($ch in $challengers) {

@@ -1,6 +1,6 @@
 # SafeSphere Enterprise Monorepo
 
-> **SafeSphere** is an enterprise-ready personal safety, emergency response, and community intelligence platform featuring dynamic GPS tracking, emergency telephony integration (112, 181, 108, 101), real-time crowdsourced safety markers, AI safety assistance, and multi-modal authentication.
+> **SafeSphere** is an enterprise-ready personal safety, emergency response, and community intelligence platform featuring dynamic GPS tracking, "Watch Live Trip" guardian tracking, emergency telephony integration (112, 181, 108, 101), real-time crowdsourced safety markers, AI safety assistance, and multi-modal authentication.
 
 ---
 
@@ -96,7 +96,27 @@ All primary developer workflows are orchestrated via standard `npm` scripts defi
 
 ---
 
-## 4. Documentation Hub
+## 4. Production Deployment & Builds
+
+### Backend Render Deployment
+SafeSphere's backend is configured for deployment as a Render Web Service with persistent SSD disk storage via `render.yaml`. See `.env.example` for required production environment variables.
+
+### Mobile Production Release Build
+
+Ensure dependencies are resolved before building:
+```bash
+cd frontend
+flutter pub get
+flutter build apk --release --dart-define=SAFESPHERE_API_URL=https://<render-app>.onrender.com
+```
+
+> **Note:** Run `flutter pub get` on a Flutter-equipped machine to resolve newly declared dependencies (`local_auth: ^2.3.0`, `path_provider`, `geolocator`). Do not edit `pubspec.lock` by hand.
+
+If `--dart-define=SAFESPHERE_API_URL` is omitted, the mobile app defaults to `http://127.0.0.1:3000` for local development.
+
+---
+
+## 5. Documentation Hub
 
 Detailed technical specifications and design documents are located in `docs/`:
 - **[Master PRD](docs/PRD.md)**: Product vision, user personas, functional specifications, non-functional security SLAs, and release roadmap.

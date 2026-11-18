@@ -68,6 +68,13 @@ class AppDrawer extends StatelessWidget {
 
               _drawerItem(
                 context,
+                icon: Icons.my_location,
+                title: "Watch Live Trip",
+                route: '/track',
+              ),
+
+              _drawerItem(
+                context,
                 icon: Icons.warning_amber,
                 title: "Emergency",
                 route: '/emergency',

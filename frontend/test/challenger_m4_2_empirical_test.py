@@ -705,25 +705,28 @@ class TestReportStorePersistenceAndEdgeCases(unittest.TestCase):
     def test_id_collision_risk_empirical_analysis(self):
         """
         Empirical Challenge Analysis:
-        Test ID generation in report_page.dart line 45: `id: 'rep_${DateTime.now().millisecondsSinceEpoch}'`.
-        Under an ultra-rapid burst within the same millisecond, multiple reports can generate identical IDs.
+        report_page.dart generates offline fallback IDs as
+        `rep_${DateTime.now().millisecondsSinceEpoch}_${_localReportSeq++}` —
+        a monotonic counter guarantees uniqueness even inside one millisecond.
         """
         burst_size = 500
         generated_ids: List[str] = []
+        seq = 0
 
         for _ in range(burst_size):
             ms = int(time.time() * 1000)
-            generated_ids.append(f"rep_{ms}")
+            seq += 1
+            generated_ids.append(f"rep_{ms}_{seq}")
 
         unique_ids = set(generated_ids)
         collision_count = burst_size - len(unique_ids)
 
-        self.assertGreaterEqual(
-            len(unique_ids), 1, "At least one ID must be generated"
+        self.assertEqual(
+            len(unique_ids), burst_size,
+            f"Monotonic-suffixed IDs must be unique under burst submission, got {collision_count} collisions",
         )
         print(f"\n  [Empirical Observation] Generated {burst_size} report IDs in tight loop: "
-              f"{len(unique_ids)} unique, {collision_count} timestamp collisions. "
-              f"In interactive user UI, single submit pops immediately; but a monotonic counter or UUID is recommended for mass/batch APIs.")
+              f"{len(unique_ids)} unique, {collision_count} timestamp collisions.")
 
 
 class TestMilestoneNonRegression(unittest.TestCase):

@@ -5,6 +5,12 @@
 
 const { db } = require('../data/store');
 const { createAlert } = require('../models/alertModel');
+const crypto = require('crypto');
+
+function hashToken(token) {
+  if (!token) return null;
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
 
 function triggerSos({
   userId,
@@ -41,6 +47,8 @@ function triggerSos({
     }
   }
 
+  const resolveToken = crypto.randomBytes(24).toString('base64url');
+
   const alert = createAlert({
     userId: userId || 'anonymous',
     userName: finalUserName || 'SafeSphere Citizen',
@@ -52,10 +60,12 @@ function triggerSos({
     alertType: String(alertType || 'CRITICAL_SOS'),
     status: 'active',
     emergencyContactsNotified: contactsNotified,
-    notes: notes || null
+    notes: notes || null,
+    resolveTokenHash: hashToken(resolveToken)
   });
 
   db.saveAlert(alert);
+  alert.resolveToken = resolveToken;
   return alert;
 }
 

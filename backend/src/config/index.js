@@ -70,6 +70,12 @@ const isProduction = nodeEnv === 'production';
 const isTest = nodeEnv === 'test';
 const isDev = !isProduction;
 
+const isTestRunner = isTest || Boolean(process.env.NODE_TEST_CONTEXT);
+const defaultDbPath = isTestRunner
+  ? ':memory:'
+  : path.resolve(__dirname, '../../data/safesphere.db');
+const dbPath = process.env.DB_PATH || defaultDbPath;
+
 // Demo Mode: Disabled by default in production. Enabled by default in dev/test.
 // Explicit process.env.DEMO_MODE overrides defaults ('true'/'1' or 'false'/'0').
 const demoModeEnv = process.env.DEMO_MODE;
@@ -87,6 +93,19 @@ if (isProduction) {
     refreshSecret: rawRefreshSecret,
     nodeEnv
   });
+
+  const missingProdVars = [];
+  if (!process.env.CORS_ORIGIN) missingProdVars.push('CORS_ORIGIN');
+  if (!process.env.DB_PATH) missingProdVars.push('DB_PATH');
+  if (!process.env.PORT) missingProdVars.push('PORT');
+
+  if (missingProdVars.length > 0) {
+    console.warn(`[WARNING] Missing recommended production environment variables: ${missingProdVars.join(', ')}`);
+  }
+
+  if (!process.env.CORS_ORIGIN) {
+    console.warn('[WARNING] CORS_ORIGIN is not set in production. Defaulting to "*". For security, set CORS_ORIGIN to your frontend domain.');
+  }
 }
 
 const config = {
@@ -101,6 +120,7 @@ const config = {
   otpCooldownSeconds: 60, // 60 seconds
   otpMaxAttempts: 3,
   corsOrigin: process.env.CORS_ORIGIN || '*',
+  dbPath,
   isTest,
   isDev,
   isProduction,

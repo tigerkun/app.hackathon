@@ -37,17 +37,33 @@ DEAD_FILES = [
 
 EXPECTED_LIB_FILES = {
     "lib/main.dart",
+    "lib/data/auth_state.dart",
     "lib/data/report_store.dart",
+    "lib/models/auth_tokens.dart",
     "lib/models/report_model.dart",
     "lib/models/safety_marker.dart",
+    "lib/models/user_model.dart",
     "lib/pages/about_page.dart",
     "lib/pages/ai_assistant_page.dart",
+    "lib/pages/auth/login_page.dart",
+    "lib/pages/auth/phone_otp_page.dart",
+    "lib/pages/auth/pin_lock_page.dart",
+    "lib/pages/auth/register_page.dart",
+    "lib/pages/auth_pin_page.dart",
     "lib/pages/community_alerts_page.dart",
     "lib/pages/emergency_page.dart",
     "lib/pages/home_page.dart",
+    "lib/pages/login_page.dart",
     "lib/pages/report_page.dart",
     "lib/pages/safety_map_page.dart",
     "lib/pages/share_location_page.dart",
+    "lib/pages/signup_page.dart",
+    "lib/pages/track_session_page.dart",
+    "lib/routes/app_routes.dart",
+    "lib/routes/route_guard.dart",
+    "lib/services/auth_service.dart",
+    "lib/services/map_config.dart",
+    "lib/services/storage_service.dart",
     "lib/theme/app_colors.dart",
     "lib/theme/app_theme.dart",
     "lib/widgets/app_drawer.dart",
@@ -84,7 +100,7 @@ class TestReachabilityAndImports(unittest.TestCase):
             EXPECTED_LIB_FILES,
             f"lib/ file inventory mismatch!\nUnexpected: {rel_files - EXPECTED_LIB_FILES}\nMissing: {EXPECTED_LIB_FILES - rel_files}",
         )
-        self.assertEqual(len(dart_files), 18, f"Expected exactly 18 Dart files in lib/, found {len(dart_files)}")
+        self.assertEqual(len(dart_files), 34, f"Expected exactly 34 Dart files in lib/, found {len(dart_files)}")
 
     def test_no_zero_byte_files(self):
         dart_files = get_all_dart_files(LIB_DIR)
@@ -161,21 +177,36 @@ class TestReachabilityAndImports(unittest.TestCase):
 
         expected_reachable_from_main = {
             "main.dart",
+            "data/auth_state.dart",
+            "data/report_store.dart",
+            "models/auth_tokens.dart",
+            "models/report_model.dart",
+            "models/safety_marker.dart",
+            "models/user_model.dart",
+            "pages/about_page.dart",
+            "pages/ai_assistant_page.dart",
+            "pages/auth/login_page.dart",
+            "pages/auth/phone_otp_page.dart",
+            "pages/auth/pin_lock_page.dart",
+            "pages/auth/register_page.dart",
+            "pages/community_alerts_page.dart",
+            "pages/emergency_page.dart",
+            "pages/home_page.dart",
+            "pages/report_page.dart",
+            "pages/safety_map_page.dart",
+            "pages/share_location_page.dart",
+            "pages/track_session_page.dart",
+            "routes/app_routes.dart",
+            "routes/route_guard.dart",
+            "services/auth_service.dart",
+            "services/map_config.dart",
+            "services/storage_service.dart",
             "theme/app_theme.dart",
             "theme/app_colors.dart",
-            "pages/home_page.dart",
-            "pages/safety_map_page.dart",
-            "pages/report_page.dart",
-            "pages/ai_assistant_page.dart",
-            "pages/community_alerts_page.dart",
-            "pages/share_location_page.dart",
-            "pages/emergency_page.dart",
-            "pages/about_page.dart",
             "widgets/app_drawer.dart",
             "widgets/glass_container.dart",
             "widgets/map_placeholder.dart",
             "widgets/typing_text.dart",
-            "models/safety_marker.dart",
         }
 
         self.assertEqual(
@@ -184,15 +215,14 @@ class TestReachabilityAndImports(unittest.TestCase):
             f"Main reachability graph discrepancy:\nMissing: {expected_reachable_from_main - visited}\nUnexpected: {visited - expected_reachable_from_main}",
         )
 
-        # The only files not directly in the main UI tree are the M4 data store files
+        # The only files not directly in the main UI tree are the legacy
+        # 1-line export shims kept for compatibility (see AGENTS.md)
         retained_m4_files = set(graph.keys()) - visited
         self.assertEqual(
             retained_m4_files,
-            {"data/report_store.dart", "models/report_model.dart"},
+            {"pages/auth_pin_page.dart", "pages/login_page.dart", "pages/signup_page.dart"},
             f"Unexpected unreached files: {retained_m4_files}",
         )
-        # Verify report_store reaches report_model
-        self.assertIn("models/report_model.dart", graph["data/report_store.dart"])
 
 
 class TestClassUniquenessAndCollisions(unittest.TestCase):

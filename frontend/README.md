@@ -1,7 +1,7 @@
 # SafeSphere Frontend Architecture
 
 The SafeSphere client tier is architected into two complementary presentations:
-1. **Flutter Application** (`lib/`, `android/`, `ios/`, `web/`, `windows/`, `linux/`, `macos/`, `assets/`, `pubspec.yaml`): Native, high-performance cross-platform application featuring GPS tracking, background telephony integration, offline support, and biometrics.
+1. **Flutter Application** (`lib/`, `android/`, `ios/`, `web/`, `windows/`, `linux/`, `macos/`, `assets/`, `pubspec.yaml`): Native, high-performance cross-platform application featuring GPS tracking, "Watch Live Trip" guardian viewing (`/track`), background telephony integration, offline support, and biometrics.
 2. **Interactive Web Client & Preview** (`web_preview/`): Zero-dependency HTML5/JS web application for immediate emergency access, dispatch viewing, community safety maps, and live tracking.
 
 ## Directory Structure
@@ -34,3 +34,13 @@ frontend/
 - **Service Layer**: Dedicated singleton services (`AuthService`, `SafeSphereMapConfig`).
 - **Data & Model Layer**: Immutable Dart models (`Report`, `SafetyMarker`, `UserModel`).
 - **Emergency Hardware Layer**: Resilient fallback architecture for telephony dialer (`112`, `181`, `108`, `101`) and GPS locks with zero crash risk on permission denials.
+
+## Production Release Build
+
+To build the production release APK configured with your deployed backend URL:
+
+```bash
+flutter build apk --release --dart-define=SAFESPHERE_API_URL=https://<render-app>.onrender.com
+```
+
+If `--dart-define=SAFESPHERE_API_URL` is omitted, the mobile app defaults to `http://127.0.0.1:3000` for local development.

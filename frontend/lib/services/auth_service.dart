@@ -1,9 +1,24 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:local_auth/local_auth.dart';
 import '../models/user_model.dart';
 import '../models/auth_tokens.dart';
 import 'storage_service.dart';
+
+class AuthHttpResponse {
+  final int statusCode;
+  final Map<String, dynamic>? data;
+  final String? error;
+
+  const AuthHttpResponse({
+    required this.statusCode,
+    this.data,
+    this.error,
+  });
+
+  bool get isSuccess => statusCode >= 200 && statusCode < 300;
+}
 
 class AuthResult {
   final bool success;
@@ -47,6 +62,13 @@ class AuthService {
   static const String keyPin = 'safesphere_user_pin';
   static const String keyBio = 'safesphere_bio_enabled';
 
+  /// Compile-time configurable API base URL.
+  /// Pass --dart-define=SAFESPHERE_API_URL=https://<your-render-app>.onrender.com during build.
+  static const String apiBaseUrl = String.fromEnvironment(
+    'SAFESPHERE_API_URL',
+    defaultValue: 'http://127.0.0.1:3000',
+  );
+
   static AuthService? _singleton;
 
   /// Shared singleton instance for callers that do not need custom config.
@@ -58,12 +80,12 @@ class AuthService {
   }) {
     if (baseUrl != null || storage != null) {
       return AuthService._internal(
-        baseUrl: baseUrl ?? 'http://127.0.0.1:3000',
+        baseUrl: baseUrl ?? apiBaseUrl,
         storage: storage ?? StorageService(),
       );
     }
     _singleton ??= AuthService._internal(
-      baseUrl: 'http://127.0.0.1:3000',
+      baseUrl: apiBaseUrl,
       storage: StorageService(),
     );
     return _singleton!;
@@ -76,15 +98,17 @@ class AuthService {
 
   UserModel? _currentUser;
   bool _isPinLocked = false;
+  bool _lastFetchFailed = false;
 
   UserModel? get currentUser => _currentUser;
   bool get isAuthenticated => _currentUser != null && !_currentUser!.isGuest;
   bool get isPinLocked => _isPinLocked;
+  bool get lastFetchFailed => _lastFetchFailed;
 
   // ---------------------------------------------------------------------------
-  // Networking HTTP Helper
+  // Networking HTTP Helpers
   // ---------------------------------------------------------------------------
-  Future<Map<String, dynamic>?> _request({
+  Future<AuthHttpResponse> _requestDetailed({
     required String method,
     required String path,
     Map<String, dynamic>? body,
@@ -115,20 +139,48 @@ class AuthService {
       }
 
       final response = await request.close().timeout(const Duration(seconds: 5));
+      final statusCode = response.statusCode;
       final responseBody = await response.transform(utf8.decoder).join();
       client.close();
 
+      Map<String, dynamic>? decoded;
       if (responseBody.isNotEmpty) {
-        final decoded = jsonDecode(responseBody);
-        if (decoded is Map<String, dynamic>) {
-          return decoded;
-        }
+        try {
+          final raw = jsonDecode(responseBody);
+          if (raw is Map<String, dynamic>) {
+            decoded = raw;
+          }
+        } catch (_) {}
       }
-      return null;
-    } catch (_) {
-      // In offline / isolated network mode, graceful fallback handled by caller
-      return null;
+
+      final isSuccess = statusCode >= 200 && statusCode < 300;
+      return AuthHttpResponse(
+        statusCode: statusCode,
+        data: decoded,
+        error: !isSuccess ? (decoded?['error']?['message'] as String? ?? 'HTTP $statusCode') : null,
+      );
+    } catch (e) {
+      return AuthHttpResponse(
+        statusCode: 0,
+        data: null,
+        error: e.toString(),
+      );
     }
+  }
+
+  Future<Map<String, dynamic>?> _request({
+    required String method,
+    required String path,
+    Map<String, dynamic>? body,
+    String? token,
+  }) async {
+    final resp = await _requestDetailed(
+      method: method,
+      path: path,
+      body: body,
+      token: token,
+    );
+    return resp.data;
   }
 
   // ---------------------------------------------------------------------------
@@ -435,11 +487,26 @@ class AuthService {
   }
 
   Future<bool> verifyBiometrics() async {
-    // NOTE: Removed fake mock validation (Future.delayed 300ms returning true unconditionally).
-    // TODO(REAL_HARDWARE): Integrate real hardware biometric scanning via local_auth package.
-    // For now, return false so unauthorized biometric bypass is blocked.
-    _isPinLocked = true;
-    return false;
+    // Hardware biometric authentication via local_auth
+    try {
+      final localAuth = LocalAuthentication();
+      final canAuth = await localAuth.canCheckBiometrics || await localAuth.isDeviceSupported();
+      if (!canAuth) return false;
+      final didAuth = await localAuth.authenticate(
+        localizedReason: 'Unlock SafeSphere',
+        options: const AuthenticationOptions(
+          biometricOnly: true,
+          stickyAuth: true,
+        ),
+      );
+      if (didAuth) {
+        _isPinLocked = false;
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -474,19 +541,24 @@ class AuthService {
       'notes': notes,
     };
 
-    final res = await _request(
+    final res = await _requestDetailed(
       method: 'POST',
       path: '/api/v1/sos/trigger',
       body: body,
       token: token,
     );
 
-    if (res != null && res['success'] == true) {
-      final alertId = res['data']?['id'] as String? ?? res['id'] as String?;
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      final alertId = res.data!['data']?['id'] as String? ?? res.data!['id'] as String?;
       if (alertId != null) {
         await storage.setString('safesphere_active_sos_id', alertId);
+        final resolveToken = res.data!['resolveToken'] as String? ??
+            (res.data!['data']?['resolveToken'] as String?);
+        if (resolveToken != null) {
+          await storage.setString('safesphere_active_sos_resolve_token', resolveToken);
+        }
       }
-      return res;
+      return res.data;
     }
     return null;
   }
@@ -496,20 +568,23 @@ class AuthService {
     final targetId = alertId ?? await storage.getString('safesphere_active_sos_id');
     if (targetId == null || targetId.isEmpty) return false;
 
+    final resolveToken = await storage.getString('safesphere_active_sos_resolve_token');
     final body = <String, dynamic>{
       'id': targetId,
       'notes': notes ?? 'Citizen marked safe',
+      if (resolveToken != null) 'resolveToken': resolveToken,
     };
 
-    final res = await _request(
+    final res = await _requestDetailed(
       method: 'POST',
       path: '/api/v1/sos/$targetId/resolve',
       body: body,
       token: token,
     );
 
-    if (res != null && res['success'] == true) {
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
       await storage.remove('safesphere_active_sos_id');
+      await storage.remove('safesphere_active_sos_resolve_token');
       return true;
     }
     return false;
@@ -524,12 +599,13 @@ class AuthService {
   // ---------------------------------------------------------------------------
 
   /// Fetches live community incident reports from the backend.
-  /// Optional filters: type (e.g. "Theft"), status (e.g. "pending"), limit.
+  /// Sets `lastFetchFailed` on transport or server failure so callers can display retry state.
   Future<List<Map<String, dynamic>>> fetchReports({
     String? type,
     String? status,
     int? limit,
   }) async {
+    _lastFetchFailed = false;
     final token = await storage.getString(keyToken);
     final queryParams = <String, String>{};
     if (type != null) queryParams['type'] = type;
@@ -540,18 +616,20 @@ class AuthService {
         ? '?' + queryParams.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&')
         : '';
 
-    final res = await _request(
+    final res = await _requestDetailed(
       method: 'GET',
       path: '/api/v1/reports$queryString',
       token: token,
     );
 
-    if (res != null && res['success'] == true) {
-      final data = res['data'];
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      final data = res.data!['data'];
       if (data is List) {
         return data.cast<Map<String, dynamic>>();
       }
+      return [];
     }
+    _lastFetchFailed = !res.isSuccess;
     return [];
   }
 
@@ -572,15 +650,15 @@ class AuthService {
       if (longitude != null) 'longitude': longitude,
     };
 
-    final res = await _request(
+    final res = await _requestDetailed(
       method: 'POST',
       path: '/api/v1/reports',
       body: body,
       token: token,
     );
 
-    if (res != null && res['success'] == true) {
-      return res['data'] as Map<String, dynamic>?;
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      return res.data!['data'] as Map<String, dynamic>?;
     }
     return null;
   }
@@ -590,6 +668,7 @@ class AuthService {
   // ---------------------------------------------------------------------------
 
   /// Fetches safety markers (police stations, hospitals, safe zones) sorted by proximity.
+  /// Sets `lastFetchFailed` on transport or server failure so callers can display retry state.
   Future<List<Map<String, dynamic>>> fetchNearbyMarkers({
     required double latitude,
     required double longitude,
@@ -597,6 +676,7 @@ class AuthService {
     String? type,
     int? limit,
   }) async {
+    _lastFetchFailed = false;
     final token = await storage.getString(keyToken);
     // Backend markerController accepts lat + (lon | longitude); 'lng' is NOT a recognized alias.
     final queryParams = <String, String>{
@@ -608,19 +688,142 @@ class AuthService {
     };
     final queryString = '?' + queryParams.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
 
-    final res = await _request(
+    final res = await _requestDetailed(
       method: 'GET',
       path: '/api/v1/markers/nearby$queryString',
       token: token,
     );
 
-    if (res != null && res['success'] == true) {
-      final data = res['data'];
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      final data = res.data!['data'];
       if (data is List) {
         return data.cast<Map<String, dynamic>>();
       }
+      return [];
     }
+    _lastFetchFailed = !res.isSuccess;
     return [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Location Tracking API (/api/v1/location)
+  // ---------------------------------------------------------------------------
+
+  /// Creates a live tracking share session (POST /api/v1/location/share-session).
+  /// Returns sessionId, token, shareUrl, expiresAt and caches keys in storage.
+  Future<Map<String, dynamic>?> createTrackingSession({
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+    int durationMinutes = 60,
+  }) async {
+    final token = await storage.getString(keyToken);
+    final body = <String, dynamic>{
+      'latitude': latitude,
+      'longitude': longitude,
+      if (accuracy != null) 'accuracy': accuracy,
+      'durationMinutes': durationMinutes,
+      // Backend builds shareUrl from this; without it prod links point at localhost.
+      'baseUrl': apiBaseUrl,
+    };
+
+    final res = await _requestDetailed(
+      method: 'POST',
+      path: '/api/v1/location/share-session',
+      body: body,
+      token: token,
+    );
+
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      final sessionId = res.data!['sessionId'] as String? ?? (res.data!['data']?['sessionId'] as String?);
+      final sessionToken = res.data!['token'] as String? ?? (res.data!['data']?['token'] as String?);
+      final shareUrl = res.data!['shareUrl'] as String? ?? (res.data!['data']?['shareUrl'] as String?);
+      final expiresAt = res.data!['expiresAt'] as String? ?? (res.data!['data']?['expiresAt'] as String?);
+
+      if (sessionId != null && sessionToken != null) {
+        await storage.setString('safesphere_tracking_session', sessionId);
+        await storage.setString('safesphere_tracking_token', sessionToken);
+      }
+
+      return {
+        'sessionId': sessionId,
+        'token': sessionToken,
+        'shareUrl': shareUrl,
+        'expiresAt': expiresAt,
+      };
+    }
+    return null;
+  }
+
+  /// Sends a breadcrumb location ping to the active tracking session (POST /api/v1/location/ping).
+  Future<bool> sendLocationPing({
+    required String sessionId,
+    required double latitude,
+    required double longitude,
+    required String trackingToken,
+    double? accuracy,
+  }) async {
+    final body = <String, dynamic>{
+      'sessionId': sessionId,
+      'token': trackingToken,
+      'latitude': latitude,
+      'longitude': longitude,
+      if (accuracy != null) 'accuracy': accuracy,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+
+    final res = await _requestDetailed(
+      method: 'POST',
+      path: '/api/v1/location/ping',
+      body: body,
+    );
+
+    return res.isSuccess && res.data != null && res.data!['success'] == true;
+  }
+
+  /// Terminates an active tracking session (POST /api/v1/location/terminate/:sessionId).
+  Future<bool> terminateTrackingSession({
+    required String sessionId,
+    required String trackingToken,
+    String? reason,
+  }) async {
+    final body = <String, dynamic>{
+      'token': trackingToken,
+      'reason': reason ?? 'User ended tracking session',
+    };
+
+    final res = await _requestDetailed(
+      method: 'POST',
+      path: '/api/v1/location/terminate/$sessionId',
+      body: body,
+      token: trackingToken,
+    );
+
+    await storage.remove('safesphere_tracking_session');
+    await storage.remove('safesphere_tracking_token');
+
+    return res.isSuccess;
+  }
+
+  /// Fetches a tracking session's current state
+  /// (GET /api/v1/location/track/:sessionId). The token is sent as a `?token=`
+  /// query param — never as Bearer — so a logged-in guardian's JWT cannot
+  /// shadow the session credential.
+  Future<Map<String, dynamic>?> fetchTrackingSession({
+    required String sessionId,
+    required String trackingToken,
+  }) async {
+    final res = await _requestDetailed(
+      method: 'GET',
+      path:
+          '/api/v1/location/track/$sessionId?token=${Uri.encodeQueryComponent(trackingToken)}',
+    );
+
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      final data = res.data!['data'];
+      return data is Map<String, dynamic> ? data : res.data;
+    }
+    return null;
   }
 
   Future<bool> signup({

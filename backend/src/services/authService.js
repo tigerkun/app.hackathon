@@ -240,10 +240,13 @@ async function refreshSession(refreshToken) {
     throw error;
   }
 
-  verifyRefreshToken(refreshToken);
+  const decoded = verifyRefreshToken(refreshToken);
 
   const session = db.findSessionByRefreshToken(refreshToken);
   if (!session || !session.isValid) {
+    if (decoded && decoded.sub) {
+      db.invalidateUserSessions(decoded.sub);
+    }
     const error = new Error('Invalid, expired, or revoked refresh token');
     error.status = 401;
     error.code = 'INVALID_SESSION';
@@ -258,12 +261,27 @@ async function refreshSession(refreshToken) {
     throw error;
   }
 
-  const newAccessToken = signAccessToken(user, session.id);
-  db.updateSession(session.id, { lastUsedAt: new Date().toISOString() });
+  // Invalidate old session row
+  db.invalidateSession(session.id);
+
+  // Issue new session and token pair (refresh token rotation)
+  const newSession = createSession({
+    userId: user.id,
+    refreshToken: '',
+    userAgent: session.userAgent || null,
+    ipAddress: session.ipAddress || null,
+    expiresInSeconds: config.refreshExpiresIn
+  });
+
+  const newAccessToken = signAccessToken(user, newSession.id);
+  const newRefreshToken = signRefreshToken(user, newSession.id);
+
+  newSession.refreshToken = newRefreshToken;
+  db.saveSession(newSession);
 
   return {
     accessToken: newAccessToken,
-    refreshToken: session.refreshToken,
+    refreshToken: newRefreshToken,
     tokenType: 'Bearer',
     expiresIn: config.jwtExpiresIn
   };

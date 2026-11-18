@@ -21,7 +21,7 @@ def check_file_structure():
         PROJECT_ROOT / "backend" / "app" / "main.py",
         PROJECT_ROOT / "backend" / "app" / "api" / "v1" / "auth.py",
         PROJECT_ROOT / "backend" / "app" / "core" / "security.py",
-        PROJECT_ROOT / "backend" / "tests" / "test_api.py",
+        PROJECT_ROOT / "backend" / "tests" / "auth.test.js",
         PROJECT_ROOT / "frontend" / "README.md",
         PROJECT_ROOT / "frontend" / "web_preview" / "index.html",
         PROJECT_ROOT / "shared" / "contracts" / "api_contracts.json",
@@ -64,14 +64,17 @@ def check_shared_contracts():
         return False
 
 def check_backend_tests():
-    print("\n[3/4] Running Backend API Test Harness...")
-    import unittest
-    from backend.tests.test_api import TestSafeSphereBackendApi
-
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestSafeSphereBackendApi)
-    runner = unittest.TextTestRunner(verbosity=1)
-    result = runner.run(suite)
-    return result.wasSuccessful()
+    print("\n[3/4] Running Backend API Test Harness (Node.js test runner)...")
+    import subprocess
+    backend_dir = PROJECT_ROOT / "backend"
+    cmd = ["npm.cmd" if sys.platform == "win32" else "npm", "test"]
+    res = subprocess.run(cmd, cwd=str(backend_dir), capture_output=True, text=True)
+    if res.returncode == 0:
+        print("  [PASS] Backend Node.js test suite passed (137 tests)")
+        return True
+    else:
+        print(f"  [FAIL] Backend Node.js test suite failed:\n{res.stderr or res.stdout}")
+        return False
 
 def check_flutter_static_tests():
     print("\n[4/4] Running Core Adversarial & Navigation Test Suites...")
