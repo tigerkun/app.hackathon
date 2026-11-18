@@ -38,6 +38,7 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
   double? _accuracy;
   DateTime? _lastUpdate;
   int _breadcrumbCount = 0;
+  final List<Map<String, dynamic>> _breadcrumbs = [];
   String? _expiresAt;
   bool _live = false;
 
@@ -150,7 +151,20 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
           _lng = (msg['longitude'] as num?)?.toDouble();
           _accuracy = (msg['accuracy'] as num?)?.toDouble();
           _lastUpdate = DateTime.tryParse(msg['timestamp'] as String? ?? '') ?? DateTime.now();
-          _breadcrumbCount++;
+          if (_lat != null && _lng != null) {
+            _breadcrumbs.insert(0, {
+              'latitude': _lat,
+              'longitude': _lng,
+              'accuracy': _accuracy,
+              'timestamp': msg['timestamp'] ?? DateTime.now().toIso8601String(),
+              'speed': msg['speed'],
+              'battery': msg['battery'],
+            });
+            if (_breadcrumbs.length > 100) {
+              _breadcrumbs.removeRange(100, _breadcrumbs.length);
+            }
+          }
+          _breadcrumbCount = _breadcrumbs.isNotEmpty ? _breadcrumbs.length : (_breadcrumbCount + 1);
         });
         break;
       case 'STREAM_TERMINATE':
@@ -197,7 +211,23 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
     _userName = data['userName'] as String? ?? _userName;
     _expiresAt = data['expiresAt'] as String?;
     final crumbs = data['breadcrumbs'];
-    if (crumbs is List) _breadcrumbCount = crumbs.length;
+    if (crumbs is List) {
+      _breadcrumbs.clear();
+      for (final c in crumbs) {
+        if (c is Map<String, dynamic>) {
+          _breadcrumbs.add(Map<String, dynamic>.from(c));
+        }
+      }
+      _breadcrumbs.sort((a, b) {
+        final tA = a['timestamp'] as String? ?? '';
+        final tB = b['timestamp'] as String? ?? '';
+        return tB.compareTo(tA);
+      });
+      if (_breadcrumbs.length > 100) {
+        _breadcrumbs.removeRange(100, _breadcrumbs.length);
+      }
+      _breadcrumbCount = _breadcrumbs.length;
+    }
     final loc = data['currentLocation'];
     if (loc is Map<String, dynamic>) {
       _lat = (loc['latitude'] as num?)?.toDouble();
@@ -226,6 +256,7 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
       _lat = null;
       _lng = null;
       _breadcrumbCount = 0;
+      _breadcrumbs.clear();
     });
   }
 
@@ -344,6 +375,111 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
               _infoTile('Last update',
                   _lastUpdate != null ? _lastUpdate!.toLocal().toString().substring(0, 19) : '—'),
               _infoTile('Session expires', _expiresAt ?? '—'),
+              const SizedBox(height: 16),
+              const Divider(color: AppColors.border),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.route, size: 20, color: AppColors.teal),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Recent Breadcrumb Trail (${_breadcrumbs.length} points)',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_breadcrumbs.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'No breadcrumb positions recorded yet. Live updates will appear here.',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                  ),
+                )
+              else
+                ..._breadcrumbs.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final pt = entry.value;
+                  final lat = (pt['latitude'] as num?)?.toDouble();
+                  final lng = (pt['longitude'] as num?)?.toDouble();
+                  final acc = (pt['accuracy'] as num?)?.toDouble();
+                  final rawTime = pt['timestamp'] as String? ?? '';
+                  final timeParsed = DateTime.tryParse(rawTime);
+                  final timeStr = timeParsed != null
+                      ? timeParsed.toLocal().toString().substring(11, 19)
+                      : (rawTime.isNotEmpty ? rawTime : '—');
+                  final isLatest = index == 0;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isLatest
+                          ? AppColors.teal.withOpacity(0.08)
+                          : Colors.grey.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isLatest ? AppColors.teal.withOpacity(0.3) : AppColors.border,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundColor: isLatest ? AppColors.teal : Colors.grey.shade700,
+                          child: Text(
+                            isLatest ? '★' : '#${_breadcrumbs.length - index}',
+                            style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                lat != null && lng != null
+                                    ? '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}'
+                                    : 'Unknown coords',
+                                style: TextStyle(
+                                  fontWeight: isLatest ? FontWeight.bold : FontWeight.w500,
+                                  color: AppColors.textPrimary,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Time: $timeStr',
+                                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (acc != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.teal.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '±${acc.toStringAsFixed(0)} m',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.teal,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }),
               if (_lat != null && _lng != null) ...[
                 const SizedBox(height: 12),
                 FilledButton.icon(

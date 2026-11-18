@@ -11,13 +11,14 @@
  * Usage:
  *   node backend/tests/smoke_test.js
  *   BASE_URL=https://safesphere.onrender.com node backend/tests/smoke_test.js
+ *   node backend/tests/smoke_test.js https://safesphere.onrender.com
  */
 
 const http = require('http');
 const assert = require('assert');
 
 // If BASE_URL is set, test remote instance; otherwise boot isolated local server
-const targetUrl = process.env.BASE_URL || null;
+const targetUrl = process.env.BASE_URL || process.argv[2] || null;
 
 async function runSmokeTests() {
   console.log('================================================================');

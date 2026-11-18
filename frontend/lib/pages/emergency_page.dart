@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
@@ -80,6 +81,21 @@ class EmergencyPage extends StatelessWidget {
                 "Send a manual alert with your last known location",
                 onTap: () {
                   _showMessagePreview(context);
+                },
+              ),
+
+              const SizedBox(height: 16),
+
+              // 💬 SMS FALLBACK SOS
+              _neutralCard(
+                cardColor,
+                Icons.sms_failed_outlined,
+                "SMS Fallback SOS",
+                "Open SMS composer prefilled with coordinates & contacts",
+                textColor,
+                subTextColor,
+                () {
+                  _triggerDirectSmsFallback(context);
                 },
               ),
 
@@ -376,78 +392,284 @@ class EmergencyPage extends StatelessWidget {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
-              final messenger = ScaffoldMessenger.of(context);
-
-              double? lat;
-              double? lng;
-              double? acc;
-
-              try {
-                LocationPermission permission = await Geolocator.checkPermission();
-                if (permission == LocationPermission.denied) {
-                  permission = await Geolocator.requestPermission();
-                }
-
-                if (permission == LocationPermission.whileInUse ||
-                    permission == LocationPermission.always) {
-                  final position = await Geolocator.getCurrentPosition(
-                    locationSettings: const LocationSettings(
-                      accuracy: LocationAccuracy.high,
-                      timeLimit: Duration(seconds: 5),
-                    ),
-                  );
-                  lat = position.latitude;
-                  lng = position.longitude;
-                  acc = position.accuracy;
-                }
-              } catch (_) {}
-
-              if (lat == null || lng == null) {
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text("Cannot dispatch SOS without GPS fix. Please enable device location."),
-                    backgroundColor: Colors.redAccent,
-                  ),
-                );
-                return;
-              }
-
-              // 1. Dispatch real HTTP POST /api/v1/sos/trigger to SafeSphere backend
-              final authService = AuthService.instance;
-              final result = await authService.triggerSos(
-                latitude: lat,
-                longitude: lng,
-                accuracy: acc,
-                alertType: 'CRITICAL_SOS',
-                notes: 'Manual alert triggered from Emergency screen',
-              );
-
-              final locationUrl = "https://www.google.com/maps?q=$lat,$lng";
-              final alertMsg = "🚨 [SafeSphere EMERGENCY ALERT] I need immediate help. My current live location is:\n$locationUrl";
-
-              // 2. Open native SMS / messaging share intent
-              await Share.share(alertMsg);
-
-              if (result != null) {
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text("Emergency SOS broadcast to monitoring channel and shared."),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              } else {
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text("Location shared via SMS (Backend broadcast offline)."),
-                    backgroundColor: Colors.orange,
-                  ),
-                );
-              }
+              await _startSosGraceCountdownAndDispatch(context);
             },
             child: const Text("Dispatch & Share"),
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _startSosGraceCountdownAndDispatch(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const SosCountdownDialog(durationSeconds: 5),
+    );
+
+    if (confirmed != true) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("SOS alert cancelled."),
+            backgroundColor: Colors.grey,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
+    await _executeSosDispatch(context);
+  }
+
+  Future<void> _executeSosDispatch(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    double? lat;
+    double? lng;
+    double? acc;
+
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 5),
+          ),
+        );
+        lat = position.latitude;
+        lng = position.longitude;
+        acc = position.accuracy;
+      }
+    } catch (_) {}
+
+    if (lat == null || lng == null) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text("Cannot dispatch SOS without GPS fix. Please enable device location."),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    // 1. Dispatch real HTTP POST /api/v1/sos/trigger to SafeSphere backend
+    final authService = AuthService.instance;
+    final result = await authService.triggerSos(
+      latitude: lat,
+      longitude: lng,
+      accuracy: acc,
+      alertType: 'CRITICAL_SOS',
+      notes: 'Manual alert triggered from Emergency screen',
+    );
+
+    final locationUrl = "https://www.google.com/maps?q=$lat,$lng";
+    final alertMsg = "🚨 [SafeSphere EMERGENCY ALERT] I need immediate help. My current live location is:\n$locationUrl";
+
+    // 2. Open native SMS composer prefilled with contacts and current location
+    await _launchSmsFallback(authService, alertMsg);
+
+    if (result != null) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text("Emergency SOS broadcast to monitoring channel and shared."),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text("Location shared via SMS (Backend broadcast offline)."),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  Future<bool> _launchSmsFallback(AuthService authService, String alertMsg) async {
+    try {
+      final currentUser = authService.currentUser;
+      final contactPhones = <String>[];
+      if (currentUser?.emergencyContacts != null && currentUser!.emergencyContacts.isNotEmpty) {
+        for (final c in currentUser.emergencyContacts) {
+          final p = c.phone.trim();
+          if (p.isNotEmpty && !contactPhones.contains(p)) {
+            contactPhones.add(p);
+          }
+        }
+      }
+      if (contactPhones.isEmpty && currentUser?.emergencyContactPhone != null) {
+        final p = currentUser!.emergencyContactPhone!.trim();
+        if (p.isNotEmpty) contactPhones.add(p);
+      }
+
+      final recipients = contactPhones.isNotEmpty ? contactPhones.join(',') : '';
+      final Uri smsUri = Uri(
+        scheme: 'sms',
+        path: recipients,
+        queryParameters: <String, String>{
+          'body': alertMsg,
+        },
+      );
+
+      if (await canLaunchUrl(smsUri)) {
+        await launchUrl(smsUri, mode: LaunchMode.externalApplication);
+        return true;
+      }
+    } catch (_) {}
+
+    // Fallback to generic share sheet if SMS composer cannot be launched
+    try {
+      await Share.share(alertMsg);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _triggerDirectSmsFallback(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    double? lat;
+    double? lng;
+
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 5),
+        ),
+      );
+      lat = position.latitude;
+      lng = position.longitude;
+    } catch (_) {}
+
+    final locationUrl = (lat != null && lng != null)
+        ? "https://www.google.com/maps?q=$lat,$lng"
+        : "GPS unavailable";
+    final alertMsg = "🚨 [SafeSphere EMERGENCY ALERT] I need immediate help. My current live location is:\n$locationUrl";
+
+    final launched = await _launchSmsFallback(AuthService.instance, alertMsg);
+    if (!launched && context.mounted) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text("Could not open SMS composer")),
+      );
+    }
+  }
+}
+
+class SosCountdownDialog extends StatefulWidget {
+  final int durationSeconds;
+  const SosCountdownDialog({super.key, this.durationSeconds = 5});
+
+  @override
+  State<SosCountdownDialog> createState() => _SosCountdownDialogState();
+}
+
+class _SosCountdownDialogState extends State<SosCountdownDialog> {
+  late int _remaining;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _remaining = widget.durationSeconds;
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      if (_remaining <= 1) {
+        timer.cancel();
+        Navigator.of(context).pop(true);
+      } else {
+        setState(() {
+          _remaining--;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _cancel() {
+    _timer?.cancel();
+    Navigator.of(context).pop(false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: const [
+          Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
+          SizedBox(width: 8),
+          Text("SOS Countdown", style: TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 10),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 90,
+                height: 90,
+                child: CircularProgressIndicator(
+                  value: _remaining / widget.durationSeconds,
+                  strokeWidth: 8,
+                  backgroundColor: Colors.grey.shade300,
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.redAccent),
+                ),
+              ),
+              Text(
+                "$_remaining",
+                style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: Colors.redAccent),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Text(
+            "Dispatching SOS alert to responders and contacts in $_remaining seconds...",
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 14),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Tap Cancel SOS immediately if triggered by accident.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ],
+      ),
+      actionsAlignment: MainAxisAlignment.center,
+      actions: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.grey.shade800,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: _cancel,
+            icon: const Icon(Icons.close),
+            label: const Text("Cancel SOS", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ),
+        ),
+      ],
     );
   }
 }

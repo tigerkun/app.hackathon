@@ -61,6 +61,7 @@ class AuthService {
   static const String keyUser = 'safesphere_user_data';
   static const String keyPin = 'safesphere_user_pin';
   static const String keyBio = 'safesphere_bio_enabled';
+  static const String keyOfflineSosQueue = 'safesphere_offline_sos_queue';
 
   /// Compile-time configurable API base URL.
   /// Pass --dart-define=SAFESPHERE_API_URL=https://<your-render-app>.onrender.com during build.
@@ -99,6 +100,7 @@ class AuthService {
   UserModel? _currentUser;
   bool _isPinLocked = false;
   bool _lastFetchFailed = false;
+  Future<String?>? _refreshFuture;
 
   UserModel? get currentUser => _currentUser;
   bool get isAuthenticated => _currentUser != null && !_currentUser!.isGuest;
@@ -113,6 +115,7 @@ class AuthService {
     required String path,
     Map<String, dynamic>? body,
     String? token,
+    bool retryOn401 = true,
   }) async {
     try {
       final uri = Uri.parse('$baseUrl$path');
@@ -153,7 +156,28 @@ class AuthService {
         } catch (_) {}
       }
 
+      // Silent access token refresh and automatic retry on HTTP 401 with coalesced mutex
+      if (statusCode == 401 && retryOn401 && !path.startsWith('/api/v1/auth/')) {
+        _refreshFuture ??= refreshSession().whenComplete(() {
+          _refreshFuture = null;
+        });
+        final newAccessToken = await _refreshFuture;
+        if (newAccessToken != null && newAccessToken.isNotEmpty) {
+          return _requestDetailed(
+            method: method,
+            path: path,
+            body: body,
+            token: newAccessToken,
+            retryOn401: false,
+          );
+        }
+      }
+
       final isSuccess = statusCode >= 200 && statusCode < 300;
+      if (isSuccess && !path.startsWith('/api/v1/auth/') && !path.startsWith('/api/v1/sos/')) {
+        unawaited(processQueuedSosAlerts());
+      }
+
       return AuthHttpResponse(
         statusCode: statusCode,
         data: decoded,
@@ -558,9 +582,98 @@ class AuthService {
           await storage.setString('safesphere_active_sos_resolve_token', resolveToken);
         }
       }
+      unawaited(processQueuedSosAlerts());
       return res.data;
     }
+
+    // Network unreachable or dispatch failure: queue offline for automatic replay
+    await queueOfflineSos(body);
     return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Offline SOS Local Storage Queue & Automatic Replay Logic
+  // ---------------------------------------------------------------------------
+  Future<void> queueOfflineSos(Map<String, dynamic> payload) async {
+    try {
+      final raw = await storage.getString(keyOfflineSosQueue);
+      final List<Map<String, dynamic>> queue = [];
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          for (final item in decoded) {
+            if (item is Map<String, dynamic>) {
+              queue.add(Map<String, dynamic>.from(item));
+            }
+          }
+        }
+      }
+      queue.add(payload);
+      await storage.setString(keyOfflineSosQueue, jsonEncode(queue));
+    } catch (_) {}
+  }
+
+  Future<List<Map<String, dynamic>>> getQueuedSosAlerts() async {
+    try {
+      final raw = await storage.getString(keyOfflineSosQueue);
+      if (raw == null || raw.isEmpty) return [];
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map<String, dynamic>>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<void> clearQueuedSosAlerts() async {
+    await storage.remove(keyOfflineSosQueue);
+  }
+
+  Future<int> processQueuedSosAlerts() async {
+    try {
+      final raw = await storage.getString(keyOfflineSosQueue);
+      if (raw == null || raw.isEmpty) return 0;
+
+      final decoded = jsonDecode(raw);
+      if (decoded is! List || decoded.isEmpty) return 0;
+
+      final token = await storage.getString(keyToken);
+      final remaining = <Map<String, dynamic>>[];
+      int sentCount = 0;
+
+      for (final item in decoded) {
+        if (item is Map<String, dynamic>) {
+          final res = await _requestDetailed(
+            method: 'POST',
+            path: '/api/v1/sos/trigger',
+            body: item,
+            token: token,
+          );
+
+          if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+            sentCount++;
+            final alertId = res.data!['data']?['id'] as String? ?? res.data!['id'] as String?;
+            if (alertId != null) {
+              await storage.setString('safesphere_active_sos_id', alertId);
+            }
+          } else {
+            remaining.add(Map<String, dynamic>.from(item));
+          }
+        }
+      }
+
+      if (remaining.isEmpty) {
+        await storage.remove(keyOfflineSosQueue);
+      } else {
+        await storage.setString(keyOfflineSosQueue, jsonEncode(remaining));
+      }
+      return sentCount;
+    } catch (_) {
+      return 0;
+    }
   }
 
   Future<bool> resolveSos({String? alertId, String? notes}) async {
