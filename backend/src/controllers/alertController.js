@@ -25,6 +25,18 @@ function getBroadcastHelper() {
   }
 }
 
+function getWebSocketMonitorCount() {
+  try {
+    const serverModule = require('../server');
+    if (typeof serverModule.getWebSocketClientCount === 'function') {
+      return serverModule.getWebSocketClientCount();
+    } else if (serverModule.wss && serverModule.wss.clients) {
+      return serverModule.wss.clients.size;
+    }
+  } catch (_) {}
+  return 0;
+}
+
 function trigger(req, res, next) {
   try {
     const body = req.body || {};
@@ -79,10 +91,33 @@ function active(req, res, next) {
       return toSafeAlert(a, isOwner || isPrivileged);
     });
 
+    const monitorsConnected = getWebSocketMonitorCount();
+
     res.status(200).json({
       success: true,
       count: alerts.length,
+      monitorsConnected,
       data: alerts
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function mine(req, res, next) {
+  try {
+    const rawAlerts = sosService.getAllAlerts();
+    const userId = req.user.id;
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 50), 100);
+    const myAlerts = rawAlerts
+      .filter(a => a.userId === userId)
+      .slice(0, limit)
+      .map(a => toSafeAlert(a, true));
+
+    res.status(200).json({
+      success: true,
+      count: myAlerts.length,
+      data: myAlerts
     });
   } catch (err) {
     next(err);
@@ -116,9 +151,16 @@ function getById(req, res, next) {
     const isPrivileged = !!(req.user && (req.user.role === 'admin' || req.user.role === 'first_responder'));
     const isOwner = req.user && req.user.id === alert.userId;
 
+    const monitorsConnected = getWebSocketMonitorCount();
+    const safeData = toSafeAlert(alert, isOwner || isPrivileged);
+
     res.status(200).json({
       success: true,
-      data: toSafeAlert(alert, isOwner || isPrivileged)
+      monitorsConnected,
+      data: {
+        ...safeData,
+        monitorsConnected
+      }
     });
   } catch (err) {
     next(err);
@@ -203,6 +245,7 @@ module.exports = {
   trigger,
   active,
   list,
+  mine,
   getById,
   resolve
 };

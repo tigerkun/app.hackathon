@@ -5,6 +5,7 @@
 
 const { db } = require('../data/store');
 const { createReport } = require('../models/reportModel');
+const { findNearby } = require('../services/geoService');
 
 function list(req, res, next) {
   try {
@@ -15,8 +16,35 @@ function list(req, res, next) {
     const parsedLimit = limit !== undefined
       ? Math.min(Math.max(1, parseInt(limit, 10) || 100), 100)
       : 100;
-    filter.limit = parsedLimit;
 
+    const latParam = req.query.latitude ?? req.query.lat;
+    const lngParam = req.query.longitude ?? req.query.lng ?? req.query.lon;
+    const radiusParam = req.query.radiusKm ?? req.query.radius;
+
+    if (latParam !== undefined && lngParam !== undefined && latParam !== '' && lngParam !== '') {
+      const targetLat = Number(latParam);
+      const targetLng = Number(lngParam);
+      if (!isNaN(targetLat) && !isNaN(targetLng)) {
+        let radiusKm = 10;
+        if (radiusParam !== undefined && radiusParam !== '') {
+          const parsed = Number(radiusParam);
+          if (!isNaN(parsed) && parsed > 0) {
+            radiusKm = Math.min(parsed, 50); // Capped at 50km
+          }
+        }
+        // Fetch matching reports without limit, filter by proximity, then apply limit
+        const allMatching = db.getAllReports({ type: filter.type, status: filter.status });
+        const nearbyReports = findNearby(allMatching, targetLat, targetLng, radiusKm);
+        const sliced = nearbyReports.slice(0, parsedLimit);
+        return res.status(200).json({
+          success: true,
+          count: sliced.length,
+          data: sliced
+        });
+      }
+    }
+
+    filter.limit = parsedLimit;
     const reports = db.getAllReports(filter);
 
     res.status(200).json({

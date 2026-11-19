@@ -55,7 +55,12 @@ class _HomePageState extends State<HomePage> {
     try {
       // 2. Fetch live community reports from real backend
       final auth = AuthService.instance;
-      final fetched = await auth.fetchReports(limit: 10);
+      final fetched = await auth.fetchReports(
+        limit: 10,
+        latitude: _userLat,
+        longitude: _userLng,
+        radiusKm: 10,
+      );
       if (mounted) {
         setState(() {
           if (!auth.lastFetchFailed) {
@@ -356,7 +361,7 @@ class _HomePageState extends State<HomePage> {
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.check_circle_outline, color: AppColors.teal, size: 22),
-                  title: Text("No recent incidents reported nearby", style: TextStyle(color: Colors.white70)),
+                  title: Text("No reports within 10 km", style: TextStyle(color: Colors.white70)),
                   subtitle: Text("Area is calm • Stay vigilant", style: TextStyle(color: Colors.white38, fontSize: 12)),
                 ),
               )

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
+import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/typing_text.dart';
@@ -92,6 +93,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
   final TextEditingController _controller = TextEditingController();
   final List<Timer> _pendingTimers = [];
   int _messageSeq = 0;
+  bool _showOfflineGuides = false;
 
   final List<_ChatMessage> messages = [
     _ChatMessage(
@@ -101,6 +103,14 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
       isUser: false,
     ),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    if (AuthService.instance.lastFetchFailed) {
+      _showOfflineGuides = true;
+    }
+  }
 
   @override
   void dispose() {
@@ -145,10 +155,11 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
       // Placeholder response indicating real backend integration requirement:
       if (!mounted) return;
       setState(() {
+        _showOfflineGuides = true;
         final typingIndex = messages.indexWhere((m) => m.id == typingMsgId);
         final replyMsg = _ChatMessage(
           id: 'ai_${timestamp}_$seq',
-          text: "AI Safety Assistant is awaiting connection to live intelligence backend. For immediate assistance, dial 112 or use the Emergency tab.",
+          text: "AI Safety Assistant is awaiting live intelligence backend. In the meantime, actionable protocols and verified helplines are available in the offline guide below. For immediate danger, dial 112.",
           isUser: false,
         );
         if (typingIndex != -1) {
@@ -160,11 +171,12 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        _showOfflineGuides = true;
         final typingIndex = messages.indexWhere((m) => m.id == typingMsgId);
         if (typingIndex != -1) {
           messages[typingIndex] = _ChatMessage(
             id: 'err_${timestamp}_$seq',
-            text: "Connection error contacting AI safety service.",
+            text: "Connection error contacting AI safety service. Offline guide cards displayed below.",
             isUser: false,
           );
         }
@@ -196,6 +208,10 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
             ),
           ),
 
+          /// OFFLINE SAFETY GUIDES (W2-5)
+          if (_showOfflineGuides || AuthService.instance.lastFetchFailed)
+            _buildOfflineSafetyGuides(),
+
           /// INPUT BAR
           Padding(
             padding: const EdgeInsets.all(12),
@@ -223,6 +239,170 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                     onPressed: _sendMessage,
                   )
                 ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOfflineSafetyGuides() {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 250),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.offline_bolt, color: AppColors.teal, size: 16),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Offline guide — not a substitute for professional help",
+                  style: TextStyle(
+                    color: AppColors.teal,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Flexible(
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                _offlineSafetyCard(
+                  title: "Assault/harassment response",
+                  steps: const [
+                    "Move immediately to a crowded, well-lit store or public area.",
+                    "Shout and attract bystander attention to deter perpetrator.",
+                    "Call Women Helpline (181) or Police Emergency (112).",
+                    "Share live location link or trigger SafeSphere SOS.",
+                  ],
+                  helpline: "Helpline: 181 / 112",
+                  cardColor: AppColors.red,
+                ),
+                _offlineSafetyCard(
+                  title: "Road accident",
+                  steps: const [
+                    "Check for injuries and move to safe roadside away from traffic.",
+                    "Dial Ambulance (108) and Police Emergency (112) immediately.",
+                    "Do not move unconscious victims unless imminent fire or hazard.",
+                    "Record vehicle registration numbers and photograph scene.",
+                  ],
+                  helpline: "Helpline: 108 / 112",
+                  cardColor: AppColors.amber,
+                ),
+                _offlineSafetyCard(
+                  title: "Cyber fraud",
+                  steps: const [
+                    "Freeze compromised debit/credit cards & netbanking via bank app.",
+                    "Dial National Cyber Crime Helpline (1930) within golden hour.",
+                    "File formal complaint at cybercrime.gov.in with transaction IDs.",
+                    "Never share OTPs, PINs, or install remote access software.",
+                  ],
+                  helpline: "Helpline: 1930 (Cyber)",
+                  cardColor: AppColors.purple,
+                ),
+                _offlineSafetyCard(
+                  title: "Medical emergency",
+                  steps: const [
+                    "Call Ambulance (108) or National Emergency (112) without delay.",
+                    "Check responsiveness & breathing; start chest compressions (CPR).",
+                    "Apply firm direct pressure with clean cloth to bleeding wounds.",
+                    "Keep patient calm, warm, and airway open until medics arrive.",
+                  ],
+                  helpline: "Helpline: 108 / 112",
+                  cardColor: AppColors.teal,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _offlineSafetyCard({
+    required String title,
+    required List<String> steps,
+    required String helpline,
+    required Color cardColor,
+  }) {
+    return Container(
+      width: 260,
+      margin: const EdgeInsets.only(right: 12, bottom: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cardColor.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.shield, color: cardColor, size: 16),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    color: cardColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                for (final step in steps)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("• ", style: TextStyle(color: Colors.white70, fontSize: 11)),
+                        Expanded(
+                          child: Text(
+                            step,
+                            style: const TextStyle(color: Colors.white70, fontSize: 11, height: 1.25),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: cardColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              helpline,
+              style: TextStyle(
+                color: cardColor,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),

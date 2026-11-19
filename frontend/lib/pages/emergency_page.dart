@@ -1,14 +1,108 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/auth_service.dart';
 
-
-
-class EmergencyPage extends StatelessWidget {
+class EmergencyPage extends StatefulWidget {
   const EmergencyPage({super.key});
+
+  @override
+  State<EmergencyPage> createState() => _EmergencyPageState();
+}
+
+class _EmergencyPageState extends State<EmergencyPage> {
+  String? _activeSosId;
+  bool _isBroadcasting = false;
+  int _monitorsCount = 0;
+  Timer? _sosPollTimer;
+  List<Map<String, dynamic>> _sosHistory = [];
+  bool _isLoadingHistory = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkActiveSos();
+    _loadSosHistory();
+  }
+
+  @override
+  void dispose() {
+    _sosPollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkActiveSos() async {
+    final activeId = await AuthService.instance.getActiveSosId();
+    if (activeId != null && activeId.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _activeSosId = activeId;
+          _isBroadcasting = true;
+        });
+        _startSosPolling(activeId);
+      }
+    }
+  }
+
+  void _startSosPolling(String alertId) {
+    _sosPollTimer?.cancel();
+    _pollActiveSos(alertId);
+    _sosPollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _pollActiveSos(alertId);
+    });
+  }
+
+  void _stopSosPolling() {
+    _sosPollTimer?.cancel();
+    _sosPollTimer = null;
+    if (mounted) {
+      setState(() {
+        _isBroadcasting = false;
+        _activeSosId = null;
+        _monitorsCount = 0;
+      });
+    }
+  }
+
+  Future<void> _pollActiveSos(String alertId) async {
+    if (!mounted) return;
+    try {
+      final statusData = await AuthService.instance.fetchSosStatus(alertId);
+      if (!mounted) return;
+      if (statusData != null) {
+        final status = statusData['status'] as String? ?? 'active';
+        final monitors = statusData['monitorsConnected'] as int? ?? 0;
+        if (status != 'active') {
+          _stopSosPolling();
+          _loadSosHistory();
+        } else {
+          setState(() {
+            _monitorsCount = monitors;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadSosHistory() async {
+    setState(() => _isLoadingHistory = true);
+    try {
+      final history = await AuthService.instance.fetchSosHistory(limit: 10);
+      if (mounted) {
+        setState(() {
+          _sosHistory = history;
+          _isLoadingHistory = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingHistory = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,19 +127,58 @@ class EmergencyPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-
               // 🔴 TOP DISCLAIMER
               _infoBanner(
                 icon: Icons.shield_outlined,
                 title: "Emergency Support & Safety Assistance",
                 subtitle:
-                "This page helps you access help and inform trusted contacts. "
+                    "This page helps you access help and inform trusted contacts. "
                     "It does not replace emergency services.",
                 textColor: textColor,
                 subTextColor: subTextColor,
               ),
 
               const SizedBox(height: 20),
+
+              // 📡 BROADCASTING STATUS BANNER (W2-3)
+              if (_isBroadcasting) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFB71C1C).withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.redAccent, width: 1.5),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.radio_button_checked, color: Colors.redAccent, size: 24),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "BROADCASTING — $_monitorsCount monitors connected",
+                              style: const TextStyle(
+                                color: Colors.redAccent,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            const Text(
+                              "Real-time GPS telemetry active • Tap I'm Safe Now to cease",
+                              style: TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
               // 🚨 EMERGENCY CALL
               _actionCard(
@@ -78,7 +211,7 @@ class EmergencyPage extends StatelessWidget {
                 icon: Icons.group,
                 title: "Inform Trusted Contacts",
                 subtitle:
-                "Send a manual alert with your last known location",
+                    "Send a manual alert with your last known location",
                 onTap: () {
                   _showMessagePreview(context);
                 },
@@ -131,6 +264,43 @@ class EmergencyPage extends StatelessWidget {
 
               const SizedBox(height: 24),
 
+              // 📜 SOS HISTORY (W2-3)
+              Text(
+                "SOS History",
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: textColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              if (_isLoadingHistory)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(12),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else if (_sosHistory.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    "No past emergency alerts recorded.",
+                    style: TextStyle(color: subTextColor, fontSize: 13),
+                  ),
+                )
+              else
+                for (final item in _sosHistory)
+                  _sosHistoryCard(item, cardColor, textColor, subTextColor),
+
+              const SizedBox(height: 24),
+
               // 🟢 I'M SAFE
               OutlinedButton.icon(
                 onPressed: () async {
@@ -153,6 +323,8 @@ class EmergencyPage extends StatelessWidget {
                   );
 
                   if (success) {
+                    _stopSosPolling();
+                    _loadSosHistory();
                     messenger.showSnackBar(
                       const SnackBar(
                         content: Text("Active SOS alert marked resolved and broadcast updated."),
@@ -183,7 +355,7 @@ class EmergencyPage extends StatelessWidget {
               // ⚠️ BOTTOM DISCLAIMER
               Text(
                 "SafeSphere does not provide emergency response services. "
-                    "For immediate danger, contact local authorities.",
+                "For immediate danger, contact local authorities.",
                 style: TextStyle(fontSize: 12, color: subTextColor),
                 textAlign: TextAlign.center,
               ),
@@ -195,6 +367,64 @@ class EmergencyPage extends StatelessWidget {
   }
 
   // ---------------- HELPERS ----------------
+
+  Widget _sosHistoryCard(
+    Map<String, dynamic> item,
+    Color cardColor,
+    Color textColor,
+    Color subTextColor,
+  ) {
+    final status = (item['status'] as String? ?? 'resolved').toUpperCase();
+    final type = (item['alertType'] as String? ?? 'CRITICAL_SOS').replaceAll('_', ' ');
+    final dateStr = item['triggeredAt'] as String? ?? item['createdAt'] as String? ?? '';
+    String formattedTime = 'Past Alert';
+    if (dateStr.isNotEmpty) {
+      try {
+        final dt = DateTime.parse(dateStr).toLocal();
+        formattedTime = "${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+      } catch (_) {
+        formattedTime = dateStr;
+      }
+    }
+
+    final isResolved = status == 'RESOLVED';
+    final badgeColor = isResolved ? Colors.green : Colors.amber;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(type, style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(formattedTime, style: TextStyle(color: subTextColor, fontSize: 12)),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: badgeColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              status,
+              style: TextStyle(color: badgeColor, fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _infoBanner({
     required IconData icon,
@@ -268,14 +498,14 @@ class EmergencyPage extends StatelessWidget {
   }
 
   Widget _neutralCard(
-      Color color,
-      IconData icon,
-      String title,
-      String subtitle,
-      Color textColor,
-      Color subTextColor,
-      VoidCallback onTap,
-      ) {
+    Color color,
+    IconData icon,
+    String title,
+    String subtitle,
+    Color textColor,
+    Color subTextColor,
+    VoidCallback onTap,
+  ) {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -420,6 +650,11 @@ class EmergencyPage extends StatelessWidget {
       return;
     }
 
+    // W2-6: Trigger tactile confirmation feedback
+    try {
+      HapticFeedback.heavyImpact();
+    } catch (_) {}
+
     if (!context.mounted) return;
     await _executeSosDispatch(context);
   }
@@ -478,6 +713,16 @@ class EmergencyPage extends StatelessWidget {
     await _launchSmsFallback(authService, alertMsg);
 
     if (result != null) {
+      final alertId = result['id'] as String?;
+      if (alertId != null && alertId.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _activeSosId = alertId;
+            _isBroadcasting = true;
+          });
+          _startSosPolling(alertId);
+        }
+      }
       messenger.showSnackBar(
         const SnackBar(
           content: Text("Emergency SOS broadcast to monitoring channel and shared."),

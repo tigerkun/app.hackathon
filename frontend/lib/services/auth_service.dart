@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 import '../models/user_model.dart';
 import '../models/auth_tokens.dart';
@@ -266,7 +267,7 @@ class AuthService {
       await storage.setString(keyRefreshToken, tokens.refreshToken);
       await storage.setString(keyUser, jsonEncode(user.toJson()));
       if (pin != null && pin.isNotEmpty) {
-        await storage.setString(keyPin, pin);
+        await setPin(pin);
       }
 
       _currentUser = user;
@@ -481,18 +482,66 @@ class AuthService {
   }
 
   // ---------------------------------------------------------------------------
-  // Local PIN & Biometrics Management
+  // Local PIN & Biometrics Management (W2-4: Hardware-Backed Secure PIN Storage)
   // ---------------------------------------------------------------------------
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+
+  /// Reads PIN securely from FlutterSecureStorage with automatic migration from
+  /// legacy unencrypted storage and graceful fallback if secure storage is unavailable.
+  Future<String?> _getSecureOrMigratedPin() async {
+    // 1. Try reading from secure storage
+    try {
+      final securePin = await _secureStorage.read(key: keyPin);
+      if (securePin != null && securePin.isNotEmpty) {
+        // Clean up legacy plaintext storage if still present
+        try {
+          final legacyPin = await storage.getString(keyPin);
+          if (legacyPin != null) {
+            await storage.remove(keyPin);
+          }
+        } catch (_) {}
+        return securePin;
+      }
+    } catch (_) {
+      // Platform channel unavailable or threw (e.g. desktop/unit test harness); fall through to storage
+    }
+
+    // 2. Fallback & migration: check legacy file storage
+    try {
+      final legacyPin = await storage.getString(keyPin);
+      if (legacyPin != null && legacyPin.isNotEmpty) {
+        // Attempt migration to secure storage
+        try {
+          await _secureStorage.write(key: keyPin, value: legacyPin);
+          await storage.remove(keyPin);
+        } catch (_) {}
+        return legacyPin;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
   Future<bool> setPin(String pin) async {
-    if (pin.trim().length >= 4) {
-      await storage.setString(keyPin, pin.trim());
+    final cleanPin = pin.trim();
+    if (cleanPin.length >= 4) {
+      bool wroteSecure = false;
+      try {
+        await _secureStorage.write(key: keyPin, value: cleanPin);
+        wroteSecure = true;
+        await storage.remove(keyPin);
+      } catch (_) {}
+
+      if (!wroteSecure) {
+        await storage.setString(keyPin, cleanPin);
+      }
       return true;
     }
     return false;
   }
 
   Future<bool> verifyPin(String pin) async {
-    final storedPin = await storage.getString(keyPin);
+    final storedPin = await _getSecureOrMigratedPin();
     if (storedPin == null || storedPin.isEmpty) {
       // NOTE: Removed hardcoded '1234' testing PIN bypass. If no PIN is configured, verify returns false.
       // TODO(REAL_BACKEND): Verify PIN against POST /api/v1/auth/login-pin when connected.
@@ -506,7 +555,7 @@ class AuthService {
   }
 
   Future<bool> hasStoredPin() async {
-    final stored = await storage.getString(keyPin);
+    final stored = await _getSecureOrMigratedPin();
     return stored != null && stored.isNotEmpty;
   }
 
@@ -707,6 +756,55 @@ class AuthService {
     return await storage.getString('safesphere_active_sos_id');
   }
 
+  /// Fetches live status and active monitor count for a specific SOS alert.
+  Future<Map<String, dynamic>?> fetchSosStatus(String alertId) async {
+    final token = await storage.getString(keyToken);
+    final res = await _requestDetailed(
+      method: 'GET',
+      path: '/api/v1/sos/$alertId',
+      token: token,
+    );
+    if (res.isSuccess && res.data != null) {
+      final data = res.data!['data'];
+      final monitors = res.data!['monitorsConnected'] ?? (data is Map ? data['monitorsConnected'] : 0);
+      if (data is Map<String, dynamic>) {
+        return {
+          ...data,
+          'monitorsConnected': monitors ?? 0,
+        };
+      }
+    }
+    return null;
+  }
+
+  /// Retrieves SOS alert history for the current user.
+  Future<List<Map<String, dynamic>>> fetchSosHistory({int limit = 10}) async {
+    final token = await storage.getString(keyToken);
+    if (token != null && token.isNotEmpty) {
+      final res = await _requestDetailed(
+        method: 'GET',
+        path: '/api/v1/sos/mine?limit=$limit',
+        token: token,
+      );
+      if (res.isSuccess && res.data != null && res.data!['data'] is List) {
+        return (res.data!['data'] as List).cast<Map<String, dynamic>>();
+      }
+    }
+    final res = await _requestDetailed(
+      method: 'GET',
+      path: '/api/v1/sos?limit=$limit',
+      token: token,
+    );
+    if (res.isSuccess && res.data != null && res.data!['data'] is List) {
+      final list = (res.data!['data'] as List).cast<Map<String, dynamic>>();
+      if (_currentUser?.id != null) {
+        return list.where((a) => a['userId'] == _currentUser!.id).toList();
+      }
+      return list;
+    }
+    return [];
+  }
+
   // ---------------------------------------------------------------------------
   // Reports API (/api/v1/reports)
   // ---------------------------------------------------------------------------
@@ -717,6 +815,9 @@ class AuthService {
     String? type,
     String? status,
     int? limit,
+    double? latitude,
+    double? longitude,
+    double? radiusKm,
   }) async {
     _lastFetchFailed = false;
     final token = await storage.getString(keyToken);
@@ -724,6 +825,9 @@ class AuthService {
     if (type != null) queryParams['type'] = type;
     if (status != null) queryParams['status'] = status;
     if (limit != null) queryParams['limit'] = '$limit';
+    if (latitude != null) queryParams['latitude'] = '$latitude';
+    if (longitude != null) queryParams['longitude'] = '$longitude';
+    if (radiusKm != null) queryParams['radiusKm'] = '$radiusKm';
 
     final queryString = queryParams.isNotEmpty
         ? '?' + queryParams.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&')

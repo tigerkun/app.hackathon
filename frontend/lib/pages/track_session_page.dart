@@ -241,6 +241,14 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
     }
   }
 
+  bool get _isExpiringSoon {
+    if (_expiresAt == null || _status != 'active') return false;
+    final expiry = DateTime.tryParse(_expiresAt!);
+    if (expiry == null) return false;
+    final diff = expiry.difference(DateTime.now());
+    return diff.inSeconds > 0 && diff <= const Duration(minutes: 5);
+  }
+
   void _stopWatching() {
     _pollTimer?.cancel();
     _pollTimer = null;
@@ -363,6 +371,33 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
             child: Text('Tracking: $_userName',
                 style: const TextStyle(color: AppColors.textSecondary)),
           ),
+        if (_isExpiringSoon) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.amber.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.amber),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: AppColors.amber, size: 20),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    "Session expires soon",
+                    style: TextStyle(
+                      color: AppColors.amber,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const Divider(color: AppColors.border),
         Expanded(
           child: ListView(

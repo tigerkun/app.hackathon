@@ -109,13 +109,34 @@ repositories via built-in `node:sqlite` with instant `reset()` for tests).
 - `/track` route & `TrackSessionPage` (`frontend/lib/pages/track_session_page.dart`):
   Dedicated guardian viewer for live tracking sessions ("Watch Live Trip").
 - **Guardian Tracking Flow**: Broadcaster initiates a live trip in `ShareLocationPage`
-  (`POST /api/v1/location/track/start`), generating a `shareUrl` with format
-  `?session=<sessionId>&token=<token>`. The guardian opens `/track` via AppDrawer
-  ("Watch Live Trip"), inputs the session and token, and subscribes to WebSocket
-  `/ws/sos` with `{ type: 'SUBSCRIBE_TRACKING', sessionId, token }`. The guardian
-  receives live breadcrumbs via `TRACKING_SNAPSHOT` and `LOCATION_STREAM_UPDATE` packets.
-  If the WebSocket drops, the client automatically polls `fetchTrackingSession` every 4s.
-  The session terminates cleanly with `STREAM_TERMINATE`.
+  (`POST /api/v1/location/share-session`), generating a `shareUrl` with format
+  `https://<api>/?session=<sessionId>&token=<token>`.
+  - **Browser Direct Access (W2-1)**: When opened in any standard web browser, the backend
+    directly intercepts `GET /?session=...&token=...` (and `/track`) to serve an inline,
+    zero-dependency HTML tracker page. The page auto-polls telemetry every 10s, displays live
+    coordinates, accuracy, breadcrumb counts, an external Google Maps link, and auto-stops
+    when the session ends, with zero paste friction and full XSS-safe textContent escaping.
+  - **In-App Viewer**: Guardians using the mobile client open `/track` via AppDrawer
+    ("Watch Live Trip"), input the session and token, and subscribe to WebSocket
+    `/ws/sos` with `{ type: 'SUBSCRIBE_TRACKING', sessionId, token }`. The guardian
+    receives live breadcrumbs via `TRACKING_SNAPSHOT` and `LOCATION_STREAM_UPDATE` packets.
+    If the WebSocket drops, the client automatically polls `fetchTrackingSession`.
+    When active session expires in < 5 minutes, both mobile broadcaster and watcher show an
+    amber "Session expires soon" banner (W2-6).
+- **Hyperlocal Community Data (W2-2)**: `GET /api/v1/reports` accepts `latitude`, `longitude`,
+  and `radiusKm` query parameters (capped at 50km). The mobile dashboard and Community Alerts
+  page query live incident reports bounded to the user's GPS fix (10km default radius),
+  displaying an honest "No reports within 10 km" empty state.
+- **SOS Broadcast Status & History (W2-3)**: After triggering an SOS alert, `EmergencyPage`
+  polls `GET /api/v1/sos/:id` or `/api/v1/sos/active` every 10s, displaying a live status
+  banner (`BROADCASTING — N monitors connected`). Users can inspect past alerts via
+  `GET /api/v1/sos/mine`. SOS trigger invokes `HapticFeedback.heavyImpact()` on confirmed trigger.
+- **Hardware-Backed Secure PIN Storage (W2-4)**: Authentication PINs are persisted via
+  `FlutterSecureStorage` (KeyStore on Android / Keychain on iOS) with automatic migration
+  from legacy unencrypted file storage and graceful fallback if platform channels are unavailable.
+- **Offline AI Safety Guides (W2-5)**: When the intelligence backend is unreachable,
+  `AiAssistantPage` displays static actionable safety protocols (Assault/harassment response,
+  Road accident, Cyber fraud, Medical emergency) with national helplines (181, 108, 112, 1930).
 - **`fetchTrackingSession` query parameter design**: Located in
   `frontend/lib/services/auth_service.dart:804`, queries
   `GET /api/v1/location/track/$sessionId?token=${Uri.encodeQueryComponent(trackingToken)}`.
@@ -177,7 +198,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
   This is fine on mobile/desktop but will not compile for the `web` target; use
   `web_preview/` for browser demos.
 - **Stale/missing `pubspec.lock` entries.** The lockfile does not list every
-  direct dependency (e.g. `geolocator`, `google_maps_flutter`, `local_auth`). Run
+  direct dependency (e.g. `geolocator`, `google_maps_flutter`, `local_auth`, `flutter_secure_storage`). Run
   `flutter pub get` on a Flutter-equipped machine before building; do NOT edit `pubspec.lock` by hand.
 - **`map_config.dart` API key is a placeholder** (`YOUR_GOOGLE_MAPS_API_KEY_HERE`);
   `SafeSphereMapConfig.isConfigured` is `false` until a real key is provided.

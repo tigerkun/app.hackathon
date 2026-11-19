@@ -296,6 +296,14 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
     }
   }
 
+  bool get _isExpiringSoon {
+    if (_expiresAt == null || !_isTracking) return false;
+    final expiry = DateTime.tryParse(_expiresAt!);
+    if (expiry == null) return false;
+    final diff = expiry.difference(DateTime.now());
+    return diff.inSeconds > 0 && diff <= const Duration(minutes: 5);
+  }
+
   // ── One-shot static share (no live session) ────────────────────────────────
   Future<void> _shareStaticLocation() async {
     if (_latitude == null || _longitude == null) {
@@ -486,6 +494,33 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
                           ),
                         ],
                       ),
+                      if (_isExpiringSoon) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.amber.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.amber),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.warning_amber_rounded, color: AppColors.amber, size: 16),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  "Session expires soon",
+                                  style: TextStyle(
+                                    color: AppColors.amber,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                     if (_shareUrl != null) ...[
                       const SizedBox(height: 6),

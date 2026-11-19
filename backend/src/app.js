@@ -26,6 +26,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Global sliding window rate limiter
 app.use(globalLimiter);
 
+const { trackerHtml } = require('./views/trackerPage');
+
 // Root System Health Check (for Docker, load balancers, and monitoring)
 app.get('/health', (req, res) => {
   const start = Date.now();
@@ -87,13 +89,24 @@ app.get('/healthz', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
+// Root API Metadata or Browser-accessible Guardian Tracker (W2-1)
 app.get('/', (req, res) => {
+  if (req.query.session || req.query.token) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.status(200).send(trackerHtml);
+  }
   res.status(200).json({
     name: 'SafeSphere API Service',
     status: 'operational',
     version: '1.0.0',
     apiRoot: '/api/v1'
   });
+});
+
+// Dedicated /track browser route
+app.get('/track', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  return res.status(200).send(trackerHtml);
 });
 
 // API Version 1

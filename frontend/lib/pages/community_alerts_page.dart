@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import '../services/auth_service.dart';
+import '../services/map_config.dart';
 import '../widgets/app_drawer.dart';
 
 class CommunityAlertsPage extends StatefulWidget {
@@ -15,6 +17,10 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
   bool isLoading = false;
   String? errorMessage;
   Timer? _locationTimer;
+
+  double _userLat = SafeSphereMapConfig.defaultLatitude;
+  double _userLng = SafeSphereMapConfig.defaultLongitude;
+  static const double _searchRadiusKm = 10;
 
   // Live reports fetched from /api/v1/reports
   List<Map<String, dynamic>> _rawReports = [];
@@ -38,8 +44,27 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     });
 
     try {
+      final perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.whileInUse || perm == LocationPermission.always) {
+        final pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+            timeLimit: Duration(seconds: 4),
+          ),
+        );
+        _userLat = pos.latitude;
+        _userLng = pos.longitude;
+      }
+    } catch (_) {}
+
+    try {
       final authService = AuthService.instance;
-      final reports = await authService.fetchReports(limit: 50);
+      final reports = await authService.fetchReports(
+        limit: 50,
+        latitude: _userLat,
+        longitude: _userLng,
+        radiusKm: _searchRadiusKm,
+      );
       if (!mounted) return;
       if (authService.lastFetchFailed) {
         setState(() {
@@ -219,8 +244,8 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
                           ? Center(
                               child: Text(
                                 selectedFilter == 'All'
-                                    ? "No incident reports in the network yet."
-                                    : "No '$selectedFilter' alerts found.",
+                                    ? "No reports within ${_searchRadiusKm.toInt()} km"
+                                    : "No '$selectedFilter' reports within ${_searchRadiusKm.toInt()} km",
                                 style: const TextStyle(color: Colors.grey, fontSize: 15),
                               ),
                             )
