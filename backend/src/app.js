@@ -91,7 +91,7 @@ app.get('/healthz', (req, res) => {
 
 // Root API Metadata or Browser-accessible Guardian Tracker (W2-1)
 app.get('/', (req, res) => {
-  if (req.query.session || req.query.token) {
+  if (req.query.session || req.query.sessionId || req.query.token) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.status(200).send(trackerHtml);
   }

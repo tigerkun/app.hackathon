@@ -9,10 +9,11 @@ const { findNearby } = require('../services/geoService');
 
 function list(req, res, next) {
   try {
-    const { type, status, limit } = req.query;
+    const { type, status, limit, reportedBy } = req.query;
     const filter = {};
     if (type) filter.type = String(type);
     if (status) filter.status = String(status);
+    if (reportedBy) filter.reportedBy = String(reportedBy);
     const parsedLimit = limit !== undefined
       ? Math.min(Math.max(1, parseInt(limit, 10) || 100), 100)
       : 100;
@@ -33,7 +34,11 @@ function list(req, res, next) {
           }
         }
         // Fetch matching reports without limit, filter by proximity, then apply limit
-        const allMatching = db.getAllReports({ type: filter.type, status: filter.status });
+        const allMatching = db.getAllReports({
+          type: filter.type,
+          status: filter.status,
+          reportedBy: filter.reportedBy
+        });
         const nearbyReports = findNearby(allMatching, targetLat, targetLng, radiusKm);
         const sliced = nearbyReports.slice(0, parsedLimit);
         return res.status(200).json({

@@ -58,6 +58,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
   void _stopSosPolling() {
     _sosPollTimer?.cancel();
     _sosPollTimer = null;
+    AuthService.instance.clearActiveSos();
     if (mounted) {
       setState(() {
         _isBroadcasting = false;
@@ -275,29 +276,44 @@ class _EmergencyPageState extends State<EmergencyPage> {
 
               const SizedBox(height: 12),
 
-              if (_isLoadingHistory)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(12),
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              else if (_sosHistory.isEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: cardColor,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Text(
-                    "No past emergency alerts recorded.",
-                    style: TextStyle(color: subTextColor, fontSize: 13),
-                  ),
-                )
-              else
-                for (final item in _sosHistory)
-                  _sosHistoryCard(item, cardColor, textColor, subTextColor),
+              Builder(
+                builder: (context) {
+                  final pastAlerts = _sosHistory
+                      .where((a) => (a['status'] as String? ?? '').toLowerCase() != 'active')
+                      .toList();
+
+                  if (_isLoadingHistory) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(12),
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    );
+                  }
+
+                  if (pastAlerts.isEmpty) {
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        "No past emergency alerts recorded.",
+                        style: TextStyle(color: subTextColor, fontSize: 13),
+                      ),
+                    );
+                  }
+
+                  return Column(
+                    children: [
+                      for (final item in pastAlerts)
+                        _sosHistoryCard(item, cardColor, textColor, subTextColor),
+                    ],
+                  );
+                },
+              ),
 
               const SizedBox(height: 24),
 

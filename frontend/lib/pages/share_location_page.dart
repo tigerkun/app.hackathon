@@ -300,8 +300,7 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
     if (_expiresAt == null || !_isTracking) return false;
     final expiry = DateTime.tryParse(_expiresAt!);
     if (expiry == null) return false;
-    final diff = expiry.difference(DateTime.now());
-    return diff.inSeconds > 0 && diff <= const Duration(minutes: 5);
+    return expiry.isBefore(DateTime.now().add(const Duration(minutes: 5)));
   }
 
   // ── One-shot static share (no live session) ────────────────────────────────

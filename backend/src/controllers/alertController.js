@@ -109,8 +109,13 @@ function mine(req, res, next) {
     const rawAlerts = sosService.getAllAlerts();
     const userId = req.user.id;
     const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 50), 100);
+    const statusFilter = req.query.status ? String(req.query.status).toLowerCase() : null;
     const myAlerts = rawAlerts
-      .filter(a => a.userId === userId)
+      .filter(a => {
+        if (a.userId !== userId) return false;
+        if (statusFilter && String(a.status).toLowerCase() !== statusFilter) return false;
+        return true;
+      })
       .slice(0, limit)
       .map(a => toSafeAlert(a, true));
 

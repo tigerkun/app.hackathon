@@ -369,7 +369,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
           Expanded(
             child: ListView(
               padding: EdgeInsets.zero,
-              physics: const NeverScrollableScrollPhysics(),
+              physics: const BouncingScrollPhysics(),
               children: [
                 for (final step in steps)
                   Padding(

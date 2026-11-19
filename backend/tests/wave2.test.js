@@ -69,6 +69,15 @@ describe('SafeSphere Wave 2 User-Facing Enhancements', () => {
       assert.ok(!body.includes('innerHTML'), 'Script must NOT use innerHTML');
     });
 
+    it('returns text/html 200 on GET /?sessionId=trk_test&token=tok_test', async () => {
+      const res = await fetch(`${baseUrl}/?sessionId=trk_test&token=tok_test`);
+      assert.equal(res.status, 200);
+      const contentType = res.headers.get('content-type') || '';
+      assert.ok(contentType.includes('text/html'), `Expected text/html, got ${contentType}`);
+      const body = await res.text();
+      assert.ok(body.includes('SafeSphere — Live Guardian Tracking'));
+    });
+
     it('returns text/html 200 on GET /track', async () => {
       const res = await fetch(`${baseUrl}/track`);
       assert.equal(res.status, 200);
@@ -253,6 +262,20 @@ describe('SafeSphere Wave 2 User-Facing Enhancements', () => {
       const ids = res.body.data.map(a => a.id);
       assert.ok(ids.includes(alert1Id), 'Must include testUser alert');
       assert.ok(!ids.includes(alert2Id), 'Must NOT include otherUser alert');
+    });
+
+    it('filters own alerts by status query on GET /api/v1/sos/mine', async () => {
+      const resActive = await serverHarness.request('/api/v1/sos/mine?status=active', {
+        headers: { Authorization: `Bearer ${testUserToken}` }
+      });
+      assert.equal(resActive.status, 200);
+      assert.ok(resActive.body.data.some(a => a.id === alert1Id));
+
+      const resResolved = await serverHarness.request('/api/v1/sos/mine?status=resolved', {
+        headers: { Authorization: `Bearer ${testUserToken}` }
+      });
+      assert.equal(resResolved.status, 200);
+      assert.ok(!resResolved.body.data.some(a => a.id === alert1Id));
     });
 
     it('returns monitorsConnected count in GET /api/v1/sos/active', async () => {

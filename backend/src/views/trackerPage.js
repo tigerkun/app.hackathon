@@ -192,12 +192,15 @@ const trackerHtml = `<!DOCTYPE html>
               return res.json().catch(function() { return {}; }).then(function(errData) {
                 var code = (errData && errData.error && errData.error.code) || res.status;
                 var msg = (errData && errData.error && errData.error.message) || 'Failed to load tracking data';
-                throw new Error(code + ': ' + msg);
+                var err = new Error(code + ': ' + msg);
+                err.status = res.status;
+                throw err;
               });
             }
             return res.json();
           })
           .then(function(payload) {
+            alertBanner.style.display = 'none';
             var session = (payload && payload.data && (payload.data.session || payload.data)) || {};
             var status = session.status || 'unknown';
             updateStatus(status);
@@ -243,11 +246,17 @@ const trackerHtml = `<!DOCTYPE html>
             }
           })
           .catch(function(err) {
-            updateStatus('error');
-            showAlert(err.message || 'Error communicating with tracking service');
-            if (pollTimer) {
-              clearInterval(pollTimer);
-              pollTimer = null;
+            var httpStatus = err && err.status;
+            if (httpStatus === 401 || httpStatus === 403 || httpStatus === 404) {
+              updateStatus('ended');
+              showAlert(err.message || 'Session expired or invalid credential');
+              if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+              }
+            } else {
+              // Transient network or server hiccup: show warning banner but keep polling
+              showAlert('Connection lost (' + (err.message || 'network error') + '). Reconnecting...');
             }
           });
       }

@@ -559,6 +559,15 @@ class AuthService {
     return stored != null && stored.isNotEmpty;
   }
 
+  Future<void> removePin() async {
+    try {
+      await _secureStorage.delete(key: keyPin);
+    } catch (_) {}
+    try {
+      await storage.remove(keyPin);
+    } catch (_) {}
+  }
+
   Future<bool> verifyBiometrics() async {
     // Hardware biometric authentication via local_auth
     try {
@@ -756,6 +765,12 @@ class AuthService {
     return await storage.getString('safesphere_active_sos_id');
   }
 
+  /// Clears active SOS identifiers and resolve capability token from storage.
+  Future<void> clearActiveSos() async {
+    await storage.remove('safesphere_active_sos_id');
+    await storage.remove('safesphere_active_sos_resolve_token');
+  }
+
   /// Fetches live status and active monitor count for a specific SOS alert.
   Future<Map<String, dynamic>?> fetchSosStatus(String alertId) async {
     final token = await storage.getString(keyToken);
@@ -773,6 +788,8 @@ class AuthService {
           'monitorsConnected': monitors ?? 0,
         };
       }
+    } else if (res.statusCode == 404) {
+      return {'status': 'not_found', 'monitorsConnected': 0};
     }
     return null;
   }
