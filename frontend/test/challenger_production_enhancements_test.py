@@ -108,10 +108,49 @@ class TestProductionEnhancementsAST(unittest.TestCase):
         self.assertIn("Future<List<Map<String, dynamic>>> getQueuedSosAlerts()", self.auth_code)
         self.assertIn("Future<int> processQueuedSosAlerts()", self.auth_code)
         self.assertIn("Future<void> clearQueuedSosAlerts()", self.auth_code)
+        # Bug 9: Replay mutex and queue cap at 20
+        self.assertIn("_isProcessingSosQueue", self.auth_code)
+        self.assertTrue("queue.length >= 20" in self.auth_code or "queue.length >= maxOfflineSosQueueSize" in self.auth_code)
+        self.assertIn("maxOfflineSosQueueSize = 20;", self.auth_code)
 
     def test_r2_offline_sos_trigger_integration(self):
         """Verify triggerSos queues failed requests for resilience."""
         self.assertIn("await queueOfflineSos(body);", self.auth_code)
+
+    def test_w2_4_secure_pin_storage_and_fallback_ast(self):
+        """Verify FlutterSecureStorage declaration, migration, fallback, and dual cleanup."""
+        # 1. FlutterSecureStorage declaration in auth_service.dart
+        self.assertIn("FlutterSecureStorage", self.auth_code)
+        self.assertIn("final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();", self.auth_code)
+
+        # 2. _getSecureOrMigratedPin checks _secureStorage.read(key: keyPin), reads legacy storage.getString(keyPin),
+        #    migrates with _secureStorage.write(key: keyPin, value: legacyPin), and cleans up with storage.remove(keyPin)
+        self.assertIn("Future<String?> _getSecureOrMigratedPin() async", self.auth_code)
+        self.assertIn("_secureStorage.read(key: keyPin)", self.auth_code)
+        self.assertIn("storage.getString(keyPin)", self.auth_code)
+        self.assertIn("_secureStorage.write(key: keyPin, value: legacyPin)", self.auth_code)
+        self.assertIn("storage.remove(keyPin)", self.auth_code)
+
+        # 3. setPin fallback: writes _secureStorage.write and falls back to storage.setString(keyPin, cleanPin)
+        self.assertIn("_secureStorage.write(key: keyPin, value: cleanPin)", self.auth_code)
+        self.assertIn("storage.setString(keyPin, cleanPin)", self.auth_code)
+
+        # 4. removePin dual cleanup: deletes from _secureStorage and storage.remove
+        self.assertIn("_secureStorage.delete(key: keyPin)", self.auth_code)
+        self.assertIn("storage.remove(keyPin)", self.auth_code)
+
+    def test_bug9_offline_sos_queue_improvements_ast(self):
+        """Verify Bug 9 offline SOS queue replay mutex and capacity cap at 20."""
+        self.assertIn("bool _isProcessingSosQueue = false;", self.auth_code)
+        self.assertIn("if (_isProcessingSosQueue) return 0;", self.auth_code)
+        self.assertIn("_isProcessingSosQueue = true;", self.auth_code)
+        self.assertIn("_isProcessingSosQueue = false;", self.auth_code)
+        self.assertIn("maxOfflineSosQueueSize = 20;", self.auth_code)
+        self.assertTrue(
+            "queue.length >= maxOfflineSosQueueSize" in self.auth_code or "queue.length >= 20" in self.auth_code,
+            "queueOfflineSos must cap queue size at 20",
+        )
+        self.assertIn("queue.removeAt(0);", self.auth_code)
 
     # --- R3: Guardian Tracking Breadcrumb Trail ---
     def test_r3_breadcrumbs_state_declaration(self):
@@ -175,6 +214,8 @@ class SimulatedOfflineQueue:
 
     def queue_offline_sos(self, payload: Dict[str, Any]):
         queue = self.get_queued()
+        while len(queue) >= 20:
+            queue.pop(0)  # Drop oldest entries to enforce capacity cap
         queue.append(payload)
         import json
         self.store[self.key] = json.dumps(queue)
@@ -196,6 +237,96 @@ class SimulatedOfflineQueue:
             processed += 1
         self.store.pop(self.key, None)
         return processed
+
+
+class SimulatedSecurePinStorage:
+    """
+    Simulates FlutterSecureStorage + legacy file storage behavior with migration and fallback.
+    Models the 3 branches:
+    Branch 1: Secure storage hit (legacy cleaned up if present)
+    Branch 2: Secure storage empty, legacy storage has PIN -> migrated to secure, deleted from legacy
+    Branch 3: Secure storage throws (platform missing / unavailable) -> falls back to legacy without lockout
+    """
+    def __init__(self, secure_available: bool = True):
+        self.secure_store: Dict[str, str] = {}
+        self.legacy_store: Dict[str, str] = {}
+        self.secure_available = secure_available
+
+    def read_secure(self, key: str) -> Optional[str]:
+        if not self.secure_available:
+            raise RuntimeError("PlatformException: secure storage unavailable")
+        return self.secure_store.get(key)
+
+    def write_secure(self, key: str, value: str):
+        if not self.secure_available:
+            raise RuntimeError("PlatformException: secure storage unavailable")
+        self.secure_store[key] = value
+
+    def delete_secure(self, key: str):
+        if not self.secure_available:
+            raise RuntimeError("PlatformException: secure storage unavailable")
+        self.secure_store.pop(key, None)
+
+    def get_secure_or_migrated_pin(self, key: str = "safesphere_user_pin") -> Optional[str]:
+        # Branch 1 & 3: Try secure storage
+        try:
+            secure_pin = self.read_secure(key)
+            if secure_pin:
+                try:
+                    self.legacy_store.pop(key, None)
+                except Exception:
+                    pass
+                return secure_pin
+        except Exception:
+            # Secure storage threw (e.g. desktop/web or missing platform plugin) - fall through
+            pass
+
+        # Branch 2 & 3: Check legacy file storage
+        try:
+            legacy_pin = self.legacy_store.get(key)
+            if legacy_pin:
+                try:
+                    self.write_secure(key, legacy_pin)
+                    self.legacy_store.pop(key, None)
+                except Exception:
+                    pass
+                return legacy_pin
+        except Exception:
+            pass
+
+        return None
+
+    def set_pin(self, pin: str, key: str = "safesphere_user_pin") -> bool:
+        clean_pin = pin.strip()
+        if len(clean_pin) >= 4:
+            wrote_secure = False
+            try:
+                self.write_secure(key, clean_pin)
+                wrote_secure = True
+                self.legacy_store.pop(key, None)
+            except Exception:
+                pass
+
+            if not wrote_secure:
+                self.legacy_store[key] = clean_pin
+            return True
+        return False
+
+    def verify_pin(self, pin: str, key: str = "safesphere_user_pin") -> bool:
+        stored = self.get_secure_or_migrated_pin(key)
+        if not stored:
+            return False
+        return stored == pin.strip()
+
+    def remove_pin(self, key: str = "safesphere_user_pin"):
+        try:
+            self.delete_secure(key)
+        except Exception:
+            pass
+        try:
+            self.legacy_store.pop(key, None)
+        except Exception:
+            pass
 
 
 class SimulatedAuthMutex:
@@ -298,6 +429,59 @@ class TestBehavioralSimulations(unittest.TestCase):
             self.assertEqual(mutex.refresh_calls, 1)
 
         asyncio.run(run_concurrent())
+
+    def test_secure_pin_storage_three_branches_simulation(self):
+        """
+        Behavioral simulation testing the 3 branches of PIN retrieval:
+        (1) Secure storage hit (legacy leftover cleaned up)
+        (2) Legacy storage migration (migrated to secure storage and deleted from legacy)
+        (3) Secure storage exception falling back to plaintext storage without locking user out
+        """
+        # Branch 1: Secure storage hit
+        s1 = SimulatedSecurePinStorage(secure_available=True)
+        s1.secure_store["safesphere_user_pin"] = "4321"
+        s1.legacy_store["safesphere_user_pin"] = "4321"
+        self.assertEqual(s1.get_secure_or_migrated_pin(), "4321")
+        self.assertNotIn("safesphere_user_pin", s1.legacy_store)
+        self.assertTrue(s1.verify_pin("4321"))
+        self.assertFalse(s1.verify_pin("0000"))
+
+        # Branch 2: Legacy migration
+        s2 = SimulatedSecurePinStorage(secure_available=True)
+        s2.legacy_store["safesphere_user_pin"] = "8765"
+        self.assertNotIn("safesphere_user_pin", s2.secure_store)
+        self.assertEqual(s2.get_secure_or_migrated_pin(), "8765")
+        self.assertEqual(s2.secure_store.get("safesphere_user_pin"), "8765")
+        self.assertNotIn("safesphere_user_pin", s2.legacy_store)
+        self.assertTrue(s2.verify_pin("8765"))
+
+        # Branch 3: Secure storage throwing exception (desktop/web missing plugin fallback)
+        s3 = SimulatedSecurePinStorage(secure_available=False)
+        s3.legacy_store["safesphere_user_pin"] = "9988"
+        # Retrieval does not throw, does not lock user out, returns legacy PIN
+        self.assertEqual(s3.get_secure_or_migrated_pin(), "9988")
+        self.assertTrue(s3.verify_pin("9988"))
+        self.assertFalse(s3.verify_pin("1234"))
+
+        # Setting PIN also gracefully falls back to legacy storage without throwing
+        self.assertTrue(s3.set_pin("5566"))
+        self.assertEqual(s3.legacy_store.get("safesphere_user_pin"), "5566")
+        self.assertTrue(s3.verify_pin("5566"))
+
+        # Dual cleanup in remove_pin
+        s3.remove_pin()
+        self.assertNotIn("safesphere_user_pin", s3.legacy_store)
+        self.assertFalse(s3.verify_pin("5566"))
+
+    def test_offline_sos_queue_cap_at_20(self):
+        """Verify queue drops oldest alerts when exceeding cap of 20."""
+        queue = SimulatedOfflineQueue()
+        for i in range(25):
+            queue.queue_offline_sos({"id": f"alert_{i}", "notes": f"Alert {i}"})
+        queued = queue.get_queued()
+        self.assertEqual(len(queued), 20)
+        self.assertEqual(queued[0]["id"], "alert_5")
+        self.assertEqual(queued[-1]["id"], "alert_24")
 
 
 if __name__ == "__main__":

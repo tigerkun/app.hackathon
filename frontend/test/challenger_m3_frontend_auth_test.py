@@ -613,6 +613,10 @@ class TestSafeSphereM3FrontendAuth(unittest.TestCase):
         self.assertIn("hasStoredPin", code)
         self.assertIn("verifyBiometrics", code)
 
+        # Secure PIN storage & migration (W2-4)
+        self.assertIn("FlutterSecureStorage", code)
+        self.assertIn("_getSecureOrMigratedPin", code)
+
         print("[PASS] AuthService endpoint and local security methods verified")
 
     def test_auth_state_reactive_methods_and_statuses(self):
