@@ -171,11 +171,14 @@ function validateSosTrigger(req, res, next) {
   const { latitude, longitude } = req.body || {};
   const issues = [];
 
-  if (latitude === undefined || latitude === null || isNaN(Number(latitude))) {
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+
+  if (latitude === undefined || latitude === null || !Number.isFinite(lat) || lat < -90 || lat > 90) {
     issues.push({ field: 'latitude', issue: 'Valid latitude coordinate is required.' });
   }
 
-  if (longitude === undefined || longitude === null || isNaN(Number(longitude))) {
+  if (longitude === undefined || longitude === null || !Number.isFinite(lng) || lng < -180 || lng > 180) {
     issues.push({ field: 'longitude', issue: 'Valid longitude coordinate is required.' });
   }
 

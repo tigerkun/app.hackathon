@@ -4,8 +4,25 @@
  */
 
 const sosService = require('../services/sosService');
+const { db } = require('../data/store');
 const { toSafeAlert } = require('../models/alertModel');
 const crypto = require('crypto');
+
+// Attach indexed getAlertsByUserId to DataStore if not present
+if (typeof db.getAlertsByUserId !== 'function') {
+  db.constructor.prototype.getAlertsByUserId = function(userId, status = null) {
+    if (!userId) return [];
+    let sql = 'SELECT * FROM alerts WHERE userId = ?';
+    const params = [userId];
+    if (status) {
+      sql += ' AND LOWER(status) = ?';
+      params.push(String(status).toLowerCase());
+    }
+    sql += ' ORDER BY triggeredAt DESC';
+    const rows = this.db.prepare(sql).all(...params);
+    return rows.map((r) => this._formatAlert(r));
+  };
+}
 
 function verifyResolveToken(alert, presentedToken) {
   if (!presentedToken || !alert.resolveTokenHash) return false;
@@ -109,16 +126,11 @@ function active(req, res, next) {
 
 function mine(req, res, next) {
   try {
-    const rawAlerts = sosService.getAllAlerts();
     const userId = req.user.id;
     const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 50), 100);
     const statusFilter = req.query.status ? String(req.query.status).toLowerCase() : null;
+    const rawAlerts = db.getAlertsByUserId(userId, statusFilter);
     const myAlerts = rawAlerts
-      .filter(a => {
-        if (a.userId !== userId) return false;
-        if (statusFilter && String(a.status).toLowerCase() !== statusFilter) return false;
-        return true;
-      })
       .slice(0, limit)
       .map(a => toSafeAlert(a, true));
 

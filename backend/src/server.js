@@ -115,7 +115,8 @@ wss.on('connection', (ws, req) => {
             speed,
             battery,
             accuracy,
-            timestamp
+            timestamp,
+            token: message.token
           });
         } catch (_) {}
 

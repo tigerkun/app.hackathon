@@ -118,6 +118,8 @@ function createShareSession({
   };
 }
 
+const MAX_BREADCRUMBS_PER_SESSION = 500;
+
 function getTrackingSession(sessionId, token) {
   if (!sessionId) {
     const error = new Error('sessionId is required');
@@ -136,19 +138,25 @@ function getTrackingSession(sessionId, token) {
 
   assertTrackingToken(session, token);
 
+  if (Array.isArray(session.breadcrumbs) && session.breadcrumbs.length > MAX_BREADCRUMBS_PER_SESSION) {
+    session.breadcrumbs = session.breadcrumbs.slice(-MAX_BREADCRUMBS_PER_SESSION);
+  }
+
   return session;
 }
 
-function recordPing({
-  sessionId,
-  latitude,
-  longitude,
-  speed,
-  battery,
-  accuracy,
-  timestamp,
-  token
-}) {
+function recordPing(arg1, arg2, arg3) {
+  let sessionId, latitude, longitude, speed, battery, accuracy, timestamp, token;
+  if (typeof arg1 === 'object' && arg1 !== null) {
+    ({ sessionId, latitude, longitude, speed, battery, accuracy, timestamp, token } = arg1);
+  } else {
+    sessionId = arg1;
+    if (typeof arg2 === 'object' && arg2 !== null) {
+      ({ latitude, longitude, speed, battery, accuracy, timestamp } = arg2);
+    }
+    token = arg3;
+  }
+
   if (!sessionId) {
     const error = new Error('sessionId is required for location ping');
     error.status = 400;
@@ -203,7 +211,17 @@ function recordPing({
     timestamp: timestamp ? String(timestamp) : new Date().toISOString()
   };
 
+  // Cap breadcrumbs to 500 entries per session (FIFO) to prevent unbounded memory growth
+  if (Array.isArray(session.breadcrumbs) && session.breadcrumbs.length >= MAX_BREADCRUMBS_PER_SESSION) {
+    session.breadcrumbs = session.breadcrumbs.slice(-(MAX_BREADCRUMBS_PER_SESSION - 1));
+    db.saveTrackingSession(session);
+  }
+
   const updatedSession = db.addTrackingBreadcrumb(sessionId, pingPoint);
+  if (Array.isArray(updatedSession.breadcrumbs) && updatedSession.breadcrumbs.length > MAX_BREADCRUMBS_PER_SESSION) {
+    updatedSession.breadcrumbs = updatedSession.breadcrumbs.slice(-MAX_BREADCRUMBS_PER_SESSION);
+    db.saveTrackingSession(updatedSession);
+  }
 
   return {
     sessionId,

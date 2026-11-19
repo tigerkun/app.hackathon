@@ -68,7 +68,7 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
 
     final uri = Uri.tryParse(text);
     if (uri != null) {
-      final session = uri.queryParameters['session'];
+      final session = uri.queryParameters['session'] ?? uri.queryParameters['sessionId'];
       final token = uri.queryParameters['token'];
       if (session != null && token != null) {
         return {'sessionId': session, 'token': token};
@@ -86,15 +86,17 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
   Future<void> _startWatching() async {
     final parsed = _parseLink(_linkController.text);
     if (parsed == null) {
+      if (!mounted) return;
       setState(() => _error = 'Could not read a tracking link. Paste the full link the sender shared.');
       return;
     }
 
+    if (!mounted) return;
     setState(() {
       _connecting = true;
       _error = null;
       _watching = true;
-      _sessionId = parsed!['sessionId'];
+      _sessionId = parsed['sessionId'];
       _sessionToken = parsed['token'];
     });
 
@@ -138,14 +140,17 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
   }
 
   void _handleWsMessage(Map<String, dynamic> msg) {
+    if (!mounted) return;
     switch (msg['type']) {
       case 'TRACKING_SNAPSHOT':
         final session = msg['session'];
         if (session is Map<String, dynamic>) {
+          if (!mounted) return;
           setState(() => _applySession(session));
         }
         break;
       case 'LOCATION_STREAM_UPDATE':
+        if (!mounted) return;
         setState(() {
           _lat = (msg['latitude'] as num?)?.toDouble();
           _lng = (msg['longitude'] as num?)?.toDouble();
@@ -168,6 +173,7 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
         });
         break;
       case 'STREAM_TERMINATE':
+        if (!mounted) return;
         setState(() {
           _status = 'ended';
           _live = false;
@@ -175,6 +181,7 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
         _pollTimer?.cancel();
         break;
       case 'ERROR':
+        if (!mounted) return;
         setState(() {
           _error = msg['message'] as String? ?? 'Tracking channel error';
           _live = false;
@@ -245,7 +252,8 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
     if (_expiresAt == null || _status != 'active') return false;
     final expiry = DateTime.tryParse(_expiresAt!);
     if (expiry == null) return false;
-    return expiry.isBefore(DateTime.now().add(const Duration(minutes: 5)));
+    final now = DateTime.now();
+    return expiry.isAfter(now) && expiry.isBefore(now.add(const Duration(minutes: 5)));
   }
 
   void _stopWatching() {
@@ -253,6 +261,7 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
     _pollTimer = null;
     _ws?.close();
     _ws = null;
+    if (!mounted) return;
     setState(() {
       _watching = false;
       _live = false;

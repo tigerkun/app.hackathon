@@ -474,4 +474,180 @@ describe('SafeSphere Wave 2 User-Facing Enhancements', () => {
       assert.equal(adminResolve.body.data.resolveTokenHash, undefined, 'Must not leak resolveTokenHash');
     });
   });
+
+  // ===========================================================================
+  // W2-4: Hardening: WS Breadcrumb Persistence & Coordinate Boundary Validation
+  // ===========================================================================
+  describe('W2-4: Hardening: WS Breadcrumb Persistence & Coordinate Boundary Validation', () => {
+    let liveWsServer;
+    let wsPort;
+    let wsUrl;
+
+    before(async () => {
+      const { server } = require('../src/server');
+      liveWsServer = server;
+      await new Promise((resolve) => {
+        if (liveWsServer.listening) {
+          wsPort = liveWsServer.address().port;
+          wsUrl = `ws://127.0.0.1:${wsPort}/ws/sos`;
+          return resolve();
+        }
+        liveWsServer.listen(0, '127.0.0.1', () => {
+          wsPort = liveWsServer.address().port;
+          wsUrl = `ws://127.0.0.1:${wsPort}/ws/sos`;
+          resolve();
+        });
+      });
+    });
+
+    after(async () => {
+      if (liveWsServer && liveWsServer.listening) {
+        await new Promise((resolve) => liveWsServer.close(resolve));
+      }
+    });
+
+    it('persists WebSocket LOCATION_STREAM_UPDATE breadcrumbs to SQLite when valid token is provided', async () => {
+      const { WebSocket } = require('ws');
+      const { createShareSession } = require('../src/services/trackingService');
+
+      // Create a tracking session in DB
+      const share = createShareSession({
+        userName: 'WS Breadcrumb User',
+        latitude: 28.6139,
+        longitude: 77.2090
+      });
+      const { sessionId, token } = share;
+
+      const ws = new WebSocket(wsUrl);
+      await new Promise((resolve) => ws.once('message', resolve)); // welcome message
+
+      // Send LOCATION_STREAM_UPDATE with session token
+      ws.send(JSON.stringify({
+        type: 'LOCATION_STREAM_UPDATE',
+        sessionId,
+        token,
+        latitude: 28.6145,
+        longitude: 77.2095,
+        speed: 2.1,
+        battery: 92,
+        accuracy: 3.5,
+        timestamp: new Date().toISOString()
+      }));
+
+      // Allow event loop to process DB write
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      const sessionAfter = db.findTrackingSessionById(sessionId);
+      assert.ok(sessionAfter.breadcrumbs.length >= 2, 'Breadcrumb must be saved to DB from WebSocket update');
+      const latestCrumb = sessionAfter.breadcrumbs[sessionAfter.breadcrumbs.length - 1];
+      assert.equal(latestCrumb.latitude, 28.6145);
+      assert.equal(latestCrumb.longitude, 77.2095);
+      assert.equal(sessionAfter.currentLocation.latitude, 28.6145);
+
+      ws.close();
+    });
+
+    it('enforces FIFO cap of 500 breadcrumbs per tracking session', async () => {
+      const { createShareSession, recordPing } = require('../src/services/trackingService');
+      const share = createShareSession({
+        userName: 'FIFO Cap Tester',
+        latitude: 28.6139,
+        longitude: 77.2090
+      });
+      const { sessionId, token } = share;
+
+      // Seed 505 pings
+      for (let i = 0; i < 505; i++) {
+        recordPing({
+          sessionId,
+          latitude: 28.0 + (i * 0.0001),
+          longitude: 77.0 + (i * 0.0001),
+          token
+        });
+      }
+
+      const session = db.findTrackingSessionById(sessionId);
+      assert.equal(session.breadcrumbs.length, 500, 'Breadcrumbs must be capped at 500 entries');
+      // Oldest points should have been dropped: first point must not be index 0
+      assert.ok(session.breadcrumbs[0].latitude > 28.0004, 'Oldest breadcrumbs must be discarded FIFO');
+    });
+
+    it('rejects SOS trigger with invalid or non-finite coordinates', async () => {
+      // 1. Latitude > 90
+      const res1 = await serverHarness.request('/api/v1/sos/trigger', {
+        method: 'POST',
+        body: { latitude: 95.0, longitude: 77.2090 }
+      });
+      assert.equal(res1.status, 400);
+      assert.ok(res1.body.error.details.some(d => d.field === 'latitude'));
+
+      // 2. Latitude < -90
+      const res2 = await serverHarness.request('/api/v1/sos/trigger', {
+        method: 'POST',
+        body: { latitude: -91.0, longitude: 77.2090 }
+      });
+      assert.equal(res2.status, 400);
+      assert.ok(res2.body.error.details.some(d => d.field === 'latitude'));
+
+      // 3. Longitude > 180
+      const res3 = await serverHarness.request('/api/v1/sos/trigger', {
+        method: 'POST',
+        body: { latitude: 28.6139, longitude: 185.0 }
+      });
+      assert.equal(res3.status, 400);
+      assert.ok(res3.body.error.details.some(d => d.field === 'longitude'));
+
+      // 4. Longitude < -180
+      const res4 = await serverHarness.request('/api/v1/sos/trigger', {
+        method: 'POST',
+        body: { latitude: 28.6139, longitude: -185.0 }
+      });
+      assert.equal(res4.status, 400);
+      assert.ok(res4.body.error.details.some(d => d.field === 'longitude'));
+
+      // 5. Non-finite / missing coordinates
+      const res5 = await serverHarness.request('/api/v1/sos/trigger', {
+        method: 'POST',
+        body: { latitude: 'invalid_lat', longitude: 77.2090 }
+      });
+      assert.equal(res5.status, 400);
+      assert.ok(res5.body.error.details.some(d => d.field === 'latitude'));
+
+      // 6. Valid boundary coordinates are accepted
+      const res6 = await serverHarness.request('/api/v1/sos/trigger', {
+        method: 'POST',
+        body: { latitude: 90.0, longitude: 180.0, alertType: 'CRITICAL_SOS' }
+      });
+      assert.equal(res6.status, 201);
+      assert.equal(res6.body.success, true);
+    });
+
+    it('rejects location ping with non-finite or out-of-bounds coordinates', async () => {
+      const { createShareSession, recordPing } = require('../src/services/trackingService');
+      const share = createShareSession({
+        userName: 'Boundary Tester',
+        latitude: 28.6139,
+        longitude: 77.2090
+      });
+      const { sessionId, token } = share;
+
+      assert.throws(() => {
+        recordPing({
+          sessionId,
+          latitude: 91.0,
+          longitude: 77.0,
+          token
+        });
+      }, /Latitude must be between -90 and 90/);
+
+      assert.throws(() => {
+        recordPing({
+          sessionId,
+          latitude: 28.0,
+          longitude: 181.0,
+          token
+        });
+      }, /Latitude must be between -90 and 90/);
+    });
+  });
 });

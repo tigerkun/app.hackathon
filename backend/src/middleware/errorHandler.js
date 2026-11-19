@@ -15,6 +15,10 @@ function notFoundHandler(req, res) {
 }
 
 function errorHandler(err, req, res, next) {
+  if (res.headersSent) {
+    return next(err);
+  }
+
   const status = err.status || 500;
   const code = err.code || (status === 500 ? 'INTERNAL_SERVER_ERROR' : 'REQUEST_ERROR');
   const message = err.message || 'An unexpected error occurred';

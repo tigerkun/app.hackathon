@@ -63,6 +63,8 @@ class AuthService {
   static const String keyPin = 'safesphere_user_pin';
   static const String keyBio = 'safesphere_bio_enabled';
   static const String keyOfflineSosQueue = 'safesphere_offline_sos_queue';
+  static const String keyActiveSosId = 'safesphere_active_sos_id';
+  static const String keyActiveSosResolveToken = 'safesphere_active_sos_resolve_token';
   static const int maxOfflineSosQueueSize = 20;
 
   /// Compile-time configurable API base URL.
@@ -120,10 +122,10 @@ class AuthService {
     String? token,
     bool retryOn401 = true,
   }) async {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 4);
     try {
       final uri = Uri.parse('$baseUrl$path');
-      final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 4);
 
       HttpClientRequest request;
       if (method == 'GET') {
@@ -147,7 +149,6 @@ class AuthService {
       final response = await request.close().timeout(const Duration(seconds: 5));
       final statusCode = response.statusCode;
       final responseBody = await response.transform(utf8.decoder).join();
-      client.close();
 
       Map<String, dynamic>? decoded;
       if (responseBody.isNotEmpty) {
@@ -192,6 +193,8 @@ class AuthService {
         data: null,
         error: e.toString(),
       );
+    } finally {
+      client.close(force: true);
     }
   }
 
@@ -635,11 +638,11 @@ class AuthService {
     if (res.isSuccess && res.data != null && res.data!['success'] == true) {
       final alertId = res.data!['data']?['id'] as String? ?? res.data!['id'] as String?;
       if (alertId != null) {
-        await storage.setString('safesphere_active_sos_id', alertId);
+        await storage.setString(keyActiveSosId, alertId);
         final resolveToken = res.data!['resolveToken'] as String? ??
             (res.data!['data']?['resolveToken'] as String?);
         if (resolveToken != null) {
-          await storage.setString('safesphere_active_sos_resolve_token', resolveToken);
+          await storage.setString(keyActiveSosResolveToken, resolveToken);
         }
       }
       unawaited(processQueuedSosAlerts());
@@ -722,7 +725,12 @@ class AuthService {
             sentCount++;
             final alertId = res.data!['data']?['id'] as String? ?? res.data!['id'] as String?;
             if (alertId != null) {
-              await storage.setString('safesphere_active_sos_id', alertId);
+              await storage.setString(keyActiveSosId, alertId);
+              final resolveToken = res.data!['resolveToken'] as String? ??
+                  (res.data!['data']?['resolveToken'] as String?);
+              if (resolveToken != null) {
+                await storage.setString(keyActiveSosResolveToken, resolveToken);
+              }
             }
           } else {
             remaining.add(Map<String, dynamic>.from(item));
@@ -745,10 +753,10 @@ class AuthService {
 
   Future<bool> resolveSos({String? alertId, String? notes}) async {
     final token = await storage.getString(keyToken);
-    final targetId = alertId ?? await storage.getString('safesphere_active_sos_id');
+    final targetId = alertId ?? await storage.getString(keyActiveSosId);
     if (targetId == null || targetId.isEmpty) return false;
 
-    final resolveToken = await storage.getString('safesphere_active_sos_resolve_token');
+    final resolveToken = await storage.getString(keyActiveSosResolveToken);
     final body = <String, dynamic>{
       'id': targetId,
       'notes': notes ?? 'Citizen marked safe',
@@ -763,21 +771,21 @@ class AuthService {
     );
 
     if (res.isSuccess && res.data != null && res.data!['success'] == true) {
-      await storage.remove('safesphere_active_sos_id');
-      await storage.remove('safesphere_active_sos_resolve_token');
+      await storage.remove(keyActiveSosId);
+      await storage.remove(keyActiveSosResolveToken);
       return true;
     }
     return false;
   }
 
   Future<String?> getActiveSosId() async {
-    return await storage.getString('safesphere_active_sos_id');
+    return await storage.getString(keyActiveSosId);
   }
 
   /// Clears active SOS identifiers and resolve capability token from storage.
   Future<void> clearActiveSos() async {
-    await storage.remove('safesphere_active_sos_id');
-    await storage.remove('safesphere_active_sos_resolve_token');
+    await storage.remove(keyActiveSosId);
+    await storage.remove(keyActiveSosResolveToken);
   }
 
   /// Fetches live status and active monitor count for a specific SOS alert.
