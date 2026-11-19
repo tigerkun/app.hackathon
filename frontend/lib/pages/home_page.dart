@@ -17,8 +17,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   bool _isLoading = false;
   String _locationLabel = "Detecting location...";
-  double _userLat = SafeSphereMapConfig.defaultLatitude;
-  double _userLng = SafeSphereMapConfig.defaultLongitude;
+  double? _userLat;
+  double? _userLng;
   List<Map<String, dynamic>> _reports = [];
   DateTime? _lastFetchTime;
 
@@ -44,22 +44,27 @@ class _HomePageState extends State<HomePage> {
 
         _userLat = pos.latitude;
         _userLng = pos.longitude;
-        _locationLabel = "GPS: ${_userLat.toStringAsFixed(2)}, ${_userLng.toStringAsFixed(2)}";
+        _locationLabel = "GPS: ${_userLat!.toStringAsFixed(2)}, ${_userLng!.toStringAsFixed(2)}";
       } else {
+        _userLat = null;
+        _userLng = null;
         _locationLabel = "Unavailable — enable location";
       }
     } catch (_) {
+      _userLat = null;
+      _userLng = null;
       _locationLabel = "Unavailable — enable location";
     }
 
     try {
       // 2. Fetch live community reports from real backend
       final auth = AuthService.instance;
+      final hasLocation = _userLat != null && _userLng != null;
       final fetched = await auth.fetchReports(
         limit: 10,
-        latitude: _userLat,
-        longitude: _userLng,
-        radiusKm: 10,
+        latitude: hasLocation ? _userLat : null,
+        longitude: hasLocation ? _userLng : null,
+        radiusKm: hasLocation ? 10 : null,
       );
       if (mounted) {
         setState(() {

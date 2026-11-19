@@ -261,7 +261,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  "Offline guide — not a substitute for professional help",
+                  "Offline guidance — not a substitute for professional help",
                   style: TextStyle(
                     color: AppColors.teal,
                     fontSize: 12,
@@ -361,6 +361,22 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: cardColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  "Offline Guidance",
+                  style: TextStyle(
+                    color: cardColor,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],

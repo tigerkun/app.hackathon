@@ -24,6 +24,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
   @override
   void initState() {
     super.initState();
+    unawaited(AuthService.instance.processQueuedSosAlerts());
     _checkActiveSos();
     _loadSosHistory();
   }
@@ -50,7 +51,11 @@ class _EmergencyPageState extends State<EmergencyPage> {
   void _startSosPolling(String alertId) {
     _sosPollTimer?.cancel();
     _pollActiveSos(alertId);
-    _sosPollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+    _sosPollTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       _pollActiveSos(alertId);
     });
   }
@@ -89,6 +94,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
   }
 
   Future<void> _loadSosHistory() async {
+    if (!mounted) return;
     setState(() => _isLoadingHistory = true);
     try {
       final history = await AuthService.instance.fetchSosHistory(limit: 10);
@@ -729,7 +735,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
     await _launchSmsFallback(authService, alertMsg);
 
     if (result != null) {
-      final alertId = result['id'] as String?;
+      final alertId = result['id'] as String? ?? (result['data']?['id'] as String?);
       if (alertId != null && alertId.isNotEmpty) {
         if (mounted) {
           setState(() {

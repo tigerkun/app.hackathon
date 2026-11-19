@@ -18,8 +18,8 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
   String? errorMessage;
   Timer? _locationTimer;
 
-  double _userLat = SafeSphereMapConfig.defaultLatitude;
-  double _userLng = SafeSphereMapConfig.defaultLongitude;
+  double? _userLat;
+  double? _userLng;
   static const double _searchRadiusKm = 10;
 
   // Live reports fetched from /api/v1/reports
@@ -54,16 +54,23 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
         );
         _userLat = pos.latitude;
         _userLng = pos.longitude;
+      } else {
+        _userLat = null;
+        _userLng = null;
       }
-    } catch (_) {}
+    } catch (_) {
+      _userLat = null;
+      _userLng = null;
+    }
 
     try {
       final authService = AuthService.instance;
+      final hasLocation = _userLat != null && _userLng != null;
       final reports = await authService.fetchReports(
         limit: 50,
-        latitude: _userLat,
-        longitude: _userLng,
-        radiusKm: _searchRadiusKm,
+        latitude: hasLocation ? _userLat : null,
+        longitude: hasLocation ? _userLng : null,
+        radiusKm: hasLocation ? _searchRadiusKm : null,
       );
       if (!mounted) return;
       if (authService.lastFetchFailed) {
@@ -243,9 +250,13 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
                       : filtered.isEmpty
                           ? Center(
                               child: Text(
-                                selectedFilter == 'All'
-                                    ? "No reports within ${_searchRadiusKm.toInt()} km"
-                                    : "No '$selectedFilter' reports within ${_searchRadiusKm.toInt()} km",
+                                (_userLat != null && _userLng != null)
+                                    ? (selectedFilter == 'All'
+                                        ? "No reports within ${_searchRadiusKm.toInt()} km"
+                                        : "No '$selectedFilter' reports within ${_searchRadiusKm.toInt()} km")
+                                    : (selectedFilter == 'All'
+                                        ? "No active community alerts"
+                                        : "No '$selectedFilter' reports found"),
                                 style: const TextStyle(color: Colors.grey, fontSize: 15),
                               ),
                             )

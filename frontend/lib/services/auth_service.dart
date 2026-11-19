@@ -63,6 +63,7 @@ class AuthService {
   static const String keyPin = 'safesphere_user_pin';
   static const String keyBio = 'safesphere_bio_enabled';
   static const String keyOfflineSosQueue = 'safesphere_offline_sos_queue';
+  static const int maxOfflineSosQueueSize = 20;
 
   /// Compile-time configurable API base URL.
   /// Pass --dart-define=SAFESPHERE_API_URL=https://<your-render-app>.onrender.com during build.
@@ -102,6 +103,7 @@ class AuthService {
   bool _isPinLocked = false;
   bool _lastFetchFailed = false;
   Future<String?>? _refreshFuture;
+  bool _isProcessingSosQueue = false;
 
   UserModel? get currentUser => _currentUser;
   bool get isAuthenticated => _currentUser != null && !_currentUser!.isGuest;
@@ -666,6 +668,9 @@ class AuthService {
           }
         }
       }
+      while (queue.length >= maxOfflineSosQueueSize) {
+        queue.removeAt(0); // Drop oldest entries to enforce capacity cap
+      }
       queue.add(payload);
       await storage.setString(keyOfflineSosQueue, jsonEncode(queue));
     } catch (_) {}
@@ -691,6 +696,8 @@ class AuthService {
   }
 
   Future<int> processQueuedSosAlerts() async {
+    if (_isProcessingSosQueue) return 0;
+    _isProcessingSosQueue = true;
     try {
       final raw = await storage.getString(keyOfflineSosQueue);
       if (raw == null || raw.isEmpty) return 0;
@@ -731,6 +738,8 @@ class AuthService {
       return sentCount;
     } catch (_) {
       return 0;
+    } finally {
+      _isProcessingSosQueue = false;
     }
   }
 

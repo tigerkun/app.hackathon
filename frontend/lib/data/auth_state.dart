@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
@@ -60,6 +61,8 @@ class AuthState extends ChangeNotifier {
     _status = AuthStatus.loading;
     _errorMessage = null;
     notifyListeners();
+
+    unawaited(authService.processQueuedSosAlerts());
 
     try {
       final hasPin = await authService.hasStoredPin();
