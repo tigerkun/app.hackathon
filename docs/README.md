@@ -6,7 +6,7 @@ Welcome to the SafeSphere Technical Documentation Hub. This directory contains t
 
 ## Document Index
 
-1. **[Master PRD (`PRD.md`)](../PRD.md)** / **[Docs PRD (`docs/PRD.md`)](./PRD.md)**
+1. **[Master PRD (`docs/PRD.md`)](./PRD.md)**
    - The authoritative Product Requirements Document covering:
      - Section 1: Executive Summary & Core Mission
      - Section 2: User Personas & Detailed Use Cases (P1–P4, UC-1 to UC-9)
@@ -20,19 +20,21 @@ Welcome to the SafeSphere Technical Documentation Hub. This directory contains t
 2. **[System Architecture (`docs/ARCHITECTURE.md`)](./ARCHITECTURE.md)**
    - Comprehensive technical architecture documentation detailing:
      - High-level multi-tier architecture and monorepo topology
-     - Frontend Flutter structure, state management, and route guards
-     - Backend Node.js Express layered architecture and middleware
-     - Real-time WebSocket telemetry pipeline and Redis pub/sub
-     - Spatial engine and Haversine distance calculations
+     - Frontend Flutter structure, state management, route guards, and hardware-backed PIN storage
+     - Backend Node.js Express layered architecture and security middleware stack
+     - Real-time WebSocket telemetry pipeline with in-memory client sets (zero Redis dependency)
+     - Browser live guardian tracker (`/track`) with mandatory security headers (`Cache-Control: no-store`, `X-Content-Type-Options: nosniff`)
+     - Spatial engine and Haversine distance calculations for safety markers and hyperlocal reports
      - Root monorepo automation scripts (`npm run dev`, `npm test`, `npm run clean`)
 
 3. **[API Specification (`docs/API_SPEC.md`)](./API_SPEC.md)**
    - Detailed endpoint contracts for:
      - Authentication (`/api/v1/auth/*`)
-     - Emergency SOS Alerts (`/api/v1/sos/*`)
-     - Incident Reports (`/api/v1/reports/*`)
+     - Emergency SOS Alerts (`/api/v1/sos/*`, `/api/v1/sos/mine`, one-time `resolveToken` credential)
+     - Hyperlocal Incident Reports (`/api/v1/reports/*` with `latitude`, `longitude`, `radiusKm` clamped 1–50 km)
+     - Location Tracking & Browser Live Tracker (`/api/v1/location/*`, `/track`, `GET /`)
      - Safety Markers (`/api/v1/markers/*`)
-     - Real-Time WebSocket Channel (`/ws/sos`)
+     - Real-Time WebSocket Channel (`/ws/sos` with tracking rooms and telemetry fan-out)
 
 4. **[Shared Contracts (`shared/contracts/api_contracts.json`)](../shared/contracts/api_contracts.json)**
    - Machine-readable OpenAPI 3.0/3.1 contract schema for cross-tier consumption.

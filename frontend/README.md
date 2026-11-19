@@ -30,10 +30,22 @@ frontend/
 ```
 
 ## State & Layering Standards
-- **Presentation Layer**: Flutter StatefulWidget / StatelessWidget pages with responsive glassmorphic cards and WCAG AA contrast compliance.
+- **Presentation Layer**: Flutter StatefulWidget / StatelessWidget pages with responsive glassmorphic cards and WCAG AA contrast compliance. Features dedicated routes for distress broadcasting (`/emergency`), live trip sharing (`/share`), in-app guardian tracking (`/track`), community alerts (`/alerts`), and offline AI safety guidance (`/ai-assistant`).
 - **Service Layer**: Dedicated singleton services (`AuthService`, `SafeSphereMapConfig`).
-- **Data & Model Layer**: Immutable Dart models (`Report`, `SafetyMarker`, `UserModel`).
-- **Emergency Hardware Layer**: Resilient fallback architecture for telephony dialer (`112`, `181`, `108`, `101`) and GPS locks with zero crash risk on permission denials.
+  - **Hardware-Backed PIN Storage**: `FlutterSecureStorage` (Android KeyStore / iOS Keychain) under key `safesphere_user_pin` with automatic migration from legacy unencrypted file storage (`keyPin`) and graceful fallback to local file storage if platform channels throw (e.g. on desktop, web, or headless test runners).
+  - **Offline SOS Queue & Storage Keys**:
+    - `safesphere_offline_sos_queue`: JSON list of queued SOS alerts (capped at 20 alerts to prevent memory bloat; replayed on app resume or connectivity restore with mutex `_isProcessingSosQueue`).
+    - `safesphere_active_sos_id`: Active SOS alert ID.
+    - `safesphere_active_sos_resolve_token`: Plaintext resolve token retained locally for self-resolution.
+    - `safesphere_user_pin`: Hardware-backed authentication PIN.
+  - **Hyperlocal Community Reports**: Bounded proximity queries via `latitude`, `longitude`, and `radiusKm` (1–50 km, default 10 km). When GPS permission is denied or coordinates are unavailable, sends null parameters to fetch the honest global feed rather than substituting a fabricated location.
+- **Data & Model Layer**: Immutable Dart models (`Report`, `SafetyMarker`, `UserModel`, `AuthTokens`).
+- **Emergency Hardware & Telephony Layer**: Resilient fallback architecture for native telephony dialer and GPS locks with zero crash risk on permission denials. Unconditionally verified national helplines:
+  - `112`: National All-in-One Emergency
+  - `181`: Women's Helpline
+  - `108`: Disaster & Medical Ambulance
+  - `101`: Fire Services
+  - `1930`: National Cyber Financial Fraud Helpline
 
 ## Production Release Build
 

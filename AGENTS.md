@@ -113,9 +113,14 @@ repositories via built-in `node:sqlite` with instant `reset()` for tests).
   `https://<api>/?session=<sessionId>&token=<token>`.
   - **Browser Direct Access (W2-1)**: When opened in any standard web browser, the backend
     directly intercepts `GET /?session=...&token=...` (and `/track`) to serve an inline,
-    zero-dependency HTML tracker page. The page auto-polls telemetry every 10s, displays live
-    coordinates, accuracy, breadcrumb counts, an external Google Maps link, and auto-stops
-    when the session ends, with zero paste friction and full XSS-safe textContent escaping.
+    zero-dependency HTML tracker page with mandatory security headers:
+    `Cache-Control: no-store` and `X-Content-Type-Options: nosniff` (ensuring live location
+    data is never cached by intermediate proxies or MIME-sniffed). Negative paths fail
+    gracefully: missing query tokens render an HTML awaiting/error shell without crashing,
+    and missing/invalid tokens on `/api/v1/location/track/:sessionId` return 401 without
+    stack trace leakage. The page auto-polls telemetry every 10s, displays live coordinates,
+    accuracy, breadcrumb counts, an external Google Maps link, and auto-stops when the session
+    ends, with zero paste friction and full XSS-safe textContent escaping.
   - **In-App Viewer**: Guardians using the mobile client open `/track` via AppDrawer
     ("Watch Live Trip"), input the session and token, and subscribe to WebSocket
     `/ws/sos` with `{ type: 'SUBSCRIBE_TRACKING', sessionId, token }`. The guardian
@@ -124,19 +129,33 @@ repositories via built-in `node:sqlite` with instant `reset()` for tests).
     When active session expires in < 5 minutes, both mobile broadcaster and watcher show an
     amber "Session expires soon" banner (W2-6).
 - **Hyperlocal Community Data (W2-2)**: `GET /api/v1/reports` accepts `latitude`, `longitude`,
-  and `radiusKm` query parameters (capped at 50km). The mobile dashboard and Community Alerts
-  page query live incident reports bounded to the user's GPS fix (10km default radius),
-  displaying an honest "No reports within 10 km" empty state.
+    and `radiusKm` query parameters (clamped strictly between 1–50 km, default 10 km). When
+    GPS permission is denied or coordinates are unavailable, the frontend honestly passes null
+    location parameters to retrieve the unfiltered global feed rather than substituting a
+    fabricated Delhi default fix. The empty state honestly reflects distance ("No reports within X km").
 - **SOS Broadcast Status & History (W2-3)**: After triggering an SOS alert, `EmergencyPage`
-  polls `GET /api/v1/sos/:id` or `/api/v1/sos/active` every 10s, displaying a live status
-  banner (`BROADCASTING — N monitors connected`). Users can inspect past alerts via
-  `GET /api/v1/sos/mine`. SOS trigger invokes `HapticFeedback.heavyImpact()` on confirmed trigger.
+    polls `GET /api/v1/sos/:id` or `/api/v1/sos/active` every 10s, displaying a live status
+    banner (`BROADCASTING — N monitors connected`). The `POST /api/v1/sos/trigger` endpoint returns
+    a one-time plaintext `resolveToken` credential for self-resolution by the victim or anonymous
+    caller; the server only stores a SHA-256 hash (`resolveTokenHash`), which is strictly scrubbed
+    from all GET responses (`/sos/active`, `/sos/:id`, `/sos/mine`). Citizens inspect past alerts
+    via `GET /api/v1/sos/mine` (supporting optional `?status=active|resolved` filtering). SOS trigger
+    invokes `HapticFeedback.heavyImpact()` on confirmed trigger.
 - **Hardware-Backed Secure PIN Storage (W2-4)**: Authentication PINs are persisted via
-  `FlutterSecureStorage` (KeyStore on Android / Keychain on iOS) with automatic migration
-  from legacy unencrypted file storage and graceful fallback if platform channels are unavailable.
+    `FlutterSecureStorage` (KeyStore on Android / Keychain on iOS) under key `safesphere_user_pin`
+    with automatic migration from legacy unencrypted file storage (`keyPin`) and graceful fallback
+    to file storage if platform channels throw (e.g. desktop/web/headless tests), guaranteeing the
+    user is never locked out.
+- **Offline SOS Queue & Storage Keys (W2-3/W2-4)**:
+    - `safesphere_offline_sos_queue`: JSON list of queued SOS alerts (capped at 20 alerts to prevent
+      unbounded storage growth; processed on app resume / connectivity restore with mutex protection).
+    - `safesphere_active_sos_id`: Active SOS alert ID.
+    - `safesphere_active_sos_resolve_token`: Plaintext resolve token retained locally for self-resolution.
+    - `safesphere_user_pin`: Stored authentication PIN.
 - **Offline AI Safety Guides (W2-5)**: When the intelligence backend is unreachable,
-  `AiAssistantPage` displays static actionable safety protocols (Assault/harassment response,
-  Road accident, Cyber fraud, Medical emergency) with national helplines (181, 108, 112, 1930).
+    `AiAssistantPage` displays static actionable safety protocols (Assault/harassment response,
+    Road accident, Cyber fraud, Medical emergency) with national helplines (112, 181, 108, 101, 1930).
+    Offline cards are clearly labeled as static guidance without pretending to be a real-time AI persona.
 - **`fetchTrackingSession` query parameter design**: Located in
   `frontend/lib/services/auth_service.dart:804`, queries
   `GET /api/v1/location/track/$sessionId?token=${Uri.encodeQueryComponent(trackingToken)}`.
@@ -213,7 +232,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 # Full gate (recommended)
 npm test
 
-# Backend only — 137 tests across 34 suites
+# Backend only — 169 tests across 42 suites
 cd backend && npm test
 
 # Individual backend suites
@@ -229,5 +248,5 @@ python frontend/test/challenger_m2_empirical_test.py
 python frontend/test/test_r5_permissions_contrast.py
 ```
 
-All of the above must pass before considering a change complete. Do **not**
-commit or push unless explicitly asked.
+All of the above must pass before considering a change complete. Commit per logical fix
+and push to origin/main as authorized.

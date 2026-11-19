@@ -46,7 +46,6 @@ SafeSphere is architected as an enterprise-grade monorepo cleanly partitioning t
 ```
 safesphere/
 ├── package.json               # Root monorepo orchestrator (npm run dev, test, clean)
-├── PRD.md                     # Master Product Requirements Document (All 8 sections)
 ├── README.md                  # Developer quickstart and project overview
 ├── .gitignore                 # Unified gitignore across Flutter, Node, SQLite, env
 ├── scripts/                   # Cross-platform zero-dependency automation scripts
@@ -85,7 +84,7 @@ safesphere/
 └── docs/                      # Central Documentation Hub
     ├── ARCHITECTURE.md        # This system architecture specification
     ├── API_SPEC.md            # REST and WebSocket endpoint specifications
-    └── PRD.md                 # Mirror of master product requirements document
+    └── PRD.md                 # Master product requirements document (All 8 sections)
 ```
 
 ---
@@ -109,6 +108,13 @@ safesphere/
 - The navigation drawer dynamically reacts to `AuthState`:
   - **Authenticated State**: Renders verified avatar, full name, phone, emergency contact summary, session chip, and a prominent "Logout" CTA.
   - **Guest State**: Renders guest shield badge with a "Sign In / Setup PIN" CTA.
+  - **Direct Destinations**: Wires access to Home, Emergency, Report, Safety Map, Share Location, Watch Live Trip (`/track`), Community Alerts, and About.
+
+### 3.4 Hardware-Backed Secure PIN Storage & Offline Queuing
+- **Hardware-Backed PIN (`safesphere_user_pin`)**: Authentication PINs are stored securely using `FlutterSecureStorage` (backed by Android KeyStore / iOS Keychain). On first launch, the service automatically detects and migrates legacy unencrypted file storage entries (`keyPin`) into secure storage and deletes the unencrypted entry. If platform channels throw (e.g. desktop/web runners or headless test suites), it gracefully falls back to local file storage so citizens are never locked out of emergency services.
+- **Offline SOS Queue (`safesphere_offline_sos_queue`)**: Distress alerts triggered when offline are safely queued in local storage (capped at 20 alerts). Alerts are replayed automatically with mutex protection (`_isProcessingSosQueue`) upon network connectivity restoration or app resume.
+- **Session Keys**: Active alert and tracking state are preserved across app lifecycles via `safesphere_active_sos_id` and `safesphere_active_sos_resolve_token`.
+- **Verified Emergency Helplines**: Native dialer routes are wired directly for `112` (National Emergency), `181` (Women's Helpline), `108` (Disaster/Medical), `101` (Fire), and `1930` (Cyber Fraud).
 
 ---
 
@@ -121,16 +127,16 @@ HTTP / WebSocket Request
 [Security & Rate Limiting Middleware] ─── (CORS, Helmet, RateLimiter, Request Validation)
         │
         ▼
-[Express Router: /api/v1/*] ───────────── (authRoutes, reportRoutes, markerRoutes, alertRoutes)
+[Express Router: /api/v1/*, /, /track] ── (authRoutes, reportRoutes, markerRoutes, alertRoutes, locationRoutes)
         │
         ▼
-[Controllers] ────────────────────────── (authController, reportController, etc.)
+[Controllers] ────────────────────────── (authController, reportController, alertController, locationController)
         │
         ▼
-[Domain Services] ────────────────────── (authService, tokenService, otpService, geoService)
+[Domain Services] ────────────────────── (authService, tokenService, otpService, geoService, sosService, trackingService)
         │
         ▼
-[Data Layer & Models] ────────────────── (userModel, sessionModel, store.js SQLite/Memory)
+[Data Layer & Models] ────────────────── (userModel, sessionModel, reportModel, markerModel, alertModel, store.js SQLite/Memory)
 ```
 
 ### 4.1 Request & Response Lifecycle
@@ -158,25 +164,35 @@ HTTP / WebSocket Request
 - **Password Security**: Pure-JS `bcryptjs` hashing with 12 salt rounds.
 - **Dual-Token Lifecycle**: 15-minute access tokens (`HS256`) and 7-day refresh tokens tracked in `sessions` table.
 - **Cryptographic OTP Engine**: 6-digit random code generation (`crypto.randomInt(100000, 999999)`), 60-second cooldown rate limit, and strict 3-attempt lockout.
+- **SOS Capability Credentials**: One-time plaintext `resolveToken` returned to victim on trigger; server persists only SHA-256 `resolveTokenHash`. `toSafeAlert` sanitization guarantees `resolveTokenHash` is never exposed in any GET response (`/sos/active`, `/sos/:id`, `/sos/mine`).
+- **Browser Live Tracker Security**: `GET /track` and `GET /?session=...&token=...` serve an inline, zero-dependency HTML tracker page with mandatory headers:
+  - `Cache-Control: no-store`
+  - `X-Content-Type-Options: nosniff`
+  Negative paths fail closed (missing tokens render HTML awaiting shell without server crashes; invalid API tracking tokens return 401 without stack traces).
 
 ---
 
 ## 5. Real-Time Telemetry & WebSocket Pipeline
 
 - **Stream Path**: `ws://<host>:<port>/ws/sos`
+- **Architecture**: In-memory WebSocket client sets manage real-time connections (built-in `ws` server; zero external Redis dependency).
 - **Heartbeat & Liveness**: 30-second interval ping/pong pruning stale client sockets.
 - **Telemetry Ingestion**: Clients stream 3-second GPS frames containing:
   - `latitude`, `longitude`, `accuracy`, `speed`, `heading`, `batteryLevel`.
-- **Fan-Out Architecture**: Ingested frames are broadcast to all connected guardian consoles and responders in sub-100ms latency.
+- **Fan-Out Architecture**:
+  - Ingested SOS distress frames are broadcast to all connected guardian consoles and responders in sub-100ms latency (`SOS_ALERT_BROADCAST`).
+  - Tracking rooms (`SUBSCRIBE_TRACKING`, `TRACKING_SNAPSHOT`, `LOCATION_STREAM_UPDATE`, `STREAM_TERMINATE`) multiplex live trip breadcrumbs strictly to authorized session subscribers verified via tracking capability tokens.
 
 ---
 
 ## 6. Spatial Engine & Proximity Calculations
 
 - **Haversine Great-Circle Distance**:
-  Calculates spherical distance between user coordinates $(\phi_1, \lambda_1)$ and marker coordinates $(\phi_2, \lambda_2)$:
+  Calculates spherical distance between user coordinates $(\phi_1, \lambda_1)$ and target coordinates $(\phi_2, \lambda_2)$:
   $$d = 2R \arcsin\left(\sqrt{\sin^2\left(\frac{\Delta \phi}{2}\right) + \cos(\phi_1)\cos(\phi_2)\sin^2\left(\frac{\Delta \lambda}{2}\right)}\right)$$
-- **Proximity Filtering**: `/api/v1/markers/nearby` performs sub-15ms spatial indexing, filtering safe zones within radius $R$ and returning results sorted in strictly ascending distance order.
+- **Proximity Filtering**:
+  - `/api/v1/markers/nearby`: Performs sub-15ms spatial indexing, filtering safe zones within radius $R$ and returning results sorted in strictly ascending distance order.
+  - `/api/v1/reports`: Performs hyperlocal proximity filtering with `latitude`, `longitude`, and `radiusKm` (clamped between 1.0 and 50.0 km, default 10.0 km). When GPS permission is denied or coordinates are null, proximity filtering is cleanly bypassed to return an honest unfiltered global feed.
 
 ---
 
