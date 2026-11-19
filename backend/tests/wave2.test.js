@@ -57,11 +57,13 @@ describe('SafeSphere Wave 2 User-Facing Enhancements', () => {
   // W2-1: Browser-Accessible Guardian Tracker
   // ===========================================================================
   describe('W2-1: Browser-Accessible Guardian Tracker (GET /?session=...&token=... & /track)', () => {
-    it('returns text/html 200 on GET /?session=trk_test&token=tok_test', async () => {
+    it('returns text/html 200 on GET /?session=trk_test&token=tok_test with security headers', async () => {
       const res = await fetch(`${baseUrl}/?session=trk_test&token=tok_test`);
       assert.equal(res.status, 200);
       const contentType = res.headers.get('content-type') || '';
       assert.ok(contentType.includes('text/html'), `Expected text/html, got ${contentType}`);
+      assert.equal(res.headers.get('cache-control'), 'no-store');
+      assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
       const body = await res.text();
       assert.ok(body.includes('SafeSphere — Live Guardian Tracking'), 'HTML title missing');
       assert.ok(body.includes('#0B0F1A'), 'Dark background color missing');
@@ -74,17 +76,65 @@ describe('SafeSphere Wave 2 User-Facing Enhancements', () => {
       assert.equal(res.status, 200);
       const contentType = res.headers.get('content-type') || '';
       assert.ok(contentType.includes('text/html'), `Expected text/html, got ${contentType}`);
+      assert.equal(res.headers.get('cache-control'), 'no-store');
+      assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
       const body = await res.text();
       assert.ok(body.includes('SafeSphere — Live Guardian Tracking'));
     });
 
-    it('returns text/html 200 on GET /track', async () => {
+    it('returns text/html 200 on GET /track with security headers and handles empty params', async () => {
       const res = await fetch(`${baseUrl}/track`);
       assert.equal(res.status, 200);
       const contentType = res.headers.get('content-type') || '';
       assert.ok(contentType.includes('text/html'), `Expected text/html, got ${contentType}`);
+      assert.equal(res.headers.get('cache-control'), 'no-store');
+      assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
       const body = await res.text();
       assert.ok(body.includes('SafeSphere — Live Guardian Tracking'));
+      assert.ok(body.includes('AWAITING SESSION'), 'Tracker shell handles empty params in awaiting state');
+      assert.ok(!body.includes('stack'), 'Tracker HTML response must not leak stack traces');
+    });
+
+    it('returns 200 HTML shell with awaiting state on GET /?session=x (no token) without crashing or leaking stack traces', async () => {
+      const res = await fetch(`${baseUrl}/?session=trk_notoken_test`);
+      assert.equal(res.status, 200);
+      const contentType = res.headers.get('content-type') || '';
+      assert.ok(contentType.includes('text/html'), `Expected text/html, got ${contentType}`);
+      assert.equal(res.headers.get('cache-control'), 'no-store');
+      assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+      const body = await res.text();
+      assert.ok(body.includes('SafeSphere — Live Guardian Tracking'));
+      assert.ok(body.includes('AWAITING SESSION'), 'Tracker shell renders awaiting state');
+      assert.ok(!body.includes('stack'), 'Tracker HTML response must not leak stack traces');
+    });
+
+    it('verifies tracker negative paths: API rejects missing or invalid tracking token without leaking stack traces', async () => {
+      // Seed a tracking session first so we test token assertion on an existing session
+      const createRes = await serverHarness.request('/api/v1/location/share-session', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${testUserToken}` },
+        body: { latitude: 28.6139, longitude: 77.2090 }
+      });
+      assert.equal(createRes.status, 201);
+      const sessId = createRes.body.data.sessionId;
+
+      // 1. Missing token on existing session -> 401 MISSING_TRACKING_TOKEN
+      const missingTokenRes = await serverHarness.request(`/api/v1/location/track/${sessId}`);
+      assert.equal(missingTokenRes.status, 401);
+      assert.equal(missingTokenRes.body.error.code, 'MISSING_TRACKING_TOKEN');
+      assert.equal(missingTokenRes.body.error.stack, undefined, 'No stack trace in 401 response');
+
+      // 2. Invalid token on existing session -> 401 INVALID_TRACKING_TOKEN
+      const invalidTokenRes = await serverHarness.request(`/api/v1/location/track/${sessId}?token=invalid_tok`);
+      assert.equal(invalidTokenRes.status, 401);
+      assert.equal(invalidTokenRes.body.error.code, 'INVALID_TRACKING_TOKEN');
+      assert.equal(invalidTokenRes.body.error.stack, undefined, 'No stack trace in 401 response');
+
+      // 3. Non-existent session -> 404
+      const nonExistentRes = await serverHarness.request('/api/v1/location/track/trk_nonexistent?token=tok_test');
+      assert.equal(nonExistentRes.status, 404);
+      assert.equal(nonExistentRes.body.error.code, 'SESSION_NOT_FOUND');
+      assert.equal(nonExistentRes.body.error.stack, undefined, 'No stack trace in 404 response');
     });
 
     it('preserves standard JSON 200 response on bare GET / when no session or token query params are present', async () => {
@@ -209,6 +259,22 @@ describe('SafeSphere Wave 2 User-Facing Enhancements', () => {
       assert.ok(!ids.includes('rep_blr_01'), 'Bengaluru must NOT be returned when radius is capped at 50km');
     });
 
+    it('clamps radius to minimum 1km when radiusKm <= 0 or fractional (e.g. radiusKm=0.1, radiusKm=0)', async () => {
+      // With radius clamped to 1km, only CP report (dist 0km) is returned; Karol Bagh (~4km) is excluded
+      const resFractional = await serverHarness.request('/api/v1/reports?lat=28.6315&lng=77.2167&radiusKm=0.1');
+      assert.equal(resFractional.status, 200);
+      const idsFractional = resFractional.body.data.map(r => r.id);
+      assert.ok(idsFractional.includes('rep_cp_01'), 'Must include immediate CP report within 1km');
+      assert.ok(!idsFractional.includes('rep_kb_01'), 'Must exclude Karol Bagh (~4km away)');
+
+      // Same clamp for zero radius
+      const resZero = await serverHarness.request('/api/v1/reports?lat=28.6315&lng=77.2167&radiusKm=0');
+      assert.equal(resZero.status, 200);
+      const idsZero = resZero.body.data.map(r => r.id);
+      assert.ok(idsZero.includes('rep_cp_01'));
+      assert.ok(!idsZero.includes('rep_kb_01'));
+    });
+
     it('returns empty list when user is in location with zero nearby reports', async () => {
       // Point in middle of the ocean (0, 0)
       const res = await serverHarness.request('/api/v1/reports?lat=0.0&lng=0.0&radiusKm=10');
@@ -293,6 +359,119 @@ describe('SafeSphere Wave 2 User-Facing Enhancements', () => {
       assert.ok('monitorsConnected' in res.body);
       assert.equal(typeof res.body.monitorsConnected, 'number');
       assert.equal(res.body.data.id, alert1Id);
+    });
+
+    it('BUG 8: resolveTokenHash is never exposed in any GET response (active, getById, mine)', async () => {
+      // 1. Check GET /api/v1/sos/active
+      const activeRes = await serverHarness.request('/api/v1/sos/active');
+      assert.equal(activeRes.status, 200);
+      for (const a of activeRes.body.data) {
+        assert.equal(a.resolveTokenHash, undefined, 'active alert must not contain resolveTokenHash');
+      }
+
+      // 2. Check GET /api/v1/sos/:id
+      const idRes = await serverHarness.request(`/api/v1/sos/${alert1Id}`, {
+        headers: { Authorization: `Bearer ${testUserToken}` }
+      });
+      assert.equal(idRes.status, 200);
+      assert.equal(idRes.body.data.resolveTokenHash, undefined, 'getById must not contain resolveTokenHash');
+
+      // 3. Check GET /api/v1/sos/mine
+      const mineRes = await serverHarness.request('/api/v1/sos/mine', {
+        headers: { Authorization: `Bearer ${testUserToken}` }
+      });
+      assert.equal(mineRes.status, 200);
+      for (const a of mineRes.body.data) {
+        assert.equal(a.resolveTokenHash, undefined, 'mine alert must not contain resolveTokenHash');
+      }
+    });
+
+    it('BUG 8: anonymous alert + valid resolveToken + authenticated citizen caller can resolve', async () => {
+      // Trigger anonymous alert
+      const anonTrigger = await serverHarness.request('/api/v1/sos/trigger', {
+        method: 'POST',
+        body: { latitude: 28.6139, longitude: 77.2090, alertType: 'CRITICAL_SOS' }
+      });
+      assert.equal(anonTrigger.status, 201);
+      const anonAlertId = anonTrigger.body.data?.id || anonTrigger.body.id;
+      const anonResolveToken = anonTrigger.body.data?.resolveToken || anonTrigger.body.resolveToken;
+      assert.ok(anonAlertId, 'Anonymous trigger returns alert ID');
+      assert.ok(anonResolveToken, 'Anonymous trigger returns resolveToken');
+      assert.equal(anonTrigger.body.data.resolveTokenHash, undefined, 'Trigger response must not leak hash');
+      assert.equal(anonTrigger.body.resolveTokenHash, undefined, 'Trigger response root must not leak hash');
+
+      // Resolve with authenticated citizen account using the resolveToken
+      const resolveRes = await serverHarness.request(`/api/v1/sos/${anonAlertId}/resolve`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${testUserToken}` },
+        body: { resolveToken: anonResolveToken, notes: 'Citizen self-resolved' }
+      });
+      assert.equal(resolveRes.status, 200);
+      assert.equal(resolveRes.body.data.status, 'resolved');
+      assert.equal(resolveRes.body.data.resolveTokenHash, undefined, 'Resolve response data must not leak resolveTokenHash');
+    });
+
+    it('BUG 8: legacy alert with null resolveTokenHash fails closed for token-bearer but succeeds for admin and responder', async () => {
+      const { createAlert } = require('../src/models/alertModel');
+      // Create alert with null resolveTokenHash
+      const legacyAlert = db.saveAlert(createAlert({
+        userId: 'anonymous',
+        userName: 'Legacy Victim',
+        latitude: 28.61,
+        longitude: 77.20,
+        resolveTokenHash: null
+      }));
+
+      // 1. Unauthenticated resolving with a token fails closed (401)
+      const tokenResolve = await serverHarness.request(`/api/v1/sos/${legacyAlert.id}/resolve`, {
+        method: 'POST',
+        body: { resolveToken: 'any_random_token', notes: 'Should fail' }
+      });
+      assert.equal(tokenResolve.status, 401);
+      assert.equal(tokenResolve.body.error.code, 'UNAUTHORIZED_RESOLVE');
+
+      // 2. Authenticated citizen resolving with a token also fails closed (403)
+      const citizenTokenResolve = await serverHarness.request(`/api/v1/sos/${legacyAlert.id}/resolve`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${testUserToken}` },
+        body: { resolveToken: 'any_random_token', notes: 'Should fail' }
+      });
+      assert.equal(citizenTokenResolve.status, 403);
+      assert.equal(citizenTokenResolve.body.error.code, 'FORBIDDEN_RESOLVE');
+
+      // 3. Resolving with a first_responder account succeeds
+      const responderUser = db.saveUser({
+        id: 'usr_responder_test',
+        name: 'Responder Tester',
+        email: 'responder_legacy@safesphere.test',
+        role: 'first_responder'
+      });
+      const responderToken = signAccessToken(responderUser, 'sess_responder');
+      const responderResolve = await serverHarness.request(`/api/v1/sos/${legacyAlert.id}/resolve`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${responderToken}` },
+        body: { notes: 'Resolved by first responder' }
+      });
+      assert.equal(responderResolve.status, 200);
+      assert.equal(responderResolve.body.data.status, 'resolved');
+      assert.equal(responderResolve.body.data.resolveTokenHash, undefined, 'Must not leak resolveTokenHash');
+
+      // 4. Resolving with an admin account succeeds
+      const adminUser = db.saveUser({
+        id: 'usr_admin_test',
+        name: 'Admin Tester',
+        email: 'admin_legacy@safesphere.test',
+        role: 'admin'
+      });
+      const adminToken = signAccessToken(adminUser, 'sess_admin');
+      const adminResolve = await serverHarness.request(`/api/v1/sos/${legacyAlert.id}/resolve`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${adminToken}` },
+        body: { notes: 'Resolved by admin' }
+      });
+      assert.equal(adminResolve.status, 200);
+      assert.equal(adminResolve.body.data.status, 'resolved');
+      assert.equal(adminResolve.body.data.resolveTokenHash, undefined, 'Must not leak resolveTokenHash');
     });
   });
 });

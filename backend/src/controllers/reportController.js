@@ -29,8 +29,8 @@ function list(req, res, next) {
         let radiusKm = 10;
         if (radiusParam !== undefined && radiusParam !== '') {
           const parsed = Number(radiusParam);
-          if (!isNaN(parsed) && parsed > 0) {
-            radiusKm = Math.min(parsed, 50); // Capped at 50km
+          if (!isNaN(parsed)) {
+            radiusKm = Math.max(1, Math.min(parsed, 50));
           }
         }
         // Fetch matching reports without limit, filter by proximity, then apply limit

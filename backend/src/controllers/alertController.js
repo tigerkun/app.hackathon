@@ -70,11 +70,14 @@ function trigger(req, res, next) {
       broadcast(toSafeAlert(alert, false));
     }
 
+    const responseAlert = { ...alert };
+    delete responseAlert.resolveTokenHash;
+
     res.status(201).json({
       success: true,
       message: 'Emergency SOS alert triggered successfully',
-      data: alert,
-      ...alert
+      data: responseAlert,
+      ...responseAlert
     });
   } catch (err) {
     next(err);
@@ -235,11 +238,12 @@ function resolve(req, res, next) {
     }
 
     const updated = sosService.resolveSos(alertId, notes);
+    const safeUpdated = toSafeAlert(updated, true);
 
     res.status(200).json({
       success: true,
       message: 'Emergency SOS alert resolved successfully',
-      data: updated
+      data: safeUpdated
     });
   } catch (err) {
     next(err);

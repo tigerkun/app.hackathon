@@ -93,6 +93,8 @@ app.get('/healthz', (req, res) => {
 app.get('/', (req, res) => {
   if (req.query.session || req.query.sessionId || req.query.token) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     return res.status(200).send(trackerHtml);
   }
   res.status(200).json({
@@ -106,6 +108,8 @@ app.get('/', (req, res) => {
 // Dedicated /track browser route
 app.get('/track', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   return res.status(200).send(trackerHtml);
 });
 

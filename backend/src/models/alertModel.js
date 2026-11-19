@@ -49,7 +49,11 @@ function createAlert({
 
 function toSafeAlert(alert, isOwnerOrAdmin = false) {
   if (!alert) return null;
-  if (isOwnerOrAdmin) return alert;
+  if (isOwnerOrAdmin) {
+    const safe = { ...alert };
+    delete safe.resolveTokenHash;
+    return safe;
+  }
 
   // Mask sensitive victim PII (phone number, exact user identification)
   let maskedPhone = '';
