@@ -22,6 +22,7 @@ function createReport({
   status = 'pending',
   reportedBy = null,
   attachments = [],
+  photoUrl = null,
   createdAt = new Date().toISOString(),
   updatedAt = new Date().toISOString()
 }) {
@@ -35,6 +36,7 @@ function createReport({
     status: VALID_REPORT_STATUSES.includes(status) ? status : 'pending',
     reportedBy: reportedBy ? String(reportedBy) : null,
     attachments: Array.isArray(attachments) ? attachments : [],
+    photoUrl: photoUrl ? String(photoUrl).trim() : null,
     createdAt,
     updatedAt
   };
@@ -52,6 +54,7 @@ function toSafeReport(report) {
     status: report.status,
     reportedBy: report.reportedBy ?? null,
     attachments: Array.isArray(report.attachments) ? report.attachments : [],
+    photoUrl: report.photoUrl ?? null,
     createdAt: report.createdAt,
     updatedAt: report.updatedAt,
     ...(report.distanceKm !== undefined ? { distanceKm: report.distanceKm } : {})

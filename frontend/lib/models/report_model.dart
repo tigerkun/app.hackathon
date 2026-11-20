@@ -6,6 +6,7 @@ class Report {
   final String location;
   final String description;
   final DateTime time;
+  final String? photoUrl;
   ReportStatus status;
 
   Report({
@@ -14,6 +15,7 @@ class Report {
     required this.location,
     required this.description,
     required this.time,
+    this.photoUrl,
     this.status = ReportStatus.pending,
   });
 }

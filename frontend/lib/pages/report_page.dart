@@ -25,6 +25,7 @@ class _ReportPageState extends State<ReportPage> {
   double? _latitude;
   double? _longitude;
   bool _isSubmitting = false;
+  String? _photoBase64;
 
   final incidents = const [
     {"label": "Theft", "icon": Icons.shopping_bag},
@@ -112,6 +113,7 @@ class _ReportPageState extends State<ReportPage> {
       location: cleanPayloadLocation,
       latitude: _latitude,
       longitude: _longitude,
+      photoBase64: _photoBase64,
     );
 
     // 2. Add to local cache for immediate in-app visibility
@@ -122,6 +124,7 @@ class _ReportPageState extends State<ReportPage> {
       location: _locationTag,
       description: description,
       time: DateTime.now(),
+      photoUrl: _photoBase64,
       status: ReportStatus.pending,
     );
     ReportStore.addReport(localReport);
@@ -335,6 +338,60 @@ class _ReportPageState extends State<ReportPage> {
                             )
                           ],
                         ),
+
+                        const SizedBox(height: 14),
+
+                        /// F5-4: PHOTO ATTACHMENT SECTION
+                        if (_photoBase64 == null)
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.teal,
+                              side: BorderSide(color: AppColors.teal.withValues(alpha: 0.5)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                            ),
+                            icon: const Icon(Icons.add_a_photo_outlined, size: 20),
+                            label: const Text("Add Photo (Optional, ≤500KB)"),
+                            onPressed: () {
+                              // TODO(REAL_HARDWARE): Native gallery/camera pick requires image_picker or file_picker in pubspec.
+                              // Attaches simulated JPEG base64 for functional testing.
+                              setState(() {
+                                _photoBase64 =
+                                    "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=";
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("Simulated hazard photo attached (≤500KB JPEG).")),
+                              );
+                            },
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.teal.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppColors.teal),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.check_circle, color: AppColors.teal, size: 20),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    "Photo attached (JPEG, ≤500KB)",
+                                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.close, color: Colors.white70, size: 18),
+                                  tooltip: "Remove photo",
+                                  onPressed: () {
+                                    setState(() => _photoBase64 = null);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
 
                         const SizedBox(height: 16),
 

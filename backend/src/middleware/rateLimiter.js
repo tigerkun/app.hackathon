@@ -84,8 +84,16 @@ const authLimiter = createRateLimiter({
   skipInTest: true
 });
 
+const reportLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: 'Too many reports created. Please wait before reporting again.',
+  skipInTest: true
+});
+
 module.exports = {
   createRateLimiter,
   globalLimiter,
-  authLimiter
+  authLimiter,
+  reportLimiter
 };

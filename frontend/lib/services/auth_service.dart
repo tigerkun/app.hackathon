@@ -950,13 +950,14 @@ class AuthService {
     return [];
   }
 
-  /// Submits a new incident report to the backend.
+  /// Submits a new incident report to the backend with optional photoBase64 attachment (F5-4).
   Future<Map<String, dynamic>?> submitReport({
     required String type,
     required String description,
     required String location,
     double? latitude,
     double? longitude,
+    String? photoBase64,
   }) async {
     final token = await storage.getString(keyToken);
     final body = <String, dynamic>{
@@ -965,6 +966,7 @@ class AuthService {
       'location': location,
       if (latitude != null) 'latitude': latitude,
       if (longitude != null) 'longitude': longitude,
+      if (photoBase64 != null && photoBase64.isNotEmpty) 'photoBase64': photoBase64,
     };
 
     final res = await _requestDetailed(

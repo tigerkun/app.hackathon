@@ -64,7 +64,7 @@ function list(req, res, next) {
 
 function create(req, res, next) {
   try {
-    const { type, description, location, latitude, longitude, attachments } = req.body;
+    const { type, description, location, latitude, longitude, attachments, photoUrl } = req.body;
     const reportedBy = req.user ? req.user.id : null;
 
     const report = createReport({
@@ -74,7 +74,8 @@ function create(req, res, next) {
       latitude,
       longitude,
       reportedBy,
-      attachments
+      attachments,
+      photoUrl: photoUrl || null
     });
 
     const saved = db.saveReport(report);

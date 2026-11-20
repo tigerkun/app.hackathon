@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/auth_service.dart';
@@ -388,6 +389,8 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     final id = report['id'] as String? ?? 'N/A';
     final lat = report['latitude'];
     final lon = report['longitude'];
+    // F5-4: photo attachment in detail view
+    final photoUrl = report['photoUrl'] as String?;
 
     showDialog(
       context: context,
@@ -411,6 +414,11 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              // F5-4: show photo in detail dialog if present
+              if (photoUrl != null && photoUrl.isNotEmpty) ...[
+                _buildPhotoThumbnail(photoUrl),
+                const SizedBox(height: 12),
+              ],
               Text(
                 description,
                 style: const TextStyle(color: Colors.white, fontSize: 14),
@@ -478,6 +486,8 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     final color = _severityColor(type);
     final icon = _typeIcon(type);
     final status = report['status'] as String? ?? 'pending';
+    // F5-4: photo attachment thumbnail
+    final photoUrl = report['photoUrl'] as String?;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -523,6 +533,12 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
 
               const SizedBox(height: 8),
 
+              // F5-4: render photo thumbnail if present
+              if (photoUrl != null && photoUrl.isNotEmpty) ...[
+                _buildPhotoThumbnail(photoUrl),
+                const SizedBox(height: 8),
+              ],
+
               Text(description, style: const TextStyle(fontSize: 14)),
 
               const SizedBox(height: 8),
@@ -549,6 +565,29 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
         ),
       ),
     );
+  }
+
+  /// F5-4: Renders a base64 data-URL photo as a thumbnail.
+  /// Gracefully degrades to a broken-image icon on any decode failure.
+  Widget _buildPhotoThumbnail(String dataUrl) {
+    try {
+      final commaIdx = dataUrl.indexOf(',');
+      if (commaIdx == -1) return const Icon(Icons.broken_image, color: Colors.grey);
+      final b64 = dataUrl.substring(commaIdx + 1);
+      final bytes = base64Decode(b64);
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.memory(
+          bytes,
+          height: 120,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.grey),
+        ),
+      );
+    } catch (_) {
+      return const Icon(Icons.broken_image, color: Colors.grey);
+    }
   }
 
   // Static route verification compatibility bindings

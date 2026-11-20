@@ -149,7 +149,7 @@ function validateRefresh(req, res, next) {
 }
 
 function validateReportCreate(req, res, next) {
-  const { description, location } = req.body || {};
+  const { description, location, photoBase64 } = req.body || {};
   const issues = [];
 
   if (!description || typeof description !== 'string' || !description.trim()) {
@@ -158,6 +158,53 @@ function validateReportCreate(req, res, next) {
 
   if (!location || typeof location !== 'string' || !location.trim()) {
     issues.push({ field: 'location', issue: 'Report location or landmark is required.' });
+  }
+
+  if (photoBase64 !== undefined && photoBase64 !== null) {
+    if (typeof photoBase64 !== 'string' || !photoBase64.trim()) {
+      issues.push({ field: 'photoBase64', issue: 'Photo attachment must be a valid base64 string.' });
+    } else {
+      let rawBase64 = photoBase64.trim();
+      let mimeType = null;
+      const dataUrlMatch = rawBase64.match(/^data:image\/(jpeg|jpg|png);base64,(.+)$/i);
+      if (dataUrlMatch) {
+        mimeType = dataUrlMatch[1].toLowerCase() === 'jpg' ? 'jpeg' : dataUrlMatch[1].toLowerCase();
+        rawBase64 = dataUrlMatch[2];
+      }
+
+      const approxBytes = Math.ceil((rawBase64.length * 3) / 4);
+      if (approxBytes > 500 * 1024) {
+        issues.push({ field: 'photoBase64', issue: 'Photo attachment exceeds 500KB maximum size.' });
+      } else {
+        try {
+          const buffer = Buffer.from(rawBase64, 'base64');
+          if (buffer.length > 500 * 1024) {
+            issues.push({ field: 'photoBase64', issue: 'Photo attachment exceeds 500KB maximum size.' });
+          } else {
+            const isJpeg = buffer.length >= 3 && buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF;
+            const isPng = buffer.length >= 4 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47;
+
+            if (mimeType) {
+              if ((mimeType === 'jpeg' && !isJpeg) || (mimeType === 'png' && !isPng)) {
+                issues.push({ field: 'photoBase64', issue: 'Invalid image format. Only JPEG and PNG are supported.' });
+              }
+            } else {
+              if (isJpeg) mimeType = 'jpeg';
+              else if (isPng) mimeType = 'png';
+              else {
+                issues.push({ field: 'photoBase64', issue: 'Invalid image format. Only JPEG and PNG are supported.' });
+              }
+            }
+
+            if (mimeType && issues.length === 0) {
+              req.body.photoUrl = `data:image/${mimeType};base64,${rawBase64}`;
+            }
+          }
+        } catch (_) {
+          issues.push({ field: 'photoBase64', issue: 'Failed to decode photo base64 payload.' });
+        }
+      }
+    }
   }
 
   if (issues.length > 0) {

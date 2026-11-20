@@ -81,6 +81,7 @@ class DataStore {
         status TEXT NOT NULL,
         reportedBy TEXT,
         attachments TEXT NOT NULL DEFAULT '[]',
+        photoUrl TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       );
@@ -172,6 +173,9 @@ class DataStore {
 
     try {
       this.db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'citizen'");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE reports ADD COLUMN photoUrl TEXT");
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE markers ADD COLUMN status TEXT DEFAULT 'verified'");
@@ -612,6 +616,7 @@ class DataStore {
       status: row.status,
       reportedBy: row.reportedBy ?? null,
       attachments: Array.isArray(attachments) ? attachments.map((a) => (typeof a === 'object' && a !== null ? { ...a } : a)) : [],
+      photoUrl: row.photoUrl ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt
     };
@@ -664,8 +669,8 @@ class DataStore {
     this.db.prepare(`
       INSERT INTO reports (
         id, type, description, location, latitude, longitude,
-        status, reportedBy, attachments, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        status, reportedBy, attachments, photoUrl, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         type = excluded.type,
         description = excluded.description,
@@ -675,6 +680,7 @@ class DataStore {
         status = excluded.status,
         reportedBy = excluded.reportedBy,
         attachments = excluded.attachments,
+        photoUrl = excluded.photoUrl,
         createdAt = excluded.createdAt,
         updatedAt = excluded.updatedAt
     `).run(
@@ -687,6 +693,7 @@ class DataStore {
       report.status ?? 'pending',
       report.reportedBy ?? null,
       attachmentsStr,
+      report.photoUrl ?? null,
       report.createdAt || new Date().toISOString(),
       updatedAt
     );
