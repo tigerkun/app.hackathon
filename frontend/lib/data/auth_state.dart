@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
@@ -30,13 +31,17 @@ class AuthState extends ChangeNotifier {
   UserModel? _currentUser;
   String? _errorMessage;
   String? _pendingPhone;
-  bool _isOnboarded = true;
+  bool _isOnboarded = false;
+  String? _consentVersion;
+  String? _consentTimestamp;
 
   AuthStatus get status => _status;
   UserModel? get currentUser => _currentUser;
   String? get errorMessage => _errorMessage;
   String? get pendingPhone => _pendingPhone;
   bool get isOnboarded => _isOnboarded;
+  String? get consentVersion => _consentVersion;
+  String? get consentTimestamp => _consentTimestamp;
 
   bool get isAuthenticated => _status == AuthStatus.authenticated;
   bool get isGuest => _status == AuthStatus.guest;
@@ -69,8 +74,16 @@ class AuthState extends ChangeNotifier {
 
     try {
       final onboardedStr = await authService.storage.getString(AuthService.keyOnboarded);
-      if (onboardedStr != null) {
-        _isOnboarded = onboardedStr == 'true';
+      _isOnboarded = onboardedStr == 'true';
+      final consentStr = await authService.storage.getString(AuthService.keyPrivacyConsent);
+      if (consentStr != null && consentStr.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(consentStr);
+          if (decoded is Map<String, dynamic>) {
+            _consentVersion = decoded['version'] as String?;
+            _consentTimestamp = decoded['timestamp'] as String?;
+          }
+        } catch (_) {}
       }
       final hasPin = await authService.hasStoredPin();
       final user = await authService.getProfile();
@@ -279,12 +292,15 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<void> completeOnboarding({String consentVersion = '1.0'}) async {
+    final now = DateTime.now().toIso8601String();
     await authService.storage.setString(AuthService.keyOnboarded, 'true');
     await authService.storage.setString(
       AuthService.keyPrivacyConsent,
-      '{"version":"$consentVersion","timestamp":"${DateTime.now().toIso8601String()}"}',
+      '{"version":"$consentVersion","timestamp":"$now"}',
     );
     _isOnboarded = true;
+    _consentVersion = consentVersion;
+    _consentTimestamp = now;
     notifyListeners();
   }
 
@@ -296,6 +312,11 @@ class AuthState extends ChangeNotifier {
       if (success) {
         _currentUser = null;
         _pendingPhone = null;
+        _isOnboarded = false;
+        _consentVersion = null;
+        _consentTimestamp = null;
+        await authService.storage.remove(AuthService.keyOnboarded);
+        await authService.storage.remove(AuthService.keyPrivacyConsent);
         _status = AuthStatus.unauthenticated;
         notifyListeners();
         return true;
@@ -304,5 +325,24 @@ class AuthState extends ChangeNotifier {
     _status = AuthStatus.authenticated;
     notifyListeners();
     return false;
+  }
+
+  Future<void> clearLocalData() async {
+    _status = AuthStatus.loading;
+    notifyListeners();
+    try {
+      await authService.logout();
+      await authService.clearActiveSos();
+      await authService.clearQueuedSosAlerts();
+      await authService.storage.remove(AuthService.keyOnboarded);
+      await authService.storage.remove(AuthService.keyPrivacyConsent);
+    } catch (_) {}
+    _currentUser = null;
+    _pendingPhone = null;
+    _isOnboarded = false;
+    _consentVersion = null;
+    _consentTimestamp = null;
+    _status = AuthStatus.unauthenticated;
+    notifyListeners();
   }
 }

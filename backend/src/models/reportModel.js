@@ -40,8 +40,27 @@ function createReport({
   };
 }
 
+function toSafeReport(report) {
+  if (!report) return null;
+  return {
+    id: report.id,
+    type: report.type,
+    description: report.description,
+    location: report.location,
+    latitude: report.latitude ?? null,
+    longitude: report.longitude ?? null,
+    status: report.status,
+    reportedBy: report.reportedBy ?? null,
+    attachments: Array.isArray(report.attachments) ? report.attachments : [],
+    createdAt: report.createdAt,
+    updatedAt: report.updatedAt,
+    ...(report.distanceKm !== undefined ? { distanceKm: report.distanceKm } : {})
+  };
+}
+
 module.exports = {
   createReport,
+  toSafeReport,
   generateReportId,
   VALID_REPORT_TYPES,
   VALID_REPORT_STATUSES

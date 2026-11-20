@@ -46,8 +46,27 @@ function createMarker({
   };
 }
 
+function toSafeMarker(marker, isPrivileged = false) {
+  if (!marker) return null;
+  return {
+    id: marker.id,
+    name: marker.name,
+    category: marker.category,
+    latitude: marker.latitude,
+    longitude: marker.longitude,
+    address: marker.address ?? null,
+    isVerified: Boolean(marker.isVerified),
+    status: marker.status || (marker.isVerified ? 'verified' : 'pending'),
+    verifiedBy: isPrivileged ? (marker.verifiedBy ?? null) : undefined,
+    verifiedAt: marker.verifiedAt ?? null,
+    createdAt: marker.createdAt,
+    ...(marker.distanceKm !== undefined ? { distanceKm: marker.distanceKm } : {})
+  };
+}
+
 module.exports = {
   createMarker,
+  toSafeMarker,
   generateMarkerId,
   VALID_MARKER_CATEGORIES
 };

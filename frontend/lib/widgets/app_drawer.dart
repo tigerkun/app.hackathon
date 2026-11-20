@@ -89,6 +89,15 @@ class AppDrawer extends StatelessWidget {
                 route: '/about',
               ),
 
+              ListTile(
+                leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.teal),
+                title: const Text('Privacy & Consent (DPDP)', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showPrivacyConsentDialog(context, authState);
+                },
+              ),
+
               // ===== AUTHENTICATED CITIZEN SECURITY OPTIONS =====
               if (authState.isAuthenticated) ...[
                 const Divider(color: AppColors.border),
@@ -116,14 +125,6 @@ class AppDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.pushNamed(context, AppRoutes.pinLock);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.teal),
-                  title: const Text('Privacy & Consent (DPDP)', style: TextStyle(color: Colors.white)),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showPrivacyConsentDialog(context, authState);
                   },
                 ),
                 ListTile(
@@ -315,6 +316,11 @@ class AppDrawer extends StatelessWidget {
   }
 
   void _showPrivacyConsentDialog(BuildContext context, AuthState authState) {
+    final consentVersion = authState.consentVersion ?? '1.0';
+    final consentTime = authState.consentTimestamp != null
+        ? authState.consentTimestamp!.replaceFirst('T', ' ').split('.').first
+        : 'Recorded on initial consent';
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -335,11 +341,12 @@ class AppDrawer extends StatelessWidget {
               style: TextStyle(color: AppColors.teal, fontWeight: FontWeight.bold, fontSize: 13),
             ),
             const SizedBox(height: 8),
-            const Text(
-              "• Policy Version: 1.0 (Active)\n"
+            Text(
+              "• Policy Version: $consentVersion (Active)\n"
+              "• Consent Timestamp: $consentTime\n"
               "• Processing Scope: Location and contacts strictly for emergency dispatch and guardian tracking.\n"
               "• Data Retention: You have the right to erase all account records and live telemetry at any time.",
-              style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+              style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
             ),
             const SizedBox(height: 16),
             const Divider(color: Colors.white24),
@@ -349,23 +356,47 @@ class AppDrawer extends StatelessWidget {
               style: TextStyle(color: AppColors.red, fontWeight: FontWeight.bold, fontSize: 13),
             ),
             const SizedBox(height: 4),
-            const Text(
-              "Delete your SafeSphere account and erase all associated sessions, alerts, and tracking data from backend servers.",
-              style: TextStyle(color: Colors.white60, fontSize: 11),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.red,
-                side: const BorderSide(color: AppColors.red),
+            if (authState.isAuthenticated) ...[
+              const Text(
+                "Delete your SafeSphere account and erase all associated sessions, alerts, and tracking data from backend servers.",
+                style: TextStyle(color: Colors.white60, fontSize: 11),
               ),
-              icon: const Icon(Icons.delete_forever, size: 18),
-              label: const Text("Delete My Account"),
-              onPressed: () {
-                Navigator.pop(ctx);
-                _showDeleteAccountConfirm(context, authState);
-              },
-            ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.red,
+                  side: const BorderSide(color: AppColors.red),
+                ),
+                icon: const Icon(Icons.delete_forever, size: 18),
+                label: const Text("Delete My Account"),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _showDeleteAccountConfirm(context, authState);
+                },
+              ),
+            ] else ...[
+              const Text(
+                "Clear all cached local session data, emergency tracking tokens, and privacy consent records on this device.",
+                style: TextStyle(color: Colors.white60, fontSize: 11),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.amber,
+                  side: const BorderSide(color: AppColors.amber),
+                ),
+                icon: const Icon(Icons.cleaning_services, size: 18),
+                label: const Text("Clear Local Data & Telemetry"),
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  await authState.clearLocalData();
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Local data and telemetry cleared.')),
+                  );
+                },
+              ),
+            ],
           ],
         ),
         actions: [

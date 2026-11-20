@@ -4,7 +4,7 @@
  */
 
 const { db } = require('../data/store');
-const { createReport, VALID_REPORT_STATUSES } = require('../models/reportModel');
+const { createReport, toSafeReport, VALID_REPORT_STATUSES } = require('../models/reportModel');
 const { findNearby } = require('../services/geoService');
 
 function list(req, res, next) {
@@ -44,7 +44,7 @@ function list(req, res, next) {
         return res.status(200).json({
           success: true,
           count: sliced.length,
-          data: sliced
+          data: sliced.map(r => toSafeReport(r))
         });
       }
     }
@@ -55,7 +55,7 @@ function list(req, res, next) {
     res.status(200).json({
       success: true,
       count: reports.length,
-      data: reports
+      data: reports.map(r => toSafeReport(r))
     });
   } catch (err) {
     next(err);
@@ -78,12 +78,13 @@ function create(req, res, next) {
     });
 
     const saved = db.saveReport(report);
+    const safeReport = toSafeReport(saved);
 
     res.status(201).json({
       success: true,
       message: 'Incident report submitted successfully',
-      data: saved,
-      report: saved
+      data: safeReport,
+      report: safeReport
     });
   } catch (err) {
     next(err);
@@ -106,10 +107,11 @@ function getById(req, res, next) {
       });
     }
 
+    const safeReport = toSafeReport(report);
     res.status(200).json({
       success: true,
-      data: report,
-      report
+      data: safeReport,
+      report: safeReport
     });
   } catch (err) {
     next(err);
@@ -160,12 +162,13 @@ function updateStatus(req, res, next) {
     }
 
     const updated = db.updateReport(id, { status });
+    const safeReport = toSafeReport(updated);
 
     res.status(200).json({
       success: true,
       message: `Report status updated to ${status}`,
-      data: updated,
-      report: updated
+      data: safeReport,
+      report: safeReport
     });
   } catch (err) {
     next(err);

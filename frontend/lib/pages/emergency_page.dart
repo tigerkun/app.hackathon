@@ -134,6 +134,16 @@ class _EmergencyPageState extends State<EmergencyPage> {
       _chatWs = ws;
       if (mounted) setState(() => _isWsConnected = true);
 
+      // Subscribe to this alert room so backend routes alert frames directly to this socket
+      final token = _resolveToken ?? await AuthService.instance.storage.getString(AuthService.keyToken);
+      try {
+        ws.add(jsonEncode({
+          'type': 'SUBSCRIBE_ALERT',
+          'alertId': alertId,
+          'token': token,
+        }));
+      } catch (_) {}
+
       ws.listen(
         (event) {
           try {
@@ -181,7 +191,8 @@ class _EmergencyPageState extends State<EmergencyPage> {
 
   Future<void> _loadChatMessages(String alertId) async {
     try {
-      final messages = await AuthService.instance.fetchSosMessages(alertId, token: _resolveToken);
+      final token = _resolveToken ?? await AuthService.instance.storage.getString(AuthService.keyToken);
+      final messages = await AuthService.instance.fetchSosMessages(alertId, token: token);
       if (mounted) {
         setState(() {
           _chatMessages = messages;
@@ -232,6 +243,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
     _chatController.clear();
 
     final alertId = _activeSosId!;
+    final token = _resolveToken ?? await AuthService.instance.storage.getString(AuthService.keyToken);
     bool sentViaWs = false;
 
     if (_chatWs != null && _chatWs!.readyState == WebSocket.open) {
@@ -239,7 +251,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
         final frame = jsonEncode({
           'type': 'CHAT_MESSAGE',
           'alertId': alertId,
-          'token': _resolveToken,
+          'token': token,
           'text': text,
         });
         _chatWs!.add(frame);
@@ -251,7 +263,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
 
     if (!sentViaWs) {
       try {
-        final res = await AuthService.instance.sendSosMessage(alertId, text, token: _resolveToken);
+        final res = await AuthService.instance.sendSosMessage(alertId, text, token: token);
         if (res != null && mounted) {
           setState(() {
             if (!_chatMessages.any((m) => m['id'] == res['id'])) {

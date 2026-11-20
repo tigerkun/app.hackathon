@@ -20,9 +20,13 @@ const clients = new Set();
 // Room-based session tracking for live guardian breadcrumbs: sessionId -> Set<ws>
 const trackingRooms = new Map();
 
+// Room-based alert tracking for live responder chat: alertId -> Set<ws>
+const alertRooms = new Map();
+
 wss.on('connection', (ws, req) => {
   clients.add(ws);
   ws.subscribedSessions = new Set();
+  ws.subscribedAlerts = new Set();
   const ip = req.socket.remoteAddress;
 
   ws.isAlive = true;
@@ -149,8 +153,30 @@ wss.on('connection', (ws, req) => {
         } catch (_) {}
 
         broadcastStreamTerminate(sessionId, reason, ws);
+      } else if (message.type === 'SUBSCRIBE_ALERT') {
+        const alertId = message.alertId;
+        if (!alertId) {
+          return ws.send(JSON.stringify({
+            type: 'ERROR',
+            code: 'MISSING_ALERT_ID',
+            message: 'alertId is required to subscribe to alert room'
+          }), (err) => {});
+        }
+        if (!alertRooms.has(alertId)) {
+          alertRooms.set(alertId, new Set());
+        }
+        alertRooms.get(alertId).add(ws);
+        ws.subscribedAlerts.add(alertId);
+
+        ws.send(JSON.stringify({
+          type: 'SUBSCRIBED_ALERT',
+          alertId,
+          status: 'subscribed',
+          timestamp: new Date().toISOString()
+        }), (err) => {});
       } else if (message.type === 'CHAT_MESSAGE') {
-        const { alertId, token, text } = message;
+        const { alertId, text } = message;
+        const token = message.token || message.sessionId || message.resolveToken;
         if (!alertId) {
           return ws.send(JSON.stringify({
             type: 'ERROR',
@@ -190,6 +216,13 @@ wss.on('connection', (ws, req) => {
             message: 'Rate limit: max 1 message per 2 seconds'
           }), (err) => {});
         }
+        // Auto-join room for sender
+        if (!alertRooms.has(alertId)) {
+          alertRooms.set(alertId, new Set());
+        }
+        alertRooms.get(alertId).add(ws);
+        ws.subscribedAlerts.add(alertId);
+
         const saved = db.saveSosMessage({
           alertId,
           senderRole: authResult.role,
@@ -219,6 +252,17 @@ wss.on('connection', (ws, req) => {
         }
       }
     }
+    if (ws.subscribedAlerts) {
+      for (const aId of ws.subscribedAlerts) {
+        const room = alertRooms.get(aId);
+        if (room) {
+          room.delete(ws);
+          if (room.size === 0) {
+            alertRooms.delete(aId);
+          }
+        }
+      }
+    }
   });
 
   ws.on('error', () => {
@@ -230,6 +274,17 @@ wss.on('connection', (ws, req) => {
           room.delete(ws);
           if (room.size === 0) {
             trackingRooms.delete(sId);
+          }
+        }
+      }
+    }
+    if (ws.subscribedAlerts) {
+      for (const aId of ws.subscribedAlerts) {
+        const room = alertRooms.get(aId);
+        if (room) {
+          room.delete(ws);
+          if (room.size === 0) {
+            alertRooms.delete(aId);
           }
         }
       }
@@ -338,18 +393,31 @@ function broadcastSosEscalated({ alertId, level, elapsedMin }) {
   }
 }
 
-// Broadcast SOS chat message to all connected monitors and responders
+// Broadcast SOS chat message to alert room subscribers and connected monitors
 function broadcastSosChatMessage({ alertId, message }) {
+  const { toSafeSosMessage } = require('./models/sosMessageModel');
+  const safeMessage = toSafeSosMessage(message);
   const payload = JSON.stringify({
     type: 'CHAT_MESSAGE',
     alertId,
-    message,
-    timestamp: message.createdAt || new Date().toISOString()
+    message: safeMessage,
+    timestamp: safeMessage.createdAt || new Date().toISOString()
   });
 
-  for (const client of clients) {
+  const room = alertRooms.get(alertId);
+  const roomClients = room ? Array.from(room) : [];
+  for (const client of roomClients) {
     if (client.readyState === WebSocket.OPEN) {
       client.send(payload, (err) => {});
+    }
+  }
+
+  // Also broadcast to any connected client not subscribed to a specific room (global monitors)
+  for (const client of clients) {
+    if (!client.subscribedAlerts || client.subscribedAlerts.size === 0) {
+      if ((!room || !room.has(client)) && client.readyState === WebSocket.OPEN) {
+        client.send(payload, (err) => {});
+      }
     }
   }
 }
@@ -500,5 +568,6 @@ module.exports = {
   broadcastLocationUpdate,
   broadcastStreamTerminate,
   broadcastCheckInMissed,
-  trackingRooms
+  trackingRooms,
+  alertRooms
 };

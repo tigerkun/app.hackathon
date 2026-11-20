@@ -341,4 +341,160 @@ describe('Two-Way SOS Responder Chat Tests (F4-1)', () => {
     assert.equal(stored.length, 1);
     assert.equal(stored[0].text, 'WebSocket real-time chat update from victim');
   });
+
+  it('10. GET /api/v1/sos/:id/messages supports Authorization: Bearer <resolveToken> header', async () => {
+    const alert = sosService.triggerSos({
+      latitude: 28.6139,
+      longitude: 77.2090,
+      alertType: 'CRITICAL_SOS'
+    });
+
+    db.saveSosMessage({
+      alertId: alert.id,
+      senderRole: 'victim',
+      senderId: 'anonymous',
+      text: 'Bearer resolveToken test message',
+      createdAt: new Date().toISOString()
+    });
+
+    const res = await apiRequest(`/api/v1/sos/${alert.id}/messages`, {
+      headers: { Authorization: `Bearer ${alert.resolveToken}` }
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.data.success, true);
+    assert.equal(res.data.count, 1);
+    assert.equal(res.data.data[0].text, 'Bearer resolveToken test message');
+  });
+
+  it('11. Querying messages with limit returns the most recent messages in chronological order', async () => {
+    const alert = sosService.triggerSos({
+      latitude: 28.6139,
+      longitude: 77.2090,
+      alertType: 'CRITICAL_SOS'
+    });
+
+    for (let i = 1; i <= 5; i++) {
+      db.saveSosMessage({
+        alertId: alert.id,
+        senderRole: 'victim',
+        senderId: 'anonymous',
+        text: `Chronological msg ${i}`,
+        createdAt: new Date(Date.now() + i * 1000).toISOString()
+      });
+    }
+
+    const res = await apiRequest(`/api/v1/sos/${alert.id}/messages?limit=2`, {
+      headers: { Authorization: `Bearer ${alert.resolveToken}` }
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.data.count, 2);
+    // Must return the last 2 messages (msg 4, msg 5) in chronological order
+    assert.equal(res.data.data[0].text, 'Chronological msg 4');
+    assert.equal(res.data.data[1].text, 'Chronological msg 5');
+  });
+
+  it('12. Unified rate-limiting: sending via WS and then rapid REST is blocked with 429', async () => {
+    const alert = sosService.triggerSos({
+      latitude: 28.6139,
+      longitude: 77.2090,
+      alertType: 'CRITICAL_SOS'
+    });
+
+    const ws = new WebSocket(wsUrl);
+    await new Promise((resolve) => ws.on('open', resolve));
+
+    // Send via WS
+    ws.send(JSON.stringify({
+      type: 'CHAT_MESSAGE',
+      alertId: alert.id,
+      token: alert.resolveToken,
+      text: 'Message via WebSocket'
+    }));
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    ws.close();
+
+    // Immediate attempt via REST should be rejected with 429
+    const res = await apiRequest(`/api/v1/sos/${alert.id}/messages`, {
+      method: 'POST',
+      body: { token: alert.resolveToken, text: 'Immediate message via REST' }
+    });
+
+    assert.equal(res.status, 429);
+    assert.equal(res.data.error.code, 'RATE_LIMIT_EXCEEDED');
+  });
+
+  it('13. WebSocket SUBSCRIBE_ALERT confirms room subscription', async () => {
+    const alert = sosService.triggerSos({
+      latitude: 28.6139,
+      longitude: 77.2090,
+      alertType: 'CRITICAL_SOS'
+    });
+
+    const ws = new WebSocket(wsUrl);
+    await new Promise((resolve) => ws.on('open', resolve));
+
+    const events = [];
+    ws.on('message', (raw) => {
+      try {
+        events.push(JSON.parse(raw.toString()));
+      } catch (_) {}
+    });
+
+    ws.send(JSON.stringify({
+      type: 'SUBSCRIBE_ALERT',
+      alertId: alert.id
+    }));
+
+    await new Promise((resolve) => {
+      const interval = setInterval(() => {
+        if (events.some((e) => e.type === 'SUBSCRIBED_ALERT')) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 30);
+    });
+
+    ws.close();
+
+    const subEvent = events.find((e) => e.type === 'SUBSCRIBED_ALERT');
+    assert.ok(subEvent);
+    assert.equal(subEvent.alertId, alert.id);
+    assert.equal(subEvent.status, 'subscribed');
+  });
+
+  it('14. Account deletion cascades to purge all user sos_messages', async () => {
+    const user = db.saveUser(createUser({
+      id: 'usr_chat_purge_test',
+      name: 'Purge User',
+      email: 'purge@safesphere.test',
+      phone: '+919111122222',
+      role: 'citizen'
+    }));
+
+    const alert = sosService.triggerSos({
+      userId: user.id,
+      latitude: 28.6139,
+      longitude: 77.2090,
+      alertType: 'CRITICAL_SOS'
+    });
+
+    db.saveSosMessage({
+      alertId: alert.id,
+      senderRole: 'victim',
+      senderId: user.id,
+      text: 'Message to be purged with account'
+    });
+
+    assert.equal(db.getSosMessages(alert.id).length, 1);
+
+    // Delete user
+    db.deleteUser(user.id);
+
+    // Alert and associated messages must be purged
+    assert.equal(db.findAlertById(alert.id), null);
+    assert.equal(db.getSosMessages(alert.id).length, 0);
+  });
 });

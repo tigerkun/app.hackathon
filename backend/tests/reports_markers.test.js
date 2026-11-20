@@ -316,6 +316,18 @@ describe('SafeSphere Community Safety & Emergency API Tests', () => {
       assert.equal(rejectRes.status, 200);
       assert.equal(rejectRes.body.data.isVerified, false);
       assert.equal(rejectRes.body.data.status, 'rejected');
+
+      // Verify rejected marker is completely excluded from public listings
+      const publicList = await serverHarness.request('/api/v1/markers');
+      assert.equal(publicList.status, 200);
+      const hasRejected = publicList.body.data.some((m) => m.id === secondCreated.body.data.id);
+      assert.equal(hasRejected, false, 'Rejected markers must never be returned to citizens on /markers');
+
+      // Verify isVerified=true filter returns only verified markers
+      const verifiedList = await serverHarness.request('/api/v1/markers?isVerified=true');
+      assert.equal(verifiedList.status, 200);
+      assert.ok(verifiedList.body.data.length > 0);
+      assert.ok(verifiedList.body.data.every((m) => m.isVerified === true));
     });
   });
 

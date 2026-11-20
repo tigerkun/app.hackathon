@@ -467,6 +467,7 @@ class DataStore {
   deleteUser(id) {
     if (!id) return false;
     this.db.prepare('DELETE FROM sessions WHERE userId = ?').run(id);
+    this.db.prepare('DELETE FROM sos_messages WHERE senderId = ? OR alertId IN (SELECT id FROM alerts WHERE userId = ?)').run(id, id);
     this.db.prepare('DELETE FROM alerts WHERE userId = ?').run(id);
     this.db.prepare('DELETE FROM tracking_sessions WHERE userId = ?').run(id);
     const res = this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
@@ -632,6 +633,8 @@ class DataStore {
     if (filter.status) {
       conditions.push('status = ?');
       params.push(filter.status);
+    } else if (!filter.includeRejected) {
+      conditions.push("(status != 'rejected' OR status IS NULL)");
     }
     if (filter.reportedBy) {
       conditions.push('reportedBy = ?');
@@ -744,6 +747,8 @@ class DataStore {
     if (filter.status) {
       conditions.push('status = ?');
       params.push(filter.status);
+    } else if (!filter.includeRejected) {
+      conditions.push("(status != 'rejected' OR status IS NULL)");
     }
     let sql = 'SELECT * FROM markers';
     if (conditions.length > 0) {
@@ -1225,10 +1230,12 @@ class DataStore {
     if (!alertId) return [];
     const clampedLimit = Math.min(Math.max(1, parseInt(limit, 10) || 50), 50);
     const rows = this.db.prepare(`
-      SELECT * FROM sos_messages
-      WHERE alertId = ?
-      ORDER BY createdAt ASC
-      LIMIT ?
+      SELECT * FROM (
+        SELECT * FROM sos_messages
+        WHERE alertId = ?
+        ORDER BY createdAt DESC, id DESC
+        LIMIT ?
+      ) ORDER BY createdAt ASC, id ASC
     `).all(alertId, clampedLimit);
     return rows.map((r) => this._formatSosMessage(r));
   }

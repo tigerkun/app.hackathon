@@ -4,7 +4,7 @@
  */
 
 const { db } = require('../data/store');
-const { createMarker } = require('../models/markerModel');
+const { createMarker, toSafeMarker } = require('../models/markerModel');
 const { findNearby } = require('../services/geoService');
 
 function list(req, res, next) {
@@ -15,22 +15,29 @@ function list(req, res, next) {
     const targetLon = lon || longitude;
     const parsedLimit = Math.min(Math.max(1, parseInt(limit, 10) || 100), 100);
 
+    const isPrivileged = Boolean(
+      req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
+    );
+
     // If coordinates are provided in query, perform proximity search
     if (targetLat !== undefined && targetLon !== undefined) {
       const maxRadius = Math.min(Math.max(0.1, Number(radius) || 10), 100);
-      const allMarkers = db.getAllMarkers();
+      const allMarkers = db.getAllMarkers(
+        isVerified !== undefined ? { isVerified: isVerified === 'true' } : {}
+      );
       const nearbyMarkers = findNearby(allMarkers, targetLat, targetLon, maxRadius).slice(0, parsedLimit);
 
       return res.status(200).json({
         success: true,
         count: nearbyMarkers.length,
-        data: nearbyMarkers
+        data: nearbyMarkers.map(m => toSafeMarker(m, isPrivileged))
       });
     }
 
     const filter = {};
     if (category) filter.category = String(category);
     if (isVerified !== undefined) filter.isVerified = isVerified === 'true';
+    if (req.query.status) filter.status = String(req.query.status);
     filter.limit = parsedLimit;
 
     const markers = db.getAllMarkers(filter);
@@ -38,7 +45,7 @@ function list(req, res, next) {
     res.status(200).json({
       success: true,
       count: markers.length,
-      data: markers
+      data: markers.map(m => toSafeMarker(m, isPrivileged))
     });
   } catch (err) {
     next(err);
@@ -47,7 +54,7 @@ function list(req, res, next) {
 
 function nearby(req, res, next) {
   try {
-    const { lat, lon, latitude, longitude, radius, category, type, limit } = req.query;
+    const { lat, lon, latitude, longitude, radius, category, type, isVerified, limit } = req.query;
     const targetLat = lat || latitude;
     const targetLon = lon || longitude;
 
@@ -62,7 +69,13 @@ function nearby(req, res, next) {
       });
     }
 
-    let allMarkers = db.getAllMarkers();
+    const isPrivileged = Boolean(
+      req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
+    );
+
+    let allMarkers = db.getAllMarkers(
+      isVerified !== undefined ? { isVerified: isVerified === 'true' } : {}
+    );
     const filterCat = category || type;
     if (filterCat) {
       allMarkers = allMarkers.filter(m =>
@@ -76,7 +89,7 @@ function nearby(req, res, next) {
     res.status(200).json({
       success: true,
       count: nearbyMarkers.length,
-      data: nearbyMarkers
+      data: nearbyMarkers.map(m => toSafeMarker(m, isPrivileged))
     });
   } catch (err) {
     next(err);
@@ -129,7 +142,7 @@ function create(req, res, next) {
     res.status(201).json({
       success: true,
       message: 'Safety marker created successfully',
-      data: saved
+      data: toSafeMarker(saved, isPrivileged)
     });
   } catch (err) {
     next(err);
@@ -157,7 +170,7 @@ function pending(req, res, next) {
     res.status(200).json({
       success: true,
       count: markers.length,
-      data: markers
+      data: markers.map(m => toSafeMarker(m, true))
     });
   } catch (err) {
     next(err);
@@ -215,7 +228,7 @@ function verify(req, res, next) {
     res.status(200).json({
       success: true,
       message: Boolean(approve) ? 'Marker verified and published' : 'Marker rejected',
-      data: updated
+      data: toSafeMarker(updated, true)
     });
   } catch (err) {
     next(err);
@@ -238,9 +251,13 @@ function getById(req, res, next) {
       });
     }
 
+    const isPrivileged = Boolean(
+      req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
+    );
+
     res.status(200).json({
       success: true,
-      data: marker
+      data: toSafeMarker(marker, isPrivileged)
     });
   } catch (err) {
     next(err);

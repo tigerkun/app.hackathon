@@ -6,6 +6,7 @@
 const sosService = require('../services/sosService');
 const { db } = require('../data/store');
 const { toSafeAlert } = require('../models/alertModel');
+const { toSafeSosMessage } = require('../models/sosMessageModel');
 const crypto = require('crypto');
 
 // Attach indexed getAlertsByUserId to DataStore if not present
@@ -276,7 +277,10 @@ function postMessage(req, res, next) {
     const alertId = req.params.id;
     const body = req.body || {};
     const text = body.text;
-    const token = body.token || body.resolveToken || req.query.token;
+    const bearerToken = req.headers.authorization && req.headers.authorization.startsWith('Bearer ')
+      ? req.headers.authorization.slice(7).trim()
+      : null;
+    const token = body.token || body.resolveToken || req.query.token || bearerToken;
 
     if (!alertId) {
       return res.status(400).json({
@@ -324,7 +328,7 @@ function postMessage(req, res, next) {
       });
     }
 
-    const senderKey = `${alertId}:${authResult.senderId || authResult.role}:${req.ip || 'ip'}`;
+    const senderKey = `${alertId}:${authResult.senderId || authResult.role}`;
     if (!sosService.checkChatRateLimit(senderKey)) {
       return res.status(429).json({
         success: false,
@@ -344,15 +348,17 @@ function postMessage(req, res, next) {
       createdAt: new Date().toISOString()
     });
 
+    const safeMessage = toSafeSosMessage(saved);
+
     const broadcast = getChatBroadcastHelper();
     if (typeof broadcast === 'function') {
-      broadcast({ alertId, message: saved });
+      broadcast({ alertId, message: safeMessage });
     }
 
     res.status(201).json({
       success: true,
       message: 'SOS chat message posted successfully',
-      data: saved
+      data: safeMessage
     });
   } catch (err) {
     next(err);
@@ -362,7 +368,10 @@ function postMessage(req, res, next) {
 function getMessages(req, res, next) {
   try {
     const alertId = req.params.id;
-    const token = req.query.token || (req.body && (req.body.token || req.body.resolveToken));
+    const bearerToken = req.headers.authorization && req.headers.authorization.startsWith('Bearer ')
+      ? req.headers.authorization.slice(7).trim()
+      : null;
+    const token = req.query.token || (req.body && (req.body.token || req.body.resolveToken)) || bearerToken;
 
     if (!alertId) {
       return res.status(400).json({
@@ -405,7 +414,7 @@ function getMessages(req, res, next) {
     res.status(200).json({
       success: true,
       count: messages.length,
-      data: messages
+      data: messages.map(m => toSafeSosMessage(m))
     });
   } catch (err) {
     next(err);
