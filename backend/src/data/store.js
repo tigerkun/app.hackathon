@@ -361,11 +361,14 @@ class DataStore {
    * Atomically replaces the live database contents with a serialized image
    * (node:sqlite deserialize). Used by dbSnapshot.js at boot, before the HTTP
    * listener starts, to hydrate from the durable remote snapshot.
+   * Re-runs the additive schema catch-up afterwards so a snapshot taken by an
+   * older build (missing newer columns/tables) is upgraded in place.
    */
   deserializeSnapshot(buf) {
     if (!this.db) throw new Error('DataStore is closed');
     if (!Buffer.isBuffer(buf)) throw new Error('deserializeSnapshot expects a Buffer');
     this.db.deserialize(buf);
+    this.initSchema();
   }
 
   /**

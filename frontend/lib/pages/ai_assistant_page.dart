@@ -143,13 +143,16 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
   }
 
   /// Builds a compact conversation history for the AI backend from prior
-  /// exchanges (real user/assistant turns only — skips welcome, typing and
-  /// error bubbles). Capped at 12 turns to match the backend sanitizer.
-  List<Map<String, String>> _buildConversationHistory() {
+  /// exchanges (real user/assistant turns only — skips welcome, typing,
+  /// error bubbles, and the current message which is sent separately as
+  /// `text` to avoid duplicating it upstream). Capped at 12 turns to match
+  /// the backend sanitizer.
+  List<Map<String, String>> _buildConversationHistory(String excludeId) {
     final history = <Map<String, String>>[];
     for (final msg in messages) {
       if (msg.isTyping) continue;
       if (msg.id == 'welcome' || msg.id.startsWith('err_')) continue;
+      if (msg.id == excludeId) continue;
       history.add({
         'role': msg.isUser ? 'user' : 'assistant',
         'content': msg.text,
@@ -173,7 +176,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     try {
       final data = await AuthService.instance.sendAiChat(
         message: prompt,
-        history: _buildConversationHistory(),
+        history: _buildConversationHistory(userMsgId),
       );
 
       if (!mounted) return;

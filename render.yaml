@@ -1,6 +1,12 @@
 # ==============================================================================
 # SafeSphere Render Infrastructure Blueprint
 # ==============================================================================
+# NOTE ON THE CURRENT DEPLOYMENT:
+#   The live backend (safesphere-backend, free instance) was created manually
+#   via the Render dashboard, NOT from this blueprint. Applying this blueprint
+#   would create a NEW paid service — it does not sync or manage the existing
+#   free-tier service. Keep this file as the paid-tier / IaC reference.
+#
 # Architecture & Persistent Storage Notes:
 # - SafeSphere backend uses SQLite via Node.js built-in `node:sqlite`.
 # - Render "starter" plan supports persistent SSD disks (1 GB mounted at /var/data).

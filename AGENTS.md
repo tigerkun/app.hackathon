@@ -94,7 +94,9 @@ repositories via built-in `node:sqlite` with instant `reset()` for tests).
     A failed/garbage hydrate DISABLES uploads for that process so a fresh empty
     DB can never overwrite the good remote snapshot. node:sqlite `deserialize()`
     must only target in-memory connections — WAL file connections break after
-    deserialize ("unable to open database file").
+    deserialize ("unable to open database file"). `deserializeSnapshot()`
+    re-runs the additive schema catch-up afterwards so snapshots taken by older
+    builds are upgraded in place.
   - Schema: Hand-managed additive schema (`CREATE TABLE IF NOT EXISTS` and
     `CREATE INDEX IF NOT EXISTS`). No external migration runner (additive
     `ALTER TABLE` / DDL matching repository convention).
