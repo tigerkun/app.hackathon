@@ -9,6 +9,7 @@ const reportRoutes = require('./reportRoutes');
 const markerRoutes = require('./markerRoutes');
 const alertRoutes = require('./alertRoutes');
 const locationRoutes = require('./locationRoutes');
+const aiRoutes = require('./aiRoutes');
 
 const router = express.Router();
 
@@ -23,7 +24,8 @@ router.get('/', (req, res) => {
       reports: '/api/v1/reports',
       markers: '/api/v1/markers',
       sos: '/api/v1/sos',
-      location: '/api/v1/location'
+      location: '/api/v1/location',
+      ai: '/api/v1/ai'
     }
   });
 });
@@ -34,5 +36,6 @@ router.use('/reports', reportRoutes);
 router.use('/markers', markerRoutes);
 router.use('/sos', alertRoutes);
 router.use('/location', locationRoutes);
+router.use('/ai', aiRoutes);
 
 module.exports = router;

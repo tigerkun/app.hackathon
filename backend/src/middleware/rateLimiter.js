@@ -91,9 +91,17 @@ const reportLimiter = createRateLimiter({
   skipInTest: true
 });
 
+const aiLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: 'AI assistant rate limit reached. Please wait a moment before asking again.',
+  skipInTest: true
+});
+
 module.exports = {
   createRateLimiter,
   globalLimiter,
   authLimiter,
-  reportLimiter
+  reportLimiter,
+  aiLimiter
 };

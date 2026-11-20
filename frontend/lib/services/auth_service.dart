@@ -1226,6 +1226,41 @@ class AuthService {
     return null;
   }
 
+  // ---------------------------------------------------------------------------
+  // AI Safety Assistant (POST /api/v1/ai/chat — Groq-backed, guest allowed)
+  // ---------------------------------------------------------------------------
+  /// Sends a safety question to the live AI backend. Returns the decoded
+  /// `data` map ({ reply, model }) on success, or null when the backend is
+  /// unreachable / unconfigured / rate-limited. Never fabricates a reply —
+  /// callers must fall back to the static offline safety guides (W2-5).
+  Future<Map<String, dynamic>?> sendAiChat({
+    required String message,
+    List<Map<String, String>>? history,
+  }) async {
+    final token = await storage.getString(keyToken);
+    final body = <String, dynamic>{
+      'text': message,
+      if (history != null && history.isNotEmpty) 'history': history,
+    };
+
+    final res = await _requestDetailed(
+      method: 'POST',
+      path: '/api/v1/ai/chat',
+      body: body,
+      token: token,
+    );
+
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      final data = res.data!['data'];
+      if (data is Map<String, dynamic> &&
+          data['reply'] is String &&
+          (data['reply'] as String).isNotEmpty) {
+        return data;
+      }
+    }
+    return null;
+  }
+
   Future<bool> signup({
     required String name,
     required String email,

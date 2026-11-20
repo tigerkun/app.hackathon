@@ -17,7 +17,9 @@ SafeSphere is a personal-safety and emergency-response platform:
   proximity search.
 - **Multi-modal auth** — email/phone + password, 4–6 digit PIN, phone OTP, and
   an unconditional guest/emergency bypass.
-- **AI safety assistant** — conversational guidance UI (backend not yet wired).
+- **AI safety assistant** — conversational guidance UI wired to a Groq-backed
+  `POST /api/v1/ai/chat` route, with honest static-guide fallback when the
+  backend is unreachable or unconfigured.
 
 The product is deliberately *assistive*, not a replacement for emergency
 services. The UI must always make the native dialer (`tel:112`, `tel:181`,
@@ -156,6 +158,14 @@ repositories via built-in `node:sqlite` with instant `reset()` for tests).
     `AiAssistantPage` displays static actionable safety protocols (Assault/harassment response,
     Road accident, Cyber fraud, Medical emergency) with national helplines (112, 181, 108, 101, 1930).
     Offline cards are clearly labeled as static guidance without pretending to be a real-time AI persona.
+- **Live AI Safety Assistant (Groq)**: `POST /api/v1/ai/chat` proxies a sanitized prompt
+    (1–1000 chars, ≤12 history turns, strict role allowlist) to Groq's OpenAI-compatible
+    completions API. `GROQ_API_KEY` is read from env only and never returned/logged; model
+    defaults to `llama-3.3-70b-versatile` (`GROQ_MODEL` override) with `max_tokens` capped at 400.
+    Guest calls allowed via `optionalAuth`, throttled by a dedicated 10/min `aiLimiter`.
+    Failures are honest: `503 AI_NOT_CONFIGURED`, `502 AI_UPSTREAM_ERROR` (key never leaked),
+    `429 AI_RATE_LIMITED`. On failure the frontend keeps the offline W2-5 guides visible and
+    still shows the dial-112 copy.
 - **`fetchTrackingSession` query parameter design**: Located in
   `frontend/lib/services/auth_service.dart:804`, queries
   `GET /api/v1/location/track/$sessionId?token=${Uri.encodeQueryComponent(trackingToken)}`.
@@ -243,7 +253,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 |---|---|---|---|
 | `TODO(REAL_SMS_GATEWAY)` | `backend/src/services/sosService.js` | Dispatch SMS to emergency contacts via Twilio / AWS SNS | ACTIVE |
 | `NOTE:` markers | `frontend/lib/services/auth_service.dart` (register, login, OTP send, OTP verify, PIN verify) | Converted from stale `TODO(REAL_BACKEND)`; endpoints verified live on backend | DONE |
-| `TODO(REAL_BACKEND)` | `frontend/lib/pages/ai_assistant_page.dart` | Wire AI assistant to a real LLM/Gemini safety endpoint | ACTIVE |
+| `AI Assistant (Groq)` | `backend/src/services/aiService.js`, `backend/src/controllers/aiController.js`, `frontend/lib/pages/ai_assistant_page.dart` | `POST /api/v1/ai/chat` (Groq; key via `GROQ_API_KEY` env only), optionalAuth + 10/min `aiLimiter`, sanitized history (12 turns), honest 503 `AI_NOT_CONFIGURED` fallback to offline guides | DONE |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/services/auth_service.dart` (`verifyBiometrics`) | Real biometric scan via `local_auth` wired with hardware check and fallback | DONE |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/pages/home_page.dart`, `emergency_page.dart` | Volume button / hardware panic intercept requires native plugin, fallback F4-2-alt shipped | DEFERRED |
 | `F3-1 (SOS Escalation)` | `backend/src/services/sosService.js`, `frontend/lib/pages/emergency_page.dart` | 60s escalation watchdog, escalationLevel cap 3, WS broadcast, active ageSeconds & badge | DONE |
@@ -273,7 +283,9 @@ Search `TODO(REAL_` for the live list. Current stubs:
   `flutter pub get` on a Flutter-equipped machine before building; do NOT edit `pubspec.lock` by hand.
 - **`map_config.dart` API key is a placeholder** (`YOUR_GOOGLE_MAPS_API_KEY_HERE`);
   `SafeSphereMapConfig.isConfigured` is `false` until a real key is provided.
-- **AI assistant is UI-only** and returns a fixed "awaiting backend" reply.
+- **AI assistant requires `GROQ_API_KEY`.** Without it `POST /api/v1/ai/chat`
+  returns an honest `503 AI_NOT_CONFIGURED` and the UI falls back to the
+  offline safety guides. The key is never committed or returned to clients.
 - Duplicate export shims (`lib/pages/login_page.dart`, `signup_page.dart`,
   `auth_pin_page.dart`) re-export the real pages under `lib/pages/auth/` and must
   be kept for compatibility with the structural verifier.
@@ -284,7 +296,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 # Full gate (recommended)
 npm test
 
-# Backend only — 220 tests across 57 suites (plus 11/11 smoke tests)
+# Backend only — 228 tests across 58 suites (plus 11/11 smoke tests)
 cd backend && npm test
 npm run smoke
 
@@ -299,6 +311,7 @@ node --test tests/location_tracking.test.js   # live tracking + token gating
 node --test tests/auth.test.js
 node --test tests/security_hardening.test.js
 node --test tests/reports_markers.test.js
+node --test tests/ai_chat.test.js             # AI assistant Groq chat, validation & honest fallback
 
 # Python challengers (197 tests across 10 suites: frontend structure, routes, AST invariants, permissions)
 python -m unittest discover -s frontend/test -p "*.py"

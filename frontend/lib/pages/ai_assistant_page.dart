@@ -142,6 +142,25 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     _sendPromptToRealAiBackend(text, userMsgId, typingMsgId, timestamp, seq);
   }
 
+  /// Builds a compact conversation history for the AI backend from prior
+  /// exchanges (real user/assistant turns only — skips welcome, typing and
+  /// error bubbles). Capped at 12 turns to match the backend sanitizer.
+  List<Map<String, String>> _buildConversationHistory() {
+    final history = <Map<String, String>>[];
+    for (final msg in messages) {
+      if (msg.isTyping) continue;
+      if (msg.id == 'welcome' || msg.id.startsWith('err_')) continue;
+      history.add({
+        'role': msg.isUser ? 'user' : 'assistant',
+        'content': msg.text,
+      });
+    }
+    if (history.length > 12) {
+      return history.sublist(history.length - 12);
+    }
+    return history;
+  }
+
   Future<void> _sendPromptToRealAiBackend(
     String prompt,
     String userMsgId,
@@ -149,23 +168,46 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     String timestamp,
     int seq,
   ) async {
-    // NOTE: Removed hardcoded 4-keyword matcher ("follow", "unsafe", "accident") and fake 900ms timer.
-    // TODO(REAL_BACKEND): Wire to real Gemini / LLM safety agent endpoint with location context & emergency escalation.
+    // Live Groq-backed endpoint (POST /api/v1/ai/chat). On any failure the
+    // static offline safety guides (W2-5) remain visible — never a fake reply.
     try {
-      // Placeholder response indicating real backend integration requirement:
+      final data = await AuthService.instance.sendAiChat(
+        message: prompt,
+        history: _buildConversationHistory(),
+      );
+
       if (!mounted) return;
+
+      if (data != null && data['reply'] is String) {
+        setState(() {
+          _showOfflineGuides = false;
+          final typingIndex = messages.indexWhere((m) => m.id == typingMsgId);
+          final replyMsg = _ChatMessage(
+            id: 'ai_${timestamp}_$seq',
+            text: data!['reply'] as String,
+            isUser: false,
+          );
+          if (typingIndex != -1) {
+            messages[typingIndex] = replyMsg;
+          } else {
+            messages.add(replyMsg);
+          }
+        });
+        return;
+      }
+
       setState(() {
         _showOfflineGuides = true;
         final typingIndex = messages.indexWhere((m) => m.id == typingMsgId);
-        final replyMsg = _ChatMessage(
+        final fallbackMsg = _ChatMessage(
           id: 'ai_${timestamp}_$seq',
-          text: "AI Safety Assistant is awaiting live intelligence backend. In the meantime, actionable protocols and verified helplines are available in the offline guide below. For immediate danger, dial 112.",
+          text: "Couldn't reach the AI safety service just now. Verified offline protocols and helplines are below — for immediate danger, dial 112.",
           isUser: false,
         );
         if (typingIndex != -1) {
-          messages[typingIndex] = replyMsg;
+          messages[typingIndex] = fallbackMsg;
         } else {
-          messages.add(replyMsg);
+          messages.add(fallbackMsg);
         }
       });
     } catch (e) {
@@ -176,7 +218,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
         if (typingIndex != -1) {
           messages[typingIndex] = _ChatMessage(
             id: 'err_${timestamp}_$seq',
-            text: "Connection error contacting AI safety service. Offline guide cards displayed below.",
+            text: "Connection error contacting AI safety service. Offline guide cards displayed below. For immediate danger, dial 112.",
             isUser: false,
           );
         }
