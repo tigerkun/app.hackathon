@@ -23,6 +23,10 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
 
   double _userLat = SafeSphereMapConfig.defaultLatitude;
   double _userLng = SafeSphereMapConfig.defaultLongitude;
+  // False until a real GPS fix arrives — never present the Delhi default as
+  // the user's location (nearby markers, distances, and the AppBar label all
+  // depend on this flag).
+  bool _hasGpsFix = false;  
 
   List<Map<String, dynamic>> _markers = [];
   List<Map<String, dynamic>> _reports = [];
@@ -62,6 +66,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
         setState(() {
           _userLat = pos.latitude;
           _userLng = pos.longitude;
+          _hasGpsFix = true;
         });
       }
     } catch (_) {
@@ -79,16 +84,18 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
 
     try {
       final results = await Future.wait([
-        AuthService.instance.fetchNearbyMarkers(
-          latitude: _userLat,
-          longitude: _userLng,
-          radiusKm: 10,
-        ),
+        _hasGpsFix
+            ? AuthService.instance.fetchNearbyMarkers(
+                latitude: _userLat,
+                longitude: _userLng,
+                radiusKm: 10,
+              )
+            : Future<List<Map<String, dynamic>>>.value(const []),
         AuthService.instance.fetchReports(limit: 50),
       ]);
 
       if (!mounted) return;
-      if (AuthService.instance.lastFetchFailed && results[0].isEmpty) {
+      if (_hasGpsFix && AuthService.instance.lastFetchFailed && results[0].isEmpty) {
         setState(() {
           _errorMessage = "Could not fetch nearby safety data.";
           _isLoading = false;
@@ -100,6 +107,9 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
         _markers = results[0];
         _reports = results[1];
         _isLoading = false;
+        _errorMessage = _hasGpsFix
+            ? null
+            : "Location permission off — showing community reports only. Enable GPS for nearby markers.";
       });
     } catch (e) {
       if (mounted) {
@@ -493,7 +503,9 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
           children: [
             const Text("Safety Map", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             Text(
-              "GPS: ${_userLat.toStringAsFixed(4)}, ${_userLng.toStringAsFixed(4)}",
+              _hasGpsFix
+                  ? "GPS: ${_userLat.toStringAsFixed(4)}, ${_userLng.toStringAsFixed(4)}"
+                  : "GPS: off",
               style: const TextStyle(fontSize: 11, color: Colors.white60),
             ),
           ],

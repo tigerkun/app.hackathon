@@ -39,6 +39,7 @@ function list(req, res, next) {
     if (isVerified !== undefined) filter.isVerified = isVerified === 'true';
     if (req.query.status) filter.status = String(req.query.status);
     filter.limit = parsedLimit;
+    filter.includeUnverified = isPrivileged;
 
     const markers = db.getAllMarkers(filter);
 
@@ -73,9 +74,10 @@ function nearby(req, res, next) {
       req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
     );
 
-    let allMarkers = db.getAllMarkers(
-      isVerified !== undefined ? { isVerified: isVerified === 'true' } : {}
-    );
+    let allMarkers = db.getAllMarkers({
+      ...(isVerified !== undefined ? { isVerified: isVerified === 'true' } : {}),
+      includeUnverified: isPrivileged
+    });
     const filterCat = category || type;
     if (filterCat) {
       allMarkers = allMarkers.filter(m =>
@@ -98,7 +100,7 @@ function nearby(req, res, next) {
 
 function create(req, res, next) {
   try {
-    const { name, category, latitude, longitude, address } = req.body;
+    const { name, category, latitude, longitude, address, note } = req.body;
 
     if (!name || latitude === undefined || longitude === undefined) {
       return res.status(400).json({
@@ -134,6 +136,7 @@ function create(req, res, next) {
       latitude: latNum,
       longitude: lonNum,
       address,
+      note,
       isVerified: isPrivileged
     });
 

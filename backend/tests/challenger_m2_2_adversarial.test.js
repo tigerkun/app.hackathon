@@ -20,6 +20,7 @@ const { server, wss, broadcastSosAlert } = require('../src/server');
 const { db } = require('../src/data/store');
 const { calculateDistance, findNearby } = require('../src/services/geoService');
 const { signAccessToken } = require('../src/services/tokenService');
+const { createUser } = require('../src/models/userModel');
 
 describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Markers', () => {
   let testServer;
@@ -197,7 +198,7 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
       client.close();
     });
 
-    it('broadcasts SOS_TELEMETRY to other connected clients without echoing back to sender', async () => {
+    it('does NOT relay client-originated SOS_TELEMETRY (spoofed-alert injection is rejected)', async () => {
       const clientSender = new WebSocket(wsUrl);
       const clientReceiver1 = new WebSocket(wsUrl);
       const clientReceiver2 = new WebSocket(wsUrl);
@@ -217,37 +218,25 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
         battery: 85
       };
 
-      // Set up listeners on receivers
-      const recvPromise1 = new Promise((resolve) => {
-        clientReceiver1.once('message', (data) => resolve(JSON.parse(data.toString())));
+      // Collect any frames receivers get after the telemetry is sent
+      const received1 = [];
+      const received2 = [];
+      clientReceiver1.on('message', (data) => {
+        try { received1.push(JSON.parse(data.toString())); } catch (_) {}
       });
-      const recvPromise2 = new Promise((resolve) => {
-        clientReceiver2.once('message', (data) => resolve(JSON.parse(data.toString())));
-      });
-
-      let senderEchoed = false;
-      clientSender.on('message', (data) => {
-        const msg = JSON.parse(data.toString());
-        if (msg.sosId === 'sos_test_telemetry_01') {
-          senderEchoed = true;
-        }
+      clientReceiver2.on('message', (data) => {
+        try { received2.push(JSON.parse(data.toString())); } catch (_) {}
       });
 
-      // Send telemetry from clientSender
       clientSender.send(JSON.stringify(telemetryPayload));
 
-      const [received1, received2] = await Promise.all([recvPromise1, recvPromise2]);
+      // Give the server a moment — a relayed frame would arrive immediately
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
-      // Both receivers got the broadcast
-      assert.equal(received1.type, 'SOS_TELEMETRY');
-      assert.equal(received1.sosId, 'sos_test_telemetry_01');
-      assert.ok(received1.relayedAt, 'Expected relayedAt timestamp added by server');
-
-      assert.equal(received2.type, 'SOS_TELEMETRY');
-      assert.equal(received2.sosId, 'sos_test_telemetry_01');
-
-      // Sender must NOT receive echo
-      assert.equal(senderEchoed, false, 'Sender should not receive echo of its own telemetry');
+      const leaked1 = received1.filter((m) => m.type === 'SOS_TELEMETRY' || m.sosId === 'sos_test_telemetry_01');
+      const leaked2 = received2.filter((m) => m.type === 'SOS_TELEMETRY' || m.sosId === 'sos_test_telemetry_01');
+      assert.equal(leaked1.length, 0, 'SOS_TELEMETRY must not be relayed to other clients');
+      assert.equal(leaked2.length, 0, 'SOS_TELEMETRY must not be relayed to other clients');
 
       clientSender.close();
       clientReceiver1.close();
@@ -611,8 +600,32 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
       assert.equal(res.body.success, true);
       assert.equal(res.body.data.name, 'Hauz Khas 24/7 Police Assistance Booth');
       assert.ok(res.body.data.id.startsWith('marker_'));
+      // Unauthenticated submissions are pending — not publicly visible yet
+      assert.equal(res.body.data.status, 'pending');
 
-      // Verify newly created marker is discoverable via proximity search
+      // Pending marker must NOT appear in the public proximity feed
+      const pendingNearRes = await apiRequest('/api/v1/markers/nearby?lat=28.5494&lon=77.2001&radius=1');
+      assert.equal(pendingNearRes.status, 200);
+      const notYetVisible = pendingNearRes.body.data.find((m) => m.name === 'Hauz Khas 24/7 Police Assistance Booth');
+      assert.equal(notYetVisible, undefined, 'Pending marker must not be publicly listed');
+
+      // Privileged reviewer approves the marker
+      const adminUser = db.saveUser(createUser({
+        id: 'usr_marker_admin_test',
+        name: 'Marker Admin',
+        email: 'markeradmin@safesphere.test',
+        phone: '+919000000001',
+        role: 'admin'
+      }));
+      const adminToken = signAccessToken(adminUser);
+      const verifyRes = await apiRequest(`/api/v1/markers/${res.body.data.id}/verify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${adminToken}` },
+        body: { approve: true }
+      });
+      assert.equal(verifyRes.status, 200);
+
+      // Now the verified marker is discoverable via proximity search
       const nearRes = await apiRequest('/api/v1/markers/nearby?lat=28.5494&lon=77.2001&radius=1');
       assert.equal(nearRes.status, 200);
       const found = nearRes.body.data.find((m) => m.name === 'Hauz Khas 24/7 Police Assistance Booth');

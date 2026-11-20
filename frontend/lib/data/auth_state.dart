@@ -211,11 +211,13 @@ class AuthState extends ChangeNotifier {
         notifyListeners();
         return true;
       } else {
+        _status = AuthStatus.unauthenticated;
         _errorMessage = result.message ?? 'Failed to send OTP.';
         notifyListeners();
         return false;
       }
     } catch (e) {
+      _status = AuthStatus.unauthenticated;
       _errorMessage = e.toString();
       notifyListeners();
       return false;
@@ -238,7 +240,10 @@ class AuthState extends ChangeNotifier {
       final result = await authService.verifyOtp(phone: phone, code: code);
       if (result.success && result.user != null) {
         _currentUser = result.user;
-        _status = AuthStatus.authenticated;
+        // OTP login must honor the same PIN lock as password login —
+        // otherwise OTP bypasses the app-lock barrier entirely.
+        final hasPin = await authService.hasStoredPin();
+        _status = hasPin ? AuthStatus.pinLocked : AuthStatus.authenticated;
         _pendingPhone = null;
         notifyListeners();
         return true;

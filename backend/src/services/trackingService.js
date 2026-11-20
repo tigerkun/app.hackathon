@@ -45,6 +45,9 @@ function assertTrackingToken(session, token) {
 function isValidTrackingToken(sessionId, token) {
   const session = db.findTrackingSessionById(sessionId);
   if (!session) return false;
+  // Ended/terminated sessions must not remain subscribable — the token is a
+  // live credential, not a historical key.
+  if (session.status && session.status !== 'active') return false;
   return safeTokenEquals(session.token, token);
 }
 
@@ -312,11 +315,15 @@ function processCheckInDeadlines(now = new Date(), broadcastFn = null) {
     const deadlineDate = new Date(session.checkInDeadline);
 
     if (nowDate > deadlineDate) {
-      const newMissed = (Number(session.missedCheckIns) || 0) + 1;
       const intervalMs = Number(session.checkInIntervalMin || 60) * 60 * 1000;
-      let nextDeadlineMs = deadlineDate.getTime() + intervalMs;
-      if (nextDeadlineMs <= nowDate.getTime()) {
-        nextDeadlineMs = nowDate.getTime() + intervalMs;
+      // Count EVERY missed window, not just one — after a long silence the
+      // deadline may be many intervals in the past.
+      const elapsedMs = nowDate.getTime() - deadlineDate.getTime();
+      const missedWindows = Math.floor(elapsedMs / intervalMs) + 1;
+      const newMissed = (Number(session.missedCheckIns) || 0) + missedWindows;
+      let nextDeadlineMs = deadlineDate.getTime() + missedWindows * intervalMs;
+      while (nextDeadlineMs <= nowDate.getTime()) {
+        nextDeadlineMs += intervalMs;
       }
       const nextDeadlineIso = new Date(nextDeadlineMs).toISOString();
 

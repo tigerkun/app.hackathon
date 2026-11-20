@@ -291,23 +291,39 @@ describe('Two-Way SOS Responder Chat Tests (F4-1)', () => {
       alertType: 'CRITICAL_SOS'
     });
 
-    // Connect receiver socket
+    // Connect receiver socket and subscribe to the alert room with a valid
+    // credential (chat delivery is room-scoped and credential-gated)
     const receiverWs = new WebSocket(wsUrl);
     await new Promise((resolve) => receiverWs.on('open', resolve));
 
-    // Connect sender socket
-    const senderWs = new WebSocket(wsUrl);
-    await new Promise((resolve) => senderWs.on('open', resolve));
-
     const receivedMessages = [];
+    let subscribed = false;
     receiverWs.on('message', (raw) => {
       try {
         const parsed = JSON.parse(raw.toString());
+        if (parsed.type === 'SUBSCRIBED_ALERT') subscribed = true;
         if (parsed.type === 'CHAT_MESSAGE') {
           receivedMessages.push(parsed);
         }
       } catch (_) {}
     });
+
+    receiverWs.send(JSON.stringify({
+      type: 'SUBSCRIBE_ALERT',
+      alertId: alert.id,
+      token: alert.resolveToken
+    }));
+    await new Promise((resolve) => {
+      const check = setInterval(() => {
+        if (subscribed) { clearInterval(check); resolve(); }
+      }, 30);
+      setTimeout(() => { clearInterval(check); resolve(); }, 2000);
+    });
+    assert.ok(subscribed, 'Receiver should be subscribed to the alert room');
+
+    // Connect sender socket
+    const senderWs = new WebSocket(wsUrl);
+    await new Promise((resolve) => senderWs.on('open', resolve));
 
     // Send chat frame from sender
     senderWs.send(JSON.stringify({
@@ -445,7 +461,8 @@ describe('Two-Way SOS Responder Chat Tests (F4-1)', () => {
 
     ws.send(JSON.stringify({
       type: 'SUBSCRIBE_ALERT',
-      alertId: alert.id
+      alertId: alert.id,
+      token: alert.resolveToken
     }));
 
     await new Promise((resolve) => {

@@ -70,6 +70,10 @@ class _ReportPageState extends State<ReportPage> {
           _longitude = last.longitude;
           _locationTag = "${last.latitude.toStringAsFixed(5)}, ${last.longitude.toStringAsFixed(5)} (Last Known GPS)";
         });
+      } else if (mounted) {
+        setState(() {
+          _locationTag = "Location unavailable";
+        });
       }
     } catch (_) {
       if (mounted) {
@@ -106,7 +110,7 @@ class _ReportPageState extends State<ReportPage> {
     // Send clean "lat,lng" without the "(GPS Verified)" UI tag in backend payload
     final cleanPayloadLocation = (_latitude != null && _longitude != null)
         ? "${_latitude!.toStringAsFixed(5)}, ${_longitude!.toStringAsFixed(5)}"
-        : (_locationTag.contains('(') ? _locationTag.split('(').first.trim() : _locationTag);
+        : '';
     final backendReport = await authService.submitReport(
       type: selectedType,
       description: description,
@@ -141,7 +145,7 @@ class _ReportPageState extends State<ReportPage> {
       } else {
         messenger.showSnackBar(
           const SnackBar(
-            content: Text("Report saved locally. Will sync when backend is reachable."),
+            content: Text("Report could not be submitted — backend unreachable. Please retry when connected."),
             backgroundColor: Colors.orange,
           ),
         );
@@ -353,14 +357,14 @@ class _ReportPageState extends State<ReportPage> {
                             icon: const Icon(Icons.add_a_photo_outlined, size: 20),
                             label: const Text("Add Photo (Optional, ≤500KB)"),
                             onPressed: () {
-                              // TODO(REAL_HARDWARE): Native gallery/camera pick requires image_picker or file_picker in pubspec.
-                              // Attaches simulated JPEG base64 for functional testing.
-                              setState(() {
-                                _photoBase64 =
-                                    "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=";
-                              });
+                              // TODO(REAL_HARDWARE): Native gallery/camera pick requires
+                              // image_picker or file_picker in pubspec. Until then we must
+                              // NEVER submit a synthetic/placeholder image as evidence.
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text("Simulated hazard photo attached (≤500KB JPEG).")),
+                                const SnackBar(
+                                  content: Text("Photo attachment isn't available in this build yet — submit without a photo."),
+                                  backgroundColor: Colors.orange,
+                                ),
                               );
                             },
                           )

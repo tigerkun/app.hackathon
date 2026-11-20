@@ -96,6 +96,7 @@ class DataStore {
         latitude REAL NOT NULL,
         longitude REAL NOT NULL,
         address TEXT,
+        note TEXT,
         isVerified INTEGER NOT NULL DEFAULT 1,
         status TEXT NOT NULL DEFAULT 'verified',
         verifiedBy TEXT,
@@ -185,6 +186,9 @@ class DataStore {
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE markers ADD COLUMN verifiedAt TEXT");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE markers ADD COLUMN note TEXT");
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE alerts ADD COLUMN resolveTokenHash TEXT");
@@ -726,6 +730,7 @@ class DataStore {
       latitude: Number(row.latitude),
       longitude: Number(row.longitude),
       address: row.address ?? null,
+      note: row.note ?? null,
       isVerified: Boolean(row.isVerified),
       status: row.status || (Boolean(row.isVerified) ? 'verified' : 'pending'),
       verifiedBy: row.verifiedBy ?? null,
@@ -757,6 +762,12 @@ class DataStore {
     } else if (!filter.includeRejected) {
       conditions.push("(status != 'rejected' OR status IS NULL)");
     }
+    // Public marker lists must only expose verified markers — pending
+    // community submissions stay in the privileged review queue unless the
+    // caller explicitly filters or is privileged (includeUnverified).
+    if (!filter.status && filter.isVerified === undefined && !filter.includeUnverified) {
+      conditions.push("(status = 'verified' OR (status IS NULL AND isVerified = 1))");
+    }
     let sql = 'SELECT * FROM markers';
     if (conditions.length > 0) {
       sql += ' WHERE ' + conditions.join(' AND ');
@@ -772,7 +783,7 @@ class DataStore {
 
   getPendingMarkers() {
     const rows = this.db.prepare(
-      "SELECT * FROM markers WHERE isVerified = 0 OR status = 'pending' ORDER BY createdAt DESC"
+      "SELECT * FROM markers WHERE status = 'pending' OR (status IS NULL AND isVerified = 0) ORDER BY createdAt DESC"
     ).all();
     return rows.map((r) => this._formatMarker(r));
   }
@@ -800,14 +811,15 @@ class DataStore {
     const status = marker.status || (isVerified ? 'verified' : 'pending');
     this.db.prepare(`
       INSERT INTO markers (
-        id, name, category, latitude, longitude, address, isVerified, status, verifiedBy, verifiedAt, createdAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, name, category, latitude, longitude, address, note, isVerified, status, verifiedBy, verifiedAt, createdAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         category = excluded.category,
         latitude = excluded.latitude,
         longitude = excluded.longitude,
         address = excluded.address,
+        note = excluded.note,
         isVerified = excluded.isVerified,
         status = excluded.status,
         verifiedBy = excluded.verifiedBy,
@@ -820,6 +832,7 @@ class DataStore {
       Number(marker.latitude),
       Number(marker.longitude),
       marker.address ?? null,
+      marker.note ?? null,
       isVerified,
       status,
       marker.verifiedBy ?? null,

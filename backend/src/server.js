@@ -12,7 +12,7 @@ const { db } = require('./data/store');
 const server = http.createServer(app);
 
 // WebSocket Server for Real-Time SOS Streaming
-const wss = new WebSocketServer({ server, path: '/ws/sos' });
+const wss = new WebSocketServer({ server, path: '/ws/sos', maxPayload: 16 * 1024 });
 
 // Track connected WebSocket clients
 const clients = new Set();
@@ -44,19 +44,11 @@ wss.on('connection', (ws, req) => {
     try {
       const message = JSON.parse(data.toString());
 
-      // Broadcast emergency telemetry to all active monitors/dispatchers
-      if (message.type === 'SOS_TELEMETRY' || message.type === 'SOS_TRIGGER') {
-        const payload = JSON.stringify({
-          ...message,
-          relayedAt: new Date().toISOString()
-        });
-
-        for (const client of clients) {
-          if (client !== ws && client.readyState === WebSocket.OPEN) {
-            client.send(payload, (err) => {});
-          }
-        }
-      } else if (message.type === 'SUBSCRIBE_TRACKING') {
+      // NOTE: client-originated SOS_TELEMETRY / SOS_TRIGGER frames are NOT
+      // relayed. Server-generated alerts are broadcast via broadcastSosAlert
+      // from sosService; relaying unauthenticated client frames allowed any
+      // connected socket to spoof emergency alerts to all monitors.
+      if (message.type === 'SUBSCRIBE_TRACKING') {
         const sessionId = message.sessionId;
         if (!sessionId) {
           return ws.send(JSON.stringify({
@@ -109,7 +101,9 @@ wss.on('connection', (ws, req) => {
           return;
         }
 
-        // Persist breadcrumb in database
+        // Persist breadcrumb in database — only broadcast if accepted.
+        // Broadcasting rejected pings let guardians see "live" locations the
+        // server refused to persist, and NaN coordinates could leak through.
         try {
           const trackingService = require('./services/trackingService');
           trackingService.recordPing({
@@ -122,7 +116,13 @@ wss.on('connection', (ws, req) => {
             timestamp,
             token: message.token
           });
-        } catch (_) {}
+        } catch (err) {
+          return ws.send(JSON.stringify({
+            type: 'ERROR',
+            code: err && err.code ? err.code : 'PING_REJECTED',
+            message: (err && err.message) || 'Location ping rejected'
+          }), (sendErr) => {});
+        }
 
         // Broadcast to all subscribed guardians
         broadcastLocationUpdate(sessionId, {
@@ -162,6 +162,28 @@ wss.on('connection', (ws, req) => {
             message: 'alertId is required to subscribe to alert room'
           }), (err) => {});
         }
+
+        // Alert rooms carry responder chat — subscribing requires the same
+        // credential as sending (JWT, responder role, or valid resolveToken).
+        const alert = db.findAlertById(alertId);
+        if (!alert) {
+          return ws.send(JSON.stringify({
+            type: 'ERROR',
+            code: 'ALERT_NOT_FOUND',
+            message: `Alert ${alertId} not found`
+          }), (err) => {});
+        }
+        const subscribeToken = message.token || message.sessionId || message.resolveToken;
+        const sosService = require('./services/sosService');
+        const authResult = sosService.authenticateChatSender({ alert, token: subscribeToken });
+        if (!authResult.authorized) {
+          return ws.send(JSON.stringify({
+            type: 'ERROR',
+            code: 'UNAUTHORIZED_ALERT_SUBSCRIBE',
+            message: 'Valid credentials are required to subscribe to this alert room'
+          }), (err) => {});
+        }
+
         if (!alertRooms.has(alertId)) {
           alertRooms.set(alertId, new Set());
         }
@@ -309,13 +331,24 @@ if (pingInterval.unref) {
 
 // Periodic 60s watchdog to evaluate tracking check-in deadlines
 const checkInWatchdogInterval = setInterval(() => {
+
   try {
     const trackingService = require('./services/trackingService');
     trackingService.processCheckInDeadlines(new Date());
-  } catch (_) {}
+  } catch (err) {
+    console.error('Check-in watchdog tick error:', err);
+  }
 }, 60000);
 if (checkInWatchdogInterval.unref) {
   checkInWatchdogInterval.unref();
+}
+
+// Start the SOS escalation watchdog at boot — persisted active alerts must
+// keep escalating across restarts, not only after the next triggerSos call.
+try {
+  require('./services/sosService').startEscalationWatchdog();
+} catch (err) {
+  console.error('Failed to start SOS escalation watchdog:', err);
 }
 
 wss.on('close', () => {
@@ -397,6 +430,8 @@ function broadcastSosEscalated({ alertId, level, elapsedMin }) {
 function broadcastSosChatMessage({ alertId, message }) {
   const { toSafeSosMessage } = require('./models/sosMessageModel');
   const safeMessage = toSafeSosMessage(message);
+  const room = alertRooms.get(alertId);
+  if (!room || room.size === 0) return;
   const payload = JSON.stringify({
     type: 'CHAT_MESSAGE',
     alertId,
@@ -404,20 +439,12 @@ function broadcastSosChatMessage({ alertId, message }) {
     timestamp: safeMessage.createdAt || new Date().toISOString()
   });
 
-  const room = alertRooms.get(alertId);
-  const roomClients = room ? Array.from(room) : [];
-  for (const client of roomClients) {
+  // Chat is credential-gated: deliver ONLY to authenticated room members.
+  // Broadcasting to every unscoped client leaked private responder/victim
+  // messages to anyone connected to /ws/sos.
+  for (const client of room) {
     if (client.readyState === WebSocket.OPEN) {
       client.send(payload, (err) => {});
-    }
-  }
-
-  // Also broadcast to any connected client not subscribed to a specific room (global monitors)
-  for (const client of clients) {
-    if (!client.subscribedAlerts || client.subscribedAlerts.size === 0) {
-      if ((!room || !room.has(client)) && client.readyState === WebSocket.OPEN) {
-        client.send(payload, (err) => {});
-      }
     }
   }
 }

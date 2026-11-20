@@ -203,6 +203,13 @@ function resolveSos(alertId, notes = null) {
 const chatRateLimits = new Map();
 
 function checkChatRateLimit(key, now = Date.now()) {
+  // Bound memory: opportunistically evict entries older than 1 hour once the
+  // map grows large (keys are per-alert per-sender and never otherwise expire).
+  if (chatRateLimits.size > 500) {
+    for (const [k, t] of chatRateLimits) {
+      if (now - t > 3600000) chatRateLimits.delete(k);
+    }
+  }
   const last = chatRateLimits.get(key) || 0;
   if (now - last < 2000) {
     return false;

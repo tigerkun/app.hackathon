@@ -152,7 +152,8 @@ class AuthService {
 
       final response = await request.close().timeout(const Duration(seconds: 5));
       final statusCode = response.statusCode;
-      final responseBody = await response.transform(utf8.decoder).join();
+      final responseBody = await response.transform(utf8.decoder).join()
+          .timeout(const Duration(seconds: 10));
 
       Map<String, dynamic>? decoded;
       if (responseBody.isNotEmpty) {
@@ -372,16 +373,28 @@ class AuthService {
 
     final res = await _request(method: 'POST', path: '/api/v1/auth/otp/verify', body: body);
 
-    if (res != null && (res['success'] == true || res['accessToken'] != null)) {
-      final tokens = AuthTokens(
-        accessToken: res['accessToken'] as String? ?? (res['data']?['accessToken'] as String? ?? ''),
-        refreshToken: res['refreshToken'] as String? ?? (res['data']?['refreshToken'] as String? ?? ''),
-        expiresIn: res['expiresIn'] as int? ?? (res['data']?['expiresIn'] as int? ?? 3600),
-      );
-
+    if (res != null && res['success'] == true) {
+      final accessToken = res['accessToken'] as String? ??
+          (res['data']?['accessToken'] as String? ?? '');
       final userJson = (res['user'] as Map<String, dynamic>?) ??
           (res['data']?['user'] as Map<String, dynamic>?) ??
           <String, dynamic>{};
+
+      // Unregistered phones get success:true + phoneVerifiedToken but NO
+      // session. Never treat that as authenticated — it created phantom
+      // sessions with empty tokens/users.
+      if (accessToken.isEmpty || userJson['id'] == null) {
+        return AuthResult(
+          success: false,
+          message: 'Phone verified. Please complete registration to continue.',
+        );
+      }
+
+      final tokens = AuthTokens(
+        accessToken: accessToken,
+        refreshToken: res['refreshToken'] as String? ?? (res['data']?['refreshToken'] as String? ?? ''),
+        expiresIn: res['expiresIn'] as int? ?? (res['data']?['expiresIn'] as int? ?? 3600),
+      );
 
       final user = UserModel.fromJson(userJson);
 
@@ -506,7 +519,7 @@ class AuthService {
       await storage.remove(keyToken);
       await storage.remove(keyRefreshToken);
       await storage.remove(keyUser);
-      await storage.remove(keyPin);
+      await removePin();
       _currentUser = null;
       _isPinLocked = false;
       return true;
@@ -852,6 +865,12 @@ class AuthService {
         return (res.data!['data'] as List).cast<Map<String, dynamic>>();
       }
     }
+    // Guests/anonymous users must NOT receive the global SOS list — it exposes
+    // other users' alert locations and notes. Only authenticated users may
+    // fall back to the public endpoint filtered to their own alerts.
+    if (_currentUser?.id == null) {
+      return [];
+    }
     final res = await _requestDetailed(
       method: 'GET',
       path: '/api/v1/sos?limit=$limit',
@@ -859,10 +878,7 @@ class AuthService {
     );
     if (res.isSuccess && res.data != null && res.data!['data'] is List) {
       final list = (res.data!['data'] as List).cast<Map<String, dynamic>>();
-      if (_currentUser?.id != null) {
-        return list.where((a) => a['userId'] == _currentUser!.id).toList();
-      }
-      return list;
+      return list.where((a) => a['userId'] == _currentUser!.id).toList();
     }
     return [];
   }
