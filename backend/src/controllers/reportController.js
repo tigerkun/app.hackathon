@@ -4,7 +4,7 @@
  */
 
 const { db } = require('../data/store');
-const { createReport } = require('../models/reportModel');
+const { createReport, VALID_REPORT_STATUSES } = require('../models/reportModel');
 const { findNearby } = require('../services/geoService');
 
 function list(req, res, next) {
@@ -116,8 +116,65 @@ function getById(req, res, next) {
   }
 }
 
+function updateStatus(req, res, next) {
+  try {
+    const isPrivileged = Boolean(
+      req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
+    );
+
+    if (!isPrivileged) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Admin or responder privileges required to update report status',
+          details: []
+        }
+      });
+    }
+
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status || !VALID_REPORT_STATUSES.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `Invalid report status. Must be one of: ${VALID_REPORT_STATUSES.join(', ')}`,
+          details: []
+        }
+      });
+    }
+
+    const existing = db.findReportById(id);
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'REPORT_NOT_FOUND',
+          message: `Report with ID ${id} not found`,
+          details: []
+        }
+      });
+    }
+
+    const updated = db.updateReport(id, { status });
+
+    res.status(200).json({
+      success: true,
+      message: `Report status updated to ${status}`,
+      data: updated,
+      report: updated
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   create,
-  getById
+  getById,
+  updateStatus
 };

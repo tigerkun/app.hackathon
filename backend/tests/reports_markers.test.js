@@ -85,6 +85,75 @@ describe('SafeSphere Community Safety & Emergency API Tests', () => {
       assert.equal(res.body.success, false);
       assert.equal(res.body.error.code, 'VALIDATION_ERROR');
     });
+
+    it('manages report status lifecycle via POST /api/v1/reports/:id/status (privileged only)', async () => {
+      // Create a test report
+      const repRes = await serverHarness.request('/api/v1/reports', {
+        method: 'POST',
+        body: {
+          type: 'Theft',
+          description: 'Wallet stolen from café table',
+          location: 'Khan Market',
+          latitude: 28.6000,
+          longitude: 77.2270
+        }
+      });
+      assert.equal(repRes.status, 201);
+      const reportId = repRes.body.data.id;
+      assert.equal(repRes.body.data.status, 'pending');
+
+      // 1. Unauthenticated attempt
+      const unauth = await serverHarness.request(`/api/v1/reports/${reportId}/status`, {
+        method: 'POST',
+        body: { status: 'verified' }
+      });
+      assert.equal(unauth.status, 401);
+
+      // 2. Citizen attempt (unprivileged)
+      const citizen = createTestToken({ role: 'citizen' });
+      const citizenRes = await serverHarness.request(`/api/v1/reports/${reportId}/status`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizen.token}` },
+        body: { status: 'verified' }
+      });
+      assert.equal(citizenRes.status, 403);
+
+      // 3. Admin updates to verified
+      const admin = createTestToken({ role: 'admin' });
+      const adminRes = await serverHarness.request(`/api/v1/reports/${reportId}/status`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${admin.token}` },
+        body: { status: 'verified' }
+      });
+      assert.equal(adminRes.status, 200);
+      assert.equal(adminRes.body.data.status, 'verified');
+
+      // 4. Responder updates to resolved
+      const responder = createTestToken({ role: 'responder' });
+      const resolveRes = await serverHarness.request(`/api/v1/reports/${reportId}/status`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${responder.token}` },
+        body: { status: 'resolved' }
+      });
+      assert.equal(resolveRes.status, 200);
+      assert.equal(resolveRes.body.data.status, 'resolved');
+
+      // 5. Invalid status returns 400
+      const invalidRes = await serverHarness.request(`/api/v1/reports/${reportId}/status`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${admin.token}` },
+        body: { status: 'invalid_status_xyz' }
+      });
+      assert.equal(invalidRes.status, 400);
+
+      // 6. Non-existent report returns 404
+      const nonExistent = await serverHarness.request('/api/v1/reports/rep_non_existent/status', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${admin.token}` },
+        body: { status: 'rejected' }
+      });
+      assert.equal(nonExistent.status, 404);
+    });
   });
 
   // ===========================================================================

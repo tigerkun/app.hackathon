@@ -10,7 +10,7 @@ function generateReportId() {
 }
 
 const VALID_REPORT_TYPES = ['Theft', 'Harassment', 'Accident', 'Suspicious', 'Other'];
-const VALID_REPORT_STATUSES = ['pending', 'under_investigation', 'verified', 'resolved'];
+const VALID_REPORT_STATUSES = ['pending', 'under_investigation', 'verified', 'resolved', 'rejected'];
 
 function createReport({
   id = generateReportId(),
