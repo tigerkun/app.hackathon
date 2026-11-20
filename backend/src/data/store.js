@@ -454,6 +454,9 @@ class DataStore {
 
   deleteUser(id) {
     if (!id) return false;
+    this.db.prepare('DELETE FROM sessions WHERE userId = ?').run(id);
+    this.db.prepare('DELETE FROM alerts WHERE userId = ?').run(id);
+    this.db.prepare('DELETE FROM tracking_sessions WHERE userId = ?').run(id);
     const res = this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
     return res.changes > 0;
   }
@@ -487,6 +490,12 @@ class DataStore {
     if (!id) return null;
     const row = this.db.prepare('SELECT * FROM sessions WHERE id = ? LIMIT 1').get(id);
     return this._formatSession(row);
+  }
+
+  findSessionsByUserId(userId) {
+    if (!userId) return [];
+    const rows = this.db.prepare('SELECT * FROM sessions WHERE userId = ?').all(userId);
+    return rows.map((r) => this._formatSession(r));
   }
 
   findSessionByRefreshToken(refreshToken) {

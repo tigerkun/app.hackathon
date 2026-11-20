@@ -30,11 +30,13 @@ class AuthState extends ChangeNotifier {
   UserModel? _currentUser;
   String? _errorMessage;
   String? _pendingPhone;
+  bool _isOnboarded = true;
 
   AuthStatus get status => _status;
   UserModel? get currentUser => _currentUser;
   String? get errorMessage => _errorMessage;
   String? get pendingPhone => _pendingPhone;
+  bool get isOnboarded => _isOnboarded;
 
   bool get isAuthenticated => _status == AuthStatus.authenticated;
   bool get isGuest => _status == AuthStatus.guest;
@@ -65,6 +67,10 @@ class AuthState extends ChangeNotifier {
     unawaited(authService.processQueuedSosAlerts());
 
     try {
+      final onboardedStr = await authService.storage.getString(AuthService.keyOnboarded);
+      if (onboardedStr != null) {
+        _isOnboarded = onboardedStr == 'true';
+      }
       final hasPin = await authService.hasStoredPin();
       final user = await authService.getProfile();
 
@@ -269,5 +275,33 @@ class AuthState extends ChangeNotifier {
     _errorMessage = null;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
+  }
+
+  Future<void> completeOnboarding({String consentVersion = '1.0'}) async {
+    await authService.storage.setString(AuthService.keyOnboarded, 'true');
+    await authService.storage.setString(
+      AuthService.keyPrivacyConsent,
+      '{"version":"$consentVersion","timestamp":"${DateTime.now().toIso8601String()}"}',
+    );
+    _isOnboarded = true;
+    notifyListeners();
+  }
+
+  Future<bool> deleteAccount({String? pin}) async {
+    _status = AuthStatus.loading;
+    notifyListeners();
+    try {
+      final success = await authService.deleteAccount(pin: pin);
+      if (success) {
+        _currentUser = null;
+        _pendingPhone = null;
+        _status = AuthStatus.unauthenticated;
+        notifyListeners();
+        return true;
+      }
+    } catch (_) {}
+    _status = AuthStatus.authenticated;
+    notifyListeners();
+    return false;
   }
 }

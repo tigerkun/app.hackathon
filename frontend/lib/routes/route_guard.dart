@@ -14,6 +14,7 @@ import '../pages/auth/login_page.dart';
 import '../pages/auth/register_page.dart';
 import '../pages/auth/phone_otp_page.dart';
 import '../pages/auth/pin_lock_page.dart';
+import '../pages/onboarding_page.dart';
 
 class RouteGuard {
   static Route<dynamic> generateRoute(RouteSettings settings, AuthState authState) {
@@ -61,6 +62,12 @@ class RouteGuard {
         settings: settings,
       );
     }
+    if (routeName == AppRoutes.onboarding) {
+      return MaterialPageRoute(
+        builder: (_) => const OnboardingPage(),
+        settings: settings,
+      );
+    }
 
     // 4. Protected Routes (/profile, /contacts)
     if (routeName == AppRoutes.profile || routeName == AppRoutes.contacts) {
@@ -84,7 +91,7 @@ class RouteGuard {
     // 6. Guest Fallback & Standard Route Resolution
     // (allows guest browsing of /home, /safety-map, /alerts, /ai-assistant, /about)
     return MaterialPageRoute(
-      builder: (_) => _resolveStandardPage(routeName),
+      builder: (_) => _resolveStandardPage(routeName, isOnboarded: authState.isOnboarded),
       settings: settings,
     );
   }
@@ -96,7 +103,10 @@ class RouteGuard {
     return const EmergencyPage();
   }
 
-  static Widget _resolveStandardPage(String routeName) {
+  static Widget _resolveStandardPage(String routeName, {bool isOnboarded = true}) {
+    if (!isOnboarded && routeName != AppRoutes.about) {
+      return const OnboardingPage();
+    }
     switch (routeName) {
       case AppRoutes.root:
       case AppRoutes.home:

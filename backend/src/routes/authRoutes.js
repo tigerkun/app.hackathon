@@ -33,8 +33,9 @@ router.post('/otp/verify', validateOtpVerify, authController.verifyOtp);
 // Session token refresh
 router.post('/refresh', validateRefresh, authController.refresh);
 
-// Protected user profile
+// Protected user profile & deletion
 router.get('/me', requireAuth, authController.me);
+router.delete('/me', requireAuth, authController.deleteMe);
 
 // Session logout
 router.post('/logout', requireAuth, authController.logout);

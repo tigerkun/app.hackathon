@@ -542,4 +542,74 @@ describe('SafeSphere Authentication API & Service Tests', () => {
       assert.equal(refreshAfterLogout.body.error.code, 'INVALID_SESSION');
     });
   });
+
+  // ===========================================================================
+  // 8. Account Deletion & DPDP Data Wipe (DELETE /api/v1/auth/me)
+  // ===========================================================================
+  describe('Account Deletion & DPDP Data Wipe (DELETE /api/v1/auth/me)', () => {
+    it('rejects account deletion without authorization token', async () => {
+      const res = await serverHarness.request('/api/v1/auth/me', {
+        method: 'DELETE'
+      });
+      assert.equal(res.status, 401);
+      assert.equal(res.body.success, false);
+    });
+
+    it('rejects deletion with invalid PIN when user has PIN configured', async () => {
+      const loginRes = await serverHarness.request('/api/v1/auth/login', {
+        method: 'POST',
+        body: {
+          emailOrPhone: 'demo@safesphere.org',
+          password: 'SafeSphere@2026'
+        }
+      });
+      const { accessToken } = loginRes.body.data;
+
+      const deleteRes = await serverHarness.request('/api/v1/auth/me', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: { pin: '0000' } // Demo pin is 1234
+      });
+
+      assert.equal(deleteRes.status, 401);
+      assert.equal(deleteRes.body.error.code, 'INVALID_PIN');
+    });
+
+    it('successfully deletes user account and wipes sessions, alerts, and tracking', async () => {
+      const loginRes = await serverHarness.request('/api/v1/auth/login', {
+        method: 'POST',
+        body: {
+          emailOrPhone: 'demo@safesphere.org',
+          password: 'SafeSphere@2026'
+        }
+      });
+      const { accessToken } = loginRes.body.data;
+      const demoUser = db.findUserByEmail('demo@safesphere.org');
+
+      // Create an alert and a tracking session for demo user
+      db.saveAlert({
+        id: 'sos_demo_to_delete',
+        userId: demoUser.id,
+        userName: demoUser.name,
+        latitude: 28.6139,
+        longitude: 77.2090,
+        alertType: 'CRITICAL_SOS',
+        status: 'active'
+      });
+
+      const deleteRes = await serverHarness.request('/api/v1/auth/me', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: { pin: '1234' }
+      });
+
+      assert.equal(deleteRes.status, 200);
+      assert.equal(deleteRes.body.success, true);
+
+      // Verify user and their alerts/sessions are wiped
+      assert.equal(db.findUserById(demoUser.id), null);
+      assert.equal(db.findAlertById('sos_demo_to_delete'), null);
+      assert.equal(db.findSessionsByUserId(demoUser.id).length, 0);
+    });
+  });
 });

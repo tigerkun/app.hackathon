@@ -6,6 +6,7 @@ class AppRoutes {
   static const String register = '${_p}register';
   static const String otp = '${_p}otp';
   static const String pinLock = '${_p}pin-lock';
+  static const String onboarding = '${_p}onboarding';
 
   // Unconditional Emergency Routes (Zero Barrier)
   static const String emergency = '/emergency';

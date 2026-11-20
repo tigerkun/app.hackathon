@@ -65,6 +65,8 @@ class AuthService {
   static const String keyOfflineSosQueue = 'safesphere_offline_sos_queue';
   static const String keyActiveSosId = 'safesphere_active_sos_id';
   static const String keyActiveSosResolveToken = 'safesphere_active_sos_resolve_token';
+  static const String keyOnboarded = 'safesphere_onboarded';
+  static const String keyPrivacyConsent = 'safesphere_privacy_consent';
   static const int maxOfflineSosQueueSize = 20;
 
   /// Compile-time configurable API base URL.
@@ -484,6 +486,30 @@ class AuthService {
 
     _currentUser = null;
     _isPinLocked = false;
+  }
+
+  /// Deletes user account and wipes emergency records on backend (DELETE /api/v1/auth/me)
+  Future<bool> deleteAccount({String? pin}) async {
+    final token = await storage.getString(keyToken);
+    if (token == null || token.isEmpty) return false;
+
+    final res = await _requestDetailed(
+      method: 'DELETE',
+      path: '/api/v1/auth/me',
+      body: pin != null && pin.isNotEmpty ? {'pin': pin} : null,
+      token: token,
+    );
+
+    if (res.isSuccess) {
+      await storage.remove(keyToken);
+      await storage.remove(keyRefreshToken);
+      await storage.remove(keyUser);
+      await storage.remove(keyPin);
+      _currentUser = null;
+      _isPinLocked = false;
+      return true;
+    }
+    return false;
   }
 
   // ---------------------------------------------------------------------------

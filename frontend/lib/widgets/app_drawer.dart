@@ -109,6 +109,14 @@ class AppDrawer extends StatelessWidget {
                   },
                 ),
                 ListTile(
+                  leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.teal),
+                  title: const Text('Privacy & Consent (DPDP)', style: TextStyle(color: Colors.white)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showPrivacyConsentDialog(context, authState);
+                  },
+                ),
+                ListTile(
                   leading: const Icon(Icons.logout, color: AppColors.red),
                   title: const Text('Logout', style: TextStyle(color: AppColors.red)),
                   onTap: () async {
@@ -290,6 +298,143 @@ class AppDrawer extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Close', style: TextStyle(color: AppColors.teal)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPrivacyConsentDialog(BuildContext context, AuthState authState) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        title: const Row(
+          children: [
+            Icon(Icons.privacy_tip, color: AppColors.teal, size: 22),
+            SizedBox(width: 8),
+            Text('Privacy & DPDP Consent', style: TextStyle(color: Colors.white, fontSize: 16)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "Compliance with India DPDP Act 2023",
+              style: TextStyle(color: AppColors.teal, fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "• Policy Version: 1.0 (Active)\n"
+              "• Processing Scope: Location and contacts strictly for emergency dispatch and guardian tracking.\n"
+              "• Data Retention: You have the right to erase all account records and live telemetry at any time.",
+              style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+            ),
+            const SizedBox(height: 16),
+            const Divider(color: Colors.white24),
+            const SizedBox(height: 8),
+            const Text(
+              "Danger Zone",
+              style: TextStyle(color: AppColors.red, fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              "Delete your SafeSphere account and erase all associated sessions, alerts, and tracking data from backend servers.",
+              style: TextStyle(color: Colors.white60, fontSize: 11),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.red,
+                side: const BorderSide(color: AppColors.red),
+              ),
+              icon: const Icon(Icons.delete_forever, size: 18),
+              label: const Text("Delete My Account"),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _showDeleteAccountConfirm(context, authState);
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await authState.completeOnboarding(consentVersion: '1.0');
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('DPDP Privacy consent updated (Policy v1.0)')),
+              );
+            },
+            child: const Text('Re-consent (v1.0)', style: TextStyle(color: AppColors.teal)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close', style: TextStyle(color: Colors.white70)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteAccountConfirm(BuildContext context, AuthState authState) {
+    final pinController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        title: const Text('Confirm Account Erasure', style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "This action is permanent and cannot be undone. All your emergency alerts, sessions, and live tracking records will be permanently erased.",
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: pinController,
+              keyboardType: TextInputType.number,
+              obscureText: true,
+              maxLength: 6,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: "Enter Security PIN (if configured)",
+                labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
+                counterText: "",
+                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.red)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
+            onPressed: () async {
+              final pin = pinController.text.trim();
+              Navigator.pop(ctx);
+              final success = await authState.deleteAccount(pin: pin.isNotEmpty ? pin : null);
+              if (!context.mounted) return;
+              if (success) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Account and data deleted successfully.')),
+                );
+                Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (_) => false);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Failed to delete account. Check PIN and network.')),
+                );
+              }
+            },
+            child: const Text('Delete Account', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),

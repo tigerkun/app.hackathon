@@ -357,6 +357,16 @@ async function loginBiometrics({ biometricToken, userAgent, ipAddress }) {
   };
 }
 
+async function deleteAccount(userId) {
+  if (!userId) {
+    const error = new Error('User ID is required for account deletion');
+    error.status = 400;
+    error.code = 'MISSING_USER_ID';
+    throw error;
+  }
+  return db.deleteUser(userId);
+}
+
 module.exports = {
   register,
   login,
@@ -365,5 +375,6 @@ module.exports = {
   refreshSession,
   logout,
   registerBiometrics,
-  loginBiometrics
+  loginBiometrics,
+  deleteAccount
 };

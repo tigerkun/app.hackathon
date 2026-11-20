@@ -238,6 +238,73 @@ async function loginBiometrics(req, res, next) {
   }
 }
 
+async function deleteMe(req, res, next) {
+  try {
+    const userId = req.userId || (req.user && req.user.id);
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Authentication is required to delete account',
+          details: []
+        }
+      });
+    }
+
+    const { pin } = req.body || {};
+    const { db } = require('../data/store');
+    const user = db.findUserById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User account not found',
+          details: []
+        }
+      });
+    }
+
+    // If account has a PIN set, re-auth PIN verification is required
+    if (user.pinHash || user.pin) {
+      if (!pin) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'PIN_REQUIRED',
+            message: 'PIN is required to confirm account deletion',
+            details: []
+          }
+        });
+      }
+      const bcrypt = require('bcryptjs');
+      const pinMatches = user.pinHash
+        ? await bcrypt.compare(String(pin), user.pinHash)
+        : (user.pin && user.pin === String(pin));
+      if (!pinMatches) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'INVALID_PIN',
+            message: 'Incorrect security PIN for account deletion',
+            details: []
+          }
+        });
+      }
+    }
+
+    await authService.deleteAccount(userId);
+
+    res.status(200).json({
+      success: true,
+      message: 'User account, sessions, alerts, and tracking data deleted successfully'
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   register,
   login,
@@ -248,5 +315,6 @@ module.exports = {
   me,
   logout,
   registerBiometrics,
-  loginBiometrics
+  loginBiometrics,
+  deleteMe
 };

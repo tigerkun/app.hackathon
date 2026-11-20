@@ -12,6 +12,7 @@ import 'pages/share_location_page.dart';
 import 'pages/track_session_page.dart';
 import 'pages/emergency_page.dart';
 import 'pages/about_page.dart';
+import 'pages/onboarding_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,6 +36,7 @@ final Map<String, WidgetBuilder> _appRouteMap = {
   '/track': (_) => const TrackSessionPage(),
   '/emergency': (_) => const EmergencyPage(),
   '/about': (_) => const AboutPage(),
+  '/onboarding': (_) => const OnboardingPage(),
   '/community': (_) => const CommunityAlertsPage(),
   '/chat': (_) => const AiAssistantPage(),
 };
