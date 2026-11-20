@@ -67,8 +67,15 @@ describe('DB Snapshot Persistence (Supabase Storage)', () => {
             res.writeHead(200);
             res.end(storedObject);
           } else {
-            res.writeHead(404);
-            res.end(JSON.stringify({ error: 'Object not found' }));
+            // Faithful Supabase shape: missing objects are HTTP 400 with an
+            // inner statusCode 404 / NoSuchKey body (not a clean HTTP 404).
+            res.writeHead(400);
+            res.end(JSON.stringify({
+              statusCode: '404',
+              error: 'not_found',
+              message: 'Object not found',
+              code: 'NoSuchKey'
+            }));
           }
           return;
         }

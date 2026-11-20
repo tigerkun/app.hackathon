@@ -97,6 +97,24 @@ async function hydrateStoreFromSnapshot(getDb) {
   }
 
   if (!res.ok) {
+    // Supabase Storage quirk: a MISSING object comes back as HTTP 400 with an
+    // inner { statusCode: "404", code: "NoSuchKey" } body, not a clean 404.
+    // That shape is a legitimate first boot, not an infrastructure failure.
+    let body = null;
+    try { body = await res.json(); } catch (_) { body = null; }
+    const isMissingObject = Boolean(
+      body
+      && (
+        body.code === 'NoSuchKey'
+        || String(body.statusCode) === '404'
+        || /object not found/i.test(String(body.message || ''))
+      )
+    );
+    if (isMissingObject) {
+      console.log('[dbSnapshot] no remote snapshot yet (first boot, Supabase 400-NoSuchKey shape) — starting fresh');
+      state.uploadsEnabled = true;
+      return { attempted: true, restored: false, uploadsEnabled: true };
+    }
     state.uploadsEnabled = false;
     console.warn(
       `[dbSnapshot] hydrate failed: HTTP ${res.status} — serving with an empty local DB. Remote snapshot uploads DISABLED for this process to prevent data loss.`
