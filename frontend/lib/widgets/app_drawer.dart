@@ -105,7 +105,24 @@ class AppDrawer extends StatelessWidget {
                 value: authState.emergencyGesturesEnabled,
                 activeColor: AppColors.teal,
                 onChanged: (val) async {
+                  try {
+                    HapticFeedback.selectionClick();
+                  } catch (_) {}
                   await authState.setEmergencyGestures(val);
+                },
+              ),
+
+              SwitchListTile(
+                secondary: const Icon(Icons.phone_in_talk_outlined, color: AppColors.teal),
+                title: const Text('Discreet Mode', style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Fake call screen & muted SOS visuals (UI-level)', style: TextStyle(color: Colors.white60, fontSize: 12)),
+                value: authState.isDiscreetMode,
+                activeColor: AppColors.teal,
+                onChanged: (val) async {
+                  try {
+                    HapticFeedback.selectionClick();
+                  } catch (_) {}
+                  await authState.setDiscreetMode(val);
                 },
               ),
 

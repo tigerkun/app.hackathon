@@ -12,6 +12,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/auth_service.dart';
 import '../services/gesture_service.dart';
+import '../data/auth_state.dart';
 
 class EmergencyPage extends StatefulWidget {
   const EmergencyPage({super.key});
@@ -450,9 +451,44 @@ class _EmergencyPageState extends State<EmergencyPage> {
                 _buildResponderChatPanel(textColor, cardColor, isDark),
               ],
 
+              // F5-3: Discreet mode fake-call screen affordance
+              if (AuthState().isDiscreetMode) ...[
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.visibility_off, color: Colors.white70, size: 20),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          "Discreet Mode active: SOS buttons visually muted. UI-level discretion only.",
+                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _actionCard(
+                  color: const Color(0xFF0F766E),
+                  icon: Icons.phone_callback,
+                  title: "Fake Call Screen",
+                  subtitle: "Simulate an incoming phone call to exit uncomfortable situations",
+                  semanticsLabel: "Fake call screen",
+                  onTap: () => _showFakeCallScreen(context),
+                ),
+                const SizedBox(height: 16),
+              ],
+
               // 🚨 EMERGENCY CALL
               _actionCard(
-                color: const Color(0xFFB71C1C),
+                color: AuthState().isDiscreetMode ? const Color(0xFF1E293B) : const Color(0xFFB71C1C),
                 icon: Icons.call,
                 title: "Call Emergency",
                 subtitle: "Dial 112 for immediate help",
@@ -478,7 +514,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
 
               // 🟠 INFORM CONTACTS
               _actionCard(
-                color: const Color(0xFFF9A825),
+                color: AuthState().isDiscreetMode ? const Color(0xFF334155) : const Color(0xFFF9A825),
                 icon: Icons.group,
                 title: "Inform Trusted Contacts",
                 subtitle:
@@ -1152,6 +1188,17 @@ class _EmergencyPageState extends State<EmergencyPage> {
     );
   }
 
+  void _showFakeCallScreen(BuildContext context) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black,
+      pageBuilder: (ctx, anim1, anim2) {
+        return const FakeCallOverlay();
+      },
+    );
+  }
+
   void _showMessagePreview(BuildContext context) {
     // F4-2-alt: The 5-second countdown dialog is the ONLY gate — no redundant confirmation prompts.
     _startSosGraceCountdownAndDispatch(context);
@@ -1449,6 +1496,267 @@ class _SosCountdownDialogState extends State<SosCountdownDialog> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// F5-3: Realistic incoming call overlay for discreet de-escalation in domestic violence or stalker situations.
+/// Honest framing: UI-level discretion only. Does not disguise app in system recents or app drawer without native launcher alias.
+class FakeCallOverlay extends StatefulWidget {
+  const FakeCallOverlay({super.key});
+
+  @override
+  State<FakeCallOverlay> createState() => _FakeCallOverlayState();
+}
+
+class _FakeCallOverlayState extends State<FakeCallOverlay> {
+  bool _isAnswered = false;
+  int _seconds = 0;
+  Timer? _timer;
+  String _callerName = "Mom";
+  bool _isMuted = false;
+  bool _isSpeaker = false;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _answer() {
+    try {
+      HapticFeedback.lightImpact();
+    } catch (_) {}
+    setState(() {
+      _isAnswered = true;
+    });
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() => _seconds++);
+      }
+    });
+  }
+
+  void _decline() {
+    try {
+      HapticFeedback.lightImpact();
+    } catch (_) {}
+    _timer?.cancel();
+    Navigator.of(context).pop();
+  }
+
+  Future<void> _editCallerName() async {
+    final controller = TextEditingController(text: _callerName);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Edit Caller Name"),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: "Enter contact name (e.g. Boss, Mom)"),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text("Save"),
+          ),
+        ],
+      ),
+    );
+    if (newName != null && newName.isNotEmpty && mounted) {
+      setState(() => _callerName = newName);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final timeStr =
+        "${(_seconds ~/ 60).toString().padLeft(2, '0')}:${(_seconds % 60).toString().padLeft(2, '0')}";
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0B0F1A),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: Column(
+            children: [
+              // Discreet hidden affordance to exit discreet mode at any time
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit, color: Colors.white30, size: 20),
+                    tooltip: "Edit caller name",
+                    onPressed: _editCallerName,
+                  ),
+                  GestureDetector(
+                    onTap: _decline,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        "Exit Call",
+                        style: TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+
+              // Contact Avatar
+              const CircleAvatar(
+                radius: 46,
+                backgroundColor: Colors.white12,
+                child: Icon(Icons.person, size: 54, color: Colors.white70),
+              ),
+              const SizedBox(height: 20),
+
+              // Contact Name
+              GestureDetector(
+                onTap: _editCallerName,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _callerName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.edit, size: 16, color: Colors.white38),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Status line
+              Text(
+                _isAnswered ? timeStr : "Incoming Call • Mobile",
+                style: TextStyle(
+                  color: _isAnswered ? Colors.tealAccent : Colors.white60,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+
+              const Spacer(),
+
+              if (!_isAnswered) ...[
+                // Incoming Call Action Buttons (Decline vs Answer)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FloatingActionButton(
+                          heroTag: 'fake_decline',
+                          backgroundColor: Colors.redAccent,
+                          onPressed: _decline,
+                          child: const Icon(Icons.call_end, color: Colors.white, size: 28),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text("Decline", style: TextStyle(color: Colors.white70)),
+                      ],
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FloatingActionButton(
+                          heroTag: 'fake_answer',
+                          backgroundColor: Colors.green,
+                          onPressed: _answer,
+                          child: const Icon(Icons.call, color: Colors.white, size: 28),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text("Answer", style: TextStyle(color: Colors.white70)),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+              ] else ...[
+                // Answered in-call calm screen
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.only(bottom: 24),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Row(
+                        children: [
+                          Icon(Icons.notes, color: Colors.tealAccent, size: 18),
+                          SizedBox(width: 8),
+                          Text(
+                            "Calm Conversation Script",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        "• 'Yes, I\\'m heading over right now.'\n• 'Everything is fine, see you in 10 minutes.'\n• 'Don\\'t worry, I have the keys with me.'",
+                        style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
+                      ),
+                    ],
+                  ),
+                ),
+                // In-call keypad row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    IconButton(
+                      icon: Icon(_isMuted ? Icons.mic_off : Icons.mic,
+                          color: _isMuted ? Colors.amber : Colors.white70),
+                      onPressed: () => setState(() => _isMuted = !_isMuted),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.dialpad, color: Colors.white70),
+                      onPressed: () {},
+                    ),
+                    IconButton(
+                      icon: Icon(_isSpeaker ? Icons.volume_up : Icons.volume_down,
+                          color: _isSpeaker ? Colors.tealAccent : Colors.white70),
+                      onPressed: () => setState(() => _isSpeaker = !_isSpeaker),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                FloatingActionButton(
+                  heroTag: 'fake_end_call',
+                  backgroundColor: Colors.redAccent,
+                  onPressed: _decline,
+                  child: const Icon(Icons.call_end, color: Colors.white, size: 28),
+                ),
+                const SizedBox(height: 8),
+                const Text("End Call", style: TextStyle(color: Colors.white70)),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

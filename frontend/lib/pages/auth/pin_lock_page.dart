@@ -233,9 +233,11 @@ class _PinLockPageState extends State<PinLockPage> with SingleTickerProviderStat
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
-              'Quick security access for SafeSphere',
-              style: TextStyle(color: Colors.white60, fontSize: 13),
+            Text(
+              AuthState().isDiscreetMode
+                  ? 'System Security Verification'
+                  : 'Quick security access for SafeSphere',
+              style: const TextStyle(color: Colors.white60, fontSize: 13),
             ),
             const SizedBox(height: 24),
 
