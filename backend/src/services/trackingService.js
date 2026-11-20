@@ -202,13 +202,17 @@ function recordPing(arg1, arg2, arg3) {
     throw error;
   }
 
+  const nowIso = new Date().toISOString();
+  session.lastActivityAt = nowIso;
+  session.lastPingAt = nowIso;
+
   const pingPoint = {
     latitude: Number(latitude),
     longitude: Number(longitude),
     speed: speed !== undefined && speed !== null ? Number(speed) : 0,
     battery: battery !== undefined && battery !== null ? Number(battery) : null,
     accuracy: accuracy !== undefined && accuracy !== null ? Number(accuracy) : null,
-    timestamp: timestamp ? String(timestamp) : new Date().toISOString()
+    timestamp: timestamp ? String(timestamp) : nowIso
   };
 
   // Cap breadcrumbs to 500 entries per session (FIFO) to prevent unbounded memory growth

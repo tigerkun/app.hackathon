@@ -73,6 +73,16 @@ function getTrack(req, res, next) {
     const { sessionId } = req.params;
     const session = trackingService.getTrackingSession(sessionId, extractTrackingToken(req));
 
+    const now = Date.now();
+    const lastActivityMs = new Date(session.lastActivityAt || session.currentLocation?.timestamp || session.createdAt).getTime();
+    const stallDetected = session.status === 'active' && (now - lastActivityMs > 120000);
+    const stalledDurationSeconds = Math.max(0, Math.floor((now - lastActivityMs) / 1000));
+
+    const lastActivityAt = session.lastActivityAt || session.currentLocation?.timestamp || session.createdAt;
+    session.lastActivityAt = lastActivityAt;
+    session.stallDetected = Boolean(stallDetected);
+    session.stalledDurationSeconds = stalledDurationSeconds;
+
     res.status(200).json({
       success: true,
       data: {
@@ -83,7 +93,11 @@ function getTrack(req, res, next) {
         currentLocation: session.currentLocation,
         breadcrumbs: session.breadcrumbs,
         createdAt: session.createdAt,
-        expiresAt: session.expiresAt
+        expiresAt: session.expiresAt,
+        lastActivityAt,
+        lastPingAt: session.lastPingAt || null,
+        stallDetected: Boolean(stallDetected),
+        stalledDurationSeconds
       }
     });
   } catch (err) {

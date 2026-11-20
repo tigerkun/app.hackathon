@@ -146,6 +146,8 @@ class DataStore {
         currentLocation TEXT NOT NULL,
         breadcrumbs TEXT NOT NULL DEFAULT '[]',
         metadata TEXT NOT NULL DEFAULT '{}',
+        lastActivityAt TEXT,
+        lastPingAt TEXT,
         updatedAt TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_tracking_token ON tracking_sessions(token);
@@ -160,6 +162,12 @@ class DataStore {
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE alerts ADD COLUMN escalationLevel INTEGER DEFAULT 0");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE tracking_sessions ADD COLUMN lastActivityAt TEXT");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE tracking_sessions ADD COLUMN lastPingAt TEXT");
     } catch (_) {}
   }
 
@@ -916,6 +924,8 @@ class DataStore {
       currentLocation: { ...currentLocation },
       breadcrumbs: Array.isArray(breadcrumbs) ? breadcrumbs.map((b) => ({ ...b })) : [],
       metadata: { ...metadata },
+      lastActivityAt: row.lastActivityAt ?? null,
+      lastPingAt: row.lastPingAt ?? null,
       updatedAt: row.updatedAt
     };
   }
@@ -958,8 +968,8 @@ class DataStore {
       INSERT INTO tracking_sessions (
         id, userId, userName, token, status, durationMinutes,
         createdAt, expiresAt, endedAt, initialLocation,
-        currentLocation, breadcrumbs, metadata, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        currentLocation, breadcrumbs, metadata, lastActivityAt, lastPingAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         userId = excluded.userId,
         userName = excluded.userName,
@@ -973,6 +983,8 @@ class DataStore {
         currentLocation = excluded.currentLocation,
         breadcrumbs = excluded.breadcrumbs,
         metadata = excluded.metadata,
+        lastActivityAt = excluded.lastActivityAt,
+        lastPingAt = excluded.lastPingAt,
         updatedAt = excluded.updatedAt
     `).run(
       session.id,
@@ -988,6 +1000,8 @@ class DataStore {
       currentLocationStr,
       breadcrumbsStr,
       metadataStr,
+      session.lastActivityAt ?? session.createdAt ?? new Date().toISOString(),
+      session.lastPingAt ?? session.lastActivityAt ?? session.createdAt ?? new Date().toISOString(),
       updatedAt
     );
 
@@ -1023,7 +1037,10 @@ class DataStore {
     breadcrumbs.push(point);
     existing.breadcrumbs = breadcrumbs;
     existing.currentLocation = { ...point };
-    existing.updatedAt = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    existing.lastActivityAt = nowIso;
+    existing.lastPingAt = nowIso;
+    existing.updatedAt = nowIso;
 
     return this.saveTrackingSession(existing);
   }

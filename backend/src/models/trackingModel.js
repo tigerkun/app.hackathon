@@ -28,6 +28,8 @@ function createTrackingSession({
   token = generateTrackingToken(),
   status = 'active',
   createdAt = new Date().toISOString(),
+  lastActivityAt = null,
+  lastPingAt = null,
   expiresAt = null,
   endedAt = null,
   metadata = {}
@@ -57,6 +59,8 @@ function createTrackingSession({
     status: VALID_TRACKING_STATUSES.includes(status) ? status : 'active',
     durationMinutes: Number(durationMinutes || 60),
     createdAt,
+    lastActivityAt: lastActivityAt || createdAt,
+    lastPingAt: lastPingAt || createdAt,
     expiresAt: expirationDate,
     endedAt: endedAt ? String(endedAt) : null,
     initialLocation: { ...initialPoint },

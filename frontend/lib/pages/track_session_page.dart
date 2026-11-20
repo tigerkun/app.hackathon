@@ -41,6 +41,9 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
   final List<Map<String, dynamic>> _breadcrumbs = [];
   String? _expiresAt;
   bool _live = false;
+  bool _stallDetected = false;
+  bool _signalRestored = false;
+  int _stalledDurationSeconds = 0;
 
   WebSocket? _ws;
   Timer? _pollTimer;
@@ -104,7 +107,7 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
     await _pollOnce();
 
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) => _pollOnce());
+    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) => _pollOnce());
 
     if (mounted) setState(() => _connecting = false);
   }
@@ -152,6 +155,10 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
       case 'LOCATION_STREAM_UPDATE':
         if (!mounted) return;
         setState(() {
+          if (_stallDetected) {
+            _stallDetected = false;
+            _signalRestored = true;
+          }
           _lat = (msg['latitude'] as num?)?.toDouble();
           _lng = (msg['longitude'] as num?)?.toDouble();
           _accuracy = (msg['accuracy'] as num?)?.toDouble();
@@ -242,9 +249,36 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
       _accuracy = (loc['accuracy'] as num?)?.toDouble();
     }
     _lastUpdate = DateTime.now();
+
+    final bool prevStall = _stallDetected;
+    final dynamic rawStall = data['stallDetected'] ?? (data['session'] is Map ? data['session']['stallDetected'] : null);
+    final bool newStall = rawStall == true;
+    final dynamic rawDuration = data['stalledDurationSeconds'] ?? (data['session'] is Map ? data['session']['stalledDurationSeconds'] : null);
+    final int stalledSec = (rawDuration as num?)?.toInt() ?? 0;
+
+    if (_status == 'active') {
+      if (prevStall && !newStall) {
+        _signalRestored = true;
+        _stallDetected = false;
+      } else if (_signalRestored && !newStall) {
+        _signalRestored = false;
+      } else if (newStall) {
+        _stallDetected = true;
+        _signalRestored = false;
+      } else {
+        _stallDetected = false;
+      }
+    } else {
+      _stallDetected = false;
+      _signalRestored = false;
+    }
+    _stalledDurationSeconds = stalledSec;
+
     if (_status == 'expired' || _status == 'ended') {
       _pollTimer?.cancel();
       _live = false;
+      _stallDetected = false;
+      _signalRestored = false;
     }
   }
 
@@ -273,6 +307,9 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
       _lng = null;
       _breadcrumbCount = 0;
       _breadcrumbs.clear();
+      _stallDetected = false;
+      _signalRestored = false;
+      _stalledDurationSeconds = 0;
     });
   }
 
@@ -379,6 +416,60 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
             child: Text('Tracking: $_userName',
                 style: const TextStyle(color: AppColors.textSecondary)),
           ),
+        if (_stallDetected && _status == 'active') ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.amber.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.amber),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.signal_wifi_off_rounded, color: AppColors.amber, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'SIGNAL LOST — no update for ${(_stalledDurationSeconds ~/ 60) > 0 ? (_stalledDurationSeconds ~/ 60) : 2}m',
+                    style: const TextStyle(
+                      color: AppColors.amber,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (_signalRestored && !_stallDetected && _status == 'active') ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.teal.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.teal),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.check_circle_outline, color: AppColors.teal, size: 20),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Signal restored',
+                    style: TextStyle(
+                      color: AppColors.teal,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         if (_isExpiringSoon) ...[
           const SizedBox(height: 8),
           Container(
