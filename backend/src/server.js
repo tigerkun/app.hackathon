@@ -203,8 +203,20 @@ if (pingInterval.unref) {
   pingInterval.unref();
 }
 
+// Periodic 60s watchdog to evaluate tracking check-in deadlines
+const checkInWatchdogInterval = setInterval(() => {
+  try {
+    const trackingService = require('./services/trackingService');
+    trackingService.processCheckInDeadlines(new Date());
+  } catch (_) {}
+}, 60000);
+if (checkInWatchdogInterval.unref) {
+  checkInWatchdogInterval.unref();
+}
+
 wss.on('close', () => {
   clearInterval(pingInterval);
+  clearInterval(checkInWatchdogInterval);
   try {
     const { stopEscalationWatchdog } = require('./services/sosService');
     stopEscalationWatchdog();
@@ -326,6 +338,29 @@ function broadcastStreamTerminate(sessionId, reason = 'Stream terminated by user
   return sentCount;
 }
 
+// Broadcast missed check-in event to all guardians subscribed to a session
+function broadcastCheckInMissed({ sessionId, missedCheckIns, checkInDeadline, timestamp }) {
+  const room = trackingRooms.get(sessionId);
+  if (!room || room.size === 0) return 0;
+
+  const payload = JSON.stringify({
+    type: 'CHECKIN_MISSED',
+    sessionId,
+    missedCheckIns: Number(missedCheckIns),
+    checkInDeadline: checkInDeadline || null,
+    timestamp: timestamp || new Date().toISOString()
+  });
+
+  let sentCount = 0;
+  for (const client of room) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(payload, (err) => {});
+      sentCount++;
+    }
+  }
+  return sentCount;
+}
+
 /**
  * Returns the count of actively connected WebSocket clients.
  */
@@ -340,6 +375,7 @@ function getWebSocketClientCount() {
 const shutdown = (callback) => {
   console.log('\nGracefully shutting down SafeSphere server...');
   clearInterval(pingInterval);
+  clearInterval(checkInWatchdogInterval);
 
   try {
     const { stopEscalationWatchdog } = require('./services/sosService');
@@ -397,5 +433,6 @@ module.exports = {
   broadcastSosEscalated,
   broadcastLocationUpdate,
   broadcastStreamTerminate,
+  broadcastCheckInMissed,
   trackingRooms
 };

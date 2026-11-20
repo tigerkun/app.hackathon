@@ -67,6 +67,9 @@ function createShareSession({
   speed,
   battery,
   durationMinutes = 60,
+  checkInIntervalMin = null,
+  checkInDeadline = null,
+  missedCheckIns = 0,
   metadata = {},
   baseUrl = 'http://127.0.0.1:8080'
 }) {
@@ -83,6 +86,28 @@ function createShareSession({
     error.code = 'INVALID_COORDINATES';
     throw error;
   }
+
+  let cleanCheckInInterval = null;
+  if (checkInIntervalMin !== undefined && checkInIntervalMin !== null && checkInIntervalMin !== '') {
+    if (typeof checkInIntervalMin === 'boolean') {
+      const error = new Error('checkInIntervalMin must be an integer between 1 and 1440');
+      error.status = 400;
+      error.code = 'INVALID_CHECKIN_INTERVAL';
+      throw error;
+    }
+    const parsedInterval = Number(checkInIntervalMin);
+    if (!Number.isInteger(parsedInterval) || parsedInterval < 1 || parsedInterval > 1440) {
+      const error = new Error('checkInIntervalMin must be an integer between 1 and 1440');
+      error.status = 400;
+      error.code = 'INVALID_CHECKIN_INTERVAL';
+      throw error;
+    }
+    cleanCheckInInterval = parsedInterval;
+  }
+
+  const finalCheckInDeadline = checkInDeadline || (cleanCheckInInterval
+    ? new Date(Date.now() + cleanCheckInInterval * 60 * 1000).toISOString()
+    : null);
 
   let finalUserName = userName;
   if (userId) {
@@ -101,6 +126,9 @@ function createShareSession({
     speed,
     battery,
     durationMinutes: Math.max(1, Math.min(1440, Number(durationMinutes) || 60)), // 1 min to 24 hrs
+    checkInIntervalMin: cleanCheckInInterval,
+    checkInDeadline: finalCheckInDeadline,
+    missedCheckIns: Number(missedCheckIns || 0),
     metadata
   });
 
@@ -205,6 +233,10 @@ function recordPing(arg1, arg2, arg3) {
   const nowIso = new Date().toISOString();
   session.lastActivityAt = nowIso;
   session.lastPingAt = nowIso;
+  if (session.checkInIntervalMin) {
+    session.checkInDeadline = new Date(Date.now() + Number(session.checkInIntervalMin) * 60 * 1000).toISOString();
+    session.missedCheckIns = 0;
+  }
 
   const pingPoint = {
     latitude: Number(latitude),
@@ -262,11 +294,59 @@ function terminateTrackingSession(sessionId, reason = null, token) {
   return updated;
 }
 
+function processCheckInDeadlines(now = new Date(), broadcastFn = null) {
+  const nowDate = now instanceof Date ? now : new Date(now);
+  const activeSessions = db.getActiveCheckInSessions();
+  const processed = [];
+
+  let broadcaster = broadcastFn;
+  if (!broadcaster) {
+    try {
+      const serverModule = require('../server');
+      broadcaster = serverModule.broadcastCheckInMissed;
+    } catch (_) {}
+  }
+
+  for (const session of activeSessions) {
+    if (!session.checkInDeadline) continue;
+    const deadlineDate = new Date(session.checkInDeadline);
+
+    if (nowDate > deadlineDate) {
+      const newMissed = (Number(session.missedCheckIns) || 0) + 1;
+      const intervalMs = Number(session.checkInIntervalMin || 60) * 60 * 1000;
+      let nextDeadlineMs = deadlineDate.getTime() + intervalMs;
+      if (nextDeadlineMs <= nowDate.getTime()) {
+        nextDeadlineMs = nowDate.getTime() + intervalMs;
+      }
+      const nextDeadlineIso = new Date(nextDeadlineMs).toISOString();
+
+      const updated = db.updateTrackingSession(session.id, {
+        missedCheckIns: newMissed,
+        checkInDeadline: nextDeadlineIso
+      });
+
+      processed.push(updated);
+
+      if (typeof broadcaster === 'function') {
+        broadcaster({
+          sessionId: session.id,
+          missedCheckIns: newMissed,
+          checkInDeadline: nextDeadlineIso,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+  }
+
+  return processed;
+}
+
 module.exports = {
   createShareSession,
   getTrackingSession,
   recordPing,
   terminateTrackingSession,
+  processCheckInDeadlines,
   isValidCoordinate,
   isValidTrackingToken,
   assertTrackingToken,

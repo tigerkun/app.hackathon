@@ -32,6 +32,7 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
   String? _sessionToken;
   String? _shareUrl;
   String? _expiresAt;
+  int? _checkInIntervalMin;
   int _pingCount = 0;
 
   Timer? _pingTimer;
@@ -133,6 +134,7 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
         longitude: _longitude!,
         accuracy: _accuracy,
         durationMinutes: 60,
+        checkInIntervalMin: _checkInIntervalMin,
       );
 
       if (sessionData == null) {
@@ -288,7 +290,7 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
       if (notify) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Live tracking session ended. Guardians notified."),
+            content: Text("Live tracking session ended. Session watchers notified."),
             backgroundColor: Colors.orange,
           ),
         );
@@ -633,6 +635,72 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
             ),
 
             const SizedBox(height: 24),
+
+            if (!_isTracking) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF101A33),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.teal.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.timer_outlined, size: 18, color: AppColors.teal),
+                        SizedBox(width: 8),
+                        Text(
+                          "Check-in timer (dead-man switch)",
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      "alerts monitoring clients & session watchers",
+                      style: TextStyle(fontSize: 11, color: Colors.white60),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text("Off"),
+                          selected: _checkInIntervalMin == null,
+                          onSelected: (selected) {
+                            if (selected) setState(() => _checkInIntervalMin = null);
+                          },
+                        ),
+                        ChoiceChip(
+                          label: const Text("15 min"),
+                          selected: _checkInIntervalMin == 15,
+                          onSelected: (selected) {
+                            if (selected) setState(() => _checkInIntervalMin = 15);
+                          },
+                        ),
+                        ChoiceChip(
+                          label: const Text("30 min"),
+                          selected: _checkInIntervalMin == 30,
+                          onSelected: (selected) {
+                            if (selected) setState(() => _checkInIntervalMin = 30);
+                          },
+                        ),
+                        ChoiceChip(
+                          label: const Text("60 min"),
+                          selected: _checkInIntervalMin == 60,
+                          onSelected: (selected) {
+                            if (selected) setState(() => _checkInIntervalMin = 60);
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // ── Primary Action: Start / Stop Live Tracking ────────────────
             if (!_isTracking)

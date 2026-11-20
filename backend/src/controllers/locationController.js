@@ -32,6 +32,31 @@ function shareSession(req, res, next) {
     const durationMinutes = body.durationMinutes || body.duration_minutes || 60;
     const metadata = body.metadata || {};
 
+    let checkInIntervalMin = body.checkInIntervalMin !== undefined ? body.checkInIntervalMin : body.check_in_interval_min;
+    if (checkInIntervalMin === undefined || checkInIntervalMin === null || checkInIntervalMin === '') {
+      checkInIntervalMin = null;
+    } else {
+      if (typeof checkInIntervalMin === 'boolean') {
+        const error = new Error('checkInIntervalMin must be an integer between 1 and 1440');
+        error.status = 400;
+        error.code = 'INVALID_CHECKIN_INTERVAL';
+        throw error;
+      }
+      const parsedInterval = Number(checkInIntervalMin);
+      if (!Number.isInteger(parsedInterval) || parsedInterval < 1 || parsedInterval > 1440) {
+        const error = new Error('checkInIntervalMin must be an integer between 1 and 1440');
+        error.status = 400;
+        error.code = 'INVALID_CHECKIN_INTERVAL';
+        throw error;
+      }
+      checkInIntervalMin = parsedInterval;
+    }
+
+    const checkInDeadline = checkInIntervalMin
+      ? new Date(Date.now() + checkInIntervalMin * 60 * 1000).toISOString()
+      : null;
+    const missedCheckIns = 0;
+
     const userId = req.user ? req.user.id : (body.userId || body.user_id || null);
     const userName = req.user ? req.user.name : (body.userName || body.user_name || 'SafeSphere Citizen');
 
@@ -44,6 +69,9 @@ function shareSession(req, res, next) {
       speed,
       battery,
       durationMinutes,
+      checkInIntervalMin,
+      checkInDeadline,
+      missedCheckIns,
       metadata,
       baseUrl: body.baseUrl || 'http://127.0.0.1:8080'
     });
@@ -97,7 +125,10 @@ function getTrack(req, res, next) {
         lastActivityAt,
         lastPingAt: session.lastPingAt || null,
         stallDetected: Boolean(stallDetected),
-        stalledDurationSeconds
+        stalledDurationSeconds,
+        checkInIntervalMin: session.checkInIntervalMin !== null && session.checkInIntervalMin !== undefined ? Number(session.checkInIntervalMin) : null,
+        checkInDeadline: session.checkInDeadline ?? null,
+        missedCheckIns: Number(session.missedCheckIns || 0)
       }
     });
   } catch (err) {

@@ -32,6 +32,9 @@ function createTrackingSession({
   lastPingAt = null,
   expiresAt = null,
   endedAt = null,
+  checkInIntervalMin = null,
+  checkInDeadline = null,
+  missedCheckIns = 0,
   metadata = {}
 }) {
   const parsedLat = Number(latitude);
@@ -63,6 +66,9 @@ function createTrackingSession({
     lastPingAt: lastPingAt || createdAt,
     expiresAt: expirationDate,
     endedAt: endedAt ? String(endedAt) : null,
+    checkInIntervalMin: checkInIntervalMin !== null && checkInIntervalMin !== undefined ? Number(checkInIntervalMin) : null,
+    checkInDeadline: checkInDeadline ? String(checkInDeadline) : null,
+    missedCheckIns: Number(missedCheckIns || 0),
     initialLocation: { ...initialPoint },
     currentLocation: { ...initialPoint },
     breadcrumbs: [{ ...initialPoint }],

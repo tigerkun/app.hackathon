@@ -20,6 +20,7 @@ PAGES_DIR = os.path.join(LIB_DIR, "pages")
 AUTH_SERVICE_PATH = os.path.join(SERVICES_DIR, "auth_service.dart")
 EMERGENCY_PAGE_PATH = os.path.join(PAGES_DIR, "emergency_page.dart")
 TRACK_SESSION_PAGE_PATH = os.path.join(PAGES_DIR, "track_session_page.dart")
+SHARE_LOCATION_PAGE_PATH = os.path.join(PAGES_DIR, "share_location_page.dart")
 
 
 # ==============================================================================
@@ -37,6 +38,8 @@ class TestProductionEnhancementsAST(unittest.TestCase):
             cls.emergency_code = f.read()
         with open(TRACK_SESSION_PAGE_PATH, "r", encoding="utf-8") as f:
             cls.track_code = f.read()
+        with open(SHARE_LOCATION_PAGE_PATH, "r", encoding="utf-8") as f:
+            cls.share_code = f.read()
 
     # --- R1: Emergency Alert Reliability ---
     def test_r1_countdown_dialog_ast(self):
@@ -176,6 +179,32 @@ class TestProductionEnhancementsAST(unittest.TestCase):
         self.assertIn("Time:", self.track_code)
         self.assertIn("toStringAsFixed(0)", self.track_code)
         self.assertIn("±", self.track_code)
+
+    # --- F3-3: Check-in Timer Dead-Man Switch ---
+    def test_f3_3_auth_service_checkin_interval_param(self):
+        """Verify AuthService.createTrackingSession accepts checkInIntervalMin and includes it in JSON payload."""
+        self.assertIn("int? checkInIntervalMin", self.auth_code)
+        self.assertIn("if (checkInIntervalMin != null) 'checkInIntervalMin': checkInIntervalMin", self.auth_code)
+
+    def test_f3_3_share_location_checkin_selector_and_honest_copy(self):
+        """Verify ShareLocationPage check-in interval selector and honest explanatory copy."""
+        self.assertIn("Check-in timer (dead-man switch)", self.share_code)
+        self.assertIn("alerts monitoring clients & session watchers", self.share_code)
+        self.assertIn("15 min", self.share_code)
+        self.assertIn("30 min", self.share_code)
+        self.assertIn("60 min", self.share_code)
+        self.assertIn("_checkInIntervalMin", self.share_code)
+        # Invariant: No fake claim of contacts notified when ending session
+        self.assertNotIn("contacts notified", self.share_code.lower())
+
+    def test_f3_3_track_session_checkin_missed_and_deadline_ui(self):
+        """Verify TrackSessionPage handles CHECKIN_MISSED and renders red banner and due time."""
+        self.assertIn("case 'CHECKIN_MISSED':", self.track_code)
+        self.assertIn("_checkInMissed", self.track_code)
+        self.assertIn("CHECK-IN MISSED", self.track_code)
+        self.assertIn("Next check-in due", self.track_code)
+        self.assertIn("_checkInDeadline", self.track_code)
+        self.assertIn("_missedCheckIns", self.track_code)
 
 
 # ==============================================================================

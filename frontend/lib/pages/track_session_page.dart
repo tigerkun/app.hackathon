@@ -44,6 +44,9 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
   bool _stallDetected = false;
   bool _signalRestored = false;
   int _stalledDurationSeconds = 0;
+  String? _checkInDeadline;
+  int _missedCheckIns = 0;
+  bool _checkInMissed = false;
 
   WebSocket? _ws;
   Timer? _pollTimer;
@@ -159,6 +162,8 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
             _stallDetected = false;
             _signalRestored = true;
           }
+          _checkInMissed = false;
+          _missedCheckIns = 0;
           _lat = (msg['latitude'] as num?)?.toDouble();
           _lng = (msg['longitude'] as num?)?.toDouble();
           _accuracy = (msg['accuracy'] as num?)?.toDouble();
@@ -177,6 +182,16 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
             }
           }
           _breadcrumbCount = _breadcrumbs.isNotEmpty ? _breadcrumbs.length : (_breadcrumbCount + 1);
+        });
+        break;
+      case 'CHECKIN_MISSED':
+        if (!mounted) return;
+        setState(() {
+          _checkInMissed = true;
+          _missedCheckIns = (msg['missedCheckIns'] as num?)?.toInt() ?? (_missedCheckIns + 1);
+          if (msg['checkInDeadline'] != null) {
+            _checkInDeadline = msg['checkInDeadline'] as String?;
+          }
         });
         break;
       case 'STREAM_TERMINATE':
@@ -274,11 +289,23 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
     }
     _stalledDurationSeconds = stalledSec;
 
+    final rawDeadline = data['checkInDeadline'] ?? (data['session'] is Map ? data['session']['checkInDeadline'] : null);
+    _checkInDeadline = rawDeadline as String?;
+
+    final rawMissed = data['missedCheckIns'] ?? (data['session'] is Map ? data['session']['missedCheckIns'] : null);
+    _missedCheckIns = (rawMissed as num?)?.toInt() ?? 0;
+    if (_missedCheckIns > 0) {
+      _checkInMissed = true;
+    } else {
+      _checkInMissed = false;
+    }
+
     if (_status == 'expired' || _status == 'ended') {
       _pollTimer?.cancel();
       _live = false;
       _stallDetected = false;
       _signalRestored = false;
+      _checkInMissed = false;
     }
   }
 
@@ -310,6 +337,9 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
       _stallDetected = false;
       _signalRestored = false;
       _stalledDurationSeconds = 0;
+      _checkInDeadline = null;
+      _missedCheckIns = 0;
+      _checkInMissed = false;
     });
   }
 
@@ -470,6 +500,33 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
             ),
           ),
         ],
+        if ((_checkInMissed || _missedCheckIns > 0) && _status == 'active') ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.red.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.red),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: AppColors.red, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'CHECK-IN MISSED — User has not checked in (${_missedCheckIns} missed)',
+                    style: const TextStyle(
+                      color: AppColors.red,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         if (_isExpiringSoon) ...[
           const SizedBox(height: 8),
           Container(
@@ -509,6 +566,15 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
               _infoTile('Last update',
                   _lastUpdate != null ? _lastUpdate!.toLocal().toString().substring(0, 19) : '—'),
               _infoTile('Session expires', _expiresAt ?? '—'),
+              if (_checkInDeadline != null) ...[
+                () {
+                  final parsed = DateTime.tryParse(_checkInDeadline!);
+                  final dueStr = parsed != null
+                      ? '${parsed.toLocal().hour.toString().padLeft(2, '0')}:${parsed.toLocal().minute.toString().padLeft(2, '0')}'
+                      : _checkInDeadline!;
+                  return _infoTile('Next check-in due', dueStr);
+                }(),
+              ],
               const SizedBox(height: 16),
               const Divider(color: AppColors.border),
               const SizedBox(height: 8),

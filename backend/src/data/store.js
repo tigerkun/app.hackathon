@@ -148,6 +148,9 @@ class DataStore {
         metadata TEXT NOT NULL DEFAULT '{}',
         lastActivityAt TEXT,
         lastPingAt TEXT,
+        checkInIntervalMin INTEGER,
+        checkInDeadline TEXT,
+        missedCheckIns INTEGER NOT NULL DEFAULT 0,
         updatedAt TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_tracking_token ON tracking_sessions(token);
@@ -168,6 +171,15 @@ class DataStore {
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE tracking_sessions ADD COLUMN lastPingAt TEXT");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE tracking_sessions ADD COLUMN checkInIntervalMin INTEGER");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE tracking_sessions ADD COLUMN checkInDeadline TEXT");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE tracking_sessions ADD COLUMN missedCheckIns INTEGER NOT NULL DEFAULT 0");
     } catch (_) {}
   }
 
@@ -926,6 +938,9 @@ class DataStore {
       metadata: { ...metadata },
       lastActivityAt: row.lastActivityAt ?? null,
       lastPingAt: row.lastPingAt ?? null,
+      checkInIntervalMin: row.checkInIntervalMin !== null && row.checkInIntervalMin !== undefined ? Number(row.checkInIntervalMin) : null,
+      checkInDeadline: row.checkInDeadline ?? null,
+      missedCheckIns: row.missedCheckIns !== null && row.missedCheckIns !== undefined ? Number(row.missedCheckIns) : 0,
       updatedAt: row.updatedAt
     };
   }
@@ -968,8 +983,9 @@ class DataStore {
       INSERT INTO tracking_sessions (
         id, userId, userName, token, status, durationMinutes,
         createdAt, expiresAt, endedAt, initialLocation,
-        currentLocation, breadcrumbs, metadata, lastActivityAt, lastPingAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        currentLocation, breadcrumbs, metadata, lastActivityAt, lastPingAt,
+        checkInIntervalMin, checkInDeadline, missedCheckIns, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         userId = excluded.userId,
         userName = excluded.userName,
@@ -985,6 +1001,9 @@ class DataStore {
         metadata = excluded.metadata,
         lastActivityAt = excluded.lastActivityAt,
         lastPingAt = excluded.lastPingAt,
+        checkInIntervalMin = excluded.checkInIntervalMin,
+        checkInDeadline = excluded.checkInDeadline,
+        missedCheckIns = excluded.missedCheckIns,
         updatedAt = excluded.updatedAt
     `).run(
       session.id,
@@ -1002,6 +1021,9 @@ class DataStore {
       metadataStr,
       session.lastActivityAt ?? session.createdAt ?? new Date().toISOString(),
       session.lastPingAt ?? session.lastActivityAt ?? session.createdAt ?? new Date().toISOString(),
+      session.checkInIntervalMin !== null && session.checkInIntervalMin !== undefined ? Number(session.checkInIntervalMin) : null,
+      session.checkInDeadline ?? null,
+      session.missedCheckIns !== null && session.missedCheckIns !== undefined ? Number(session.missedCheckIns) : 0,
       updatedAt
     );
 
@@ -1040,9 +1062,31 @@ class DataStore {
     const nowIso = new Date().toISOString();
     existing.lastActivityAt = nowIso;
     existing.lastPingAt = nowIso;
+    if (existing.checkInIntervalMin) {
+      existing.checkInDeadline = new Date(Date.now() + Number(existing.checkInIntervalMin) * 60 * 1000).toISOString();
+      existing.missedCheckIns = 0;
+    }
     existing.updatedAt = nowIso;
 
     return this.saveTrackingSession(existing);
+  }
+
+  getActiveCheckInSessions() {
+    const rows = this.db.prepare(
+      "SELECT * FROM tracking_sessions WHERE status = 'active' AND checkInIntervalMin IS NOT NULL AND checkInDeadline IS NOT NULL"
+    ).all();
+    const active = [];
+    for (const row of rows) {
+      if (row.expiresAt && new Date(row.expiresAt) < new Date()) {
+        this.db.prepare("UPDATE tracking_sessions SET status = 'expired', updatedAt = ? WHERE id = ?").run(
+          new Date().toISOString(),
+          row.id
+        );
+        continue;
+      }
+      active.push(this._formatTrackingSession(row));
+    }
+    return active;
   }
 
   getAllTrackingSessions() {

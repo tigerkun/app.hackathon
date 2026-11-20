@@ -967,6 +967,7 @@ class AuthService {
     required double longitude,
     double? accuracy,
     int durationMinutes = 60,
+    int? checkInIntervalMin,
   }) async {
     final token = await storage.getString(keyToken);
     final body = <String, dynamic>{
@@ -974,6 +975,7 @@ class AuthService {
       'longitude': longitude,
       if (accuracy != null) 'accuracy': accuracy,
       'durationMinutes': durationMinutes,
+      if (checkInIntervalMin != null) 'checkInIntervalMin': checkInIntervalMin,
       // Backend builds shareUrl from this; without it prod links point at localhost.
       'baseUrl': apiBaseUrl,
     };
