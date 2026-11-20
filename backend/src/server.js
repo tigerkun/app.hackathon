@@ -550,7 +550,16 @@ const shutdown = (callback) => {
   clients.clear();
 
   wss.close(() => {
-    server.close(() => {
+    server.close(async () => {
+      try {
+        // Flush the final durable snapshot BEFORE closing the SQLite handle
+        // (best-effort, capped at 5s so shutdown never hangs).
+        const { persistSnapshotNow } = require('./data/dbSnapshot');
+        await Promise.race([
+          persistSnapshotNow(() => db),
+          new Promise((resolve) => setTimeout(resolve, 5000))
+        ]);
+      } catch (_) {}
       try {
         if (db && typeof db.close === 'function') {
           db.close();
@@ -568,19 +577,29 @@ const shutdown = (callback) => {
   });
 };
 
-// Start Server if run directly
+// Start Server if run directly — after hydrating the DB from the durable
+// remote snapshot (Supabase Storage) so no request ever sees a half-booted store.
 if (require.main === module) {
-  server.listen(config.port, '0.0.0.0', () => {
-    console.log(`========================================================`);
-    console.log(`  SafeSphere Backend Service`);
-    console.log(`  Environment: ${config.nodeEnv}`);
-    console.log(`  HTTP API:    http://127.0.0.1:${config.port}`);
-    console.log(`  WebSocket:   ws://127.0.0.1:${config.port}/ws/sos`);
-    console.log(`========================================================`);
-  });
+  (async () => {
+    const { hydrateStoreFromSnapshot, startSnapshotPersistence } = require('./data/dbSnapshot');
+    await hydrateStoreFromSnapshot(() => db);
+    startSnapshotPersistence(() => db);
 
-  process.on('SIGINT', () => shutdown());
-  process.on('SIGTERM', () => shutdown());
+    server.listen(config.port, '0.0.0.0', () => {
+      console.log(`========================================================`);
+      console.log(`  SafeSphere Backend Service`);
+      console.log(`  Environment: ${config.nodeEnv}`);
+      console.log(`  HTTP API:    http://127.0.0.1:${config.port}`);
+      console.log(`  WebSocket:   ws://127.0.0.1:${config.port}/ws/sos`);
+      console.log(`========================================================`);
+    });
+
+    process.on('SIGINT', () => shutdown());
+    process.on('SIGTERM', () => shutdown());
+  })().catch((err) => {
+    console.error('Fatal boot failure:', err.message);
+    process.exit(1);
+  });
 }
 
 module.exports = {

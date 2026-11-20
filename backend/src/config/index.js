@@ -71,9 +71,16 @@ const isTest = nodeEnv === 'test';
 const isDev = !isProduction;
 
 const isTestRunner = isTest || Boolean(process.env.NODE_TEST_CONTEXT);
+// Snapshot persistence mode (Supabase Storage): the live DB runs in-memory and
+// durability comes from data/dbSnapshot.js hydrate/persist. node:sqlite
+// deserialize() is only safe on in-memory connections (WAL file connections
+// break after deserialize), and an ephemeral container's file DB has no value.
+const isSnapshotPersistenceMode = Boolean(
+  process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 const defaultDbPath = isTestRunner
   ? ':memory:'
-  : path.resolve(__dirname, '../../data/safesphere.db');
+  : (isSnapshotPersistenceMode ? ':memory:' : path.resolve(__dirname, '../../data/safesphere.db'));
 const dbPath = process.env.DB_PATH || defaultDbPath;
 
 // Demo Mode: Disabled by default in production. Enabled by default in dev/test.

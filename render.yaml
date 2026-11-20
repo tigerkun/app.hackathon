@@ -4,11 +4,18 @@
 # Architecture & Persistent Storage Notes:
 # - SafeSphere backend uses SQLite via Node.js built-in `node:sqlite`.
 # - Render "starter" plan supports persistent SSD disks (1 GB mounted at /var/data).
+# - FREE-TIER PERSISTENCE (current deployment):
+#   Free instances have ephemeral containers and no disk support. The backend
+#   therefore runs its SQLite DB in-memory (`:memory:`) and keeps it durable via
+#   PRIVATE Supabase Storage snapshots (backend/src/data/dbSnapshot.js):
+#   hydrate at boot → serialize + upload every 45s (dirty-checked) → final
+#   flush on SIGTERM. Configure SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY /
+#   SUPABASE_SNAPSHOT_BUCKET to enable. A failed hydrate disables uploads for
+#   that process so a fresh empty DB can never overwrite the good snapshot.
 # - PostgreSQL Alternative (TODO(DEPLOY)):
-#   If deploying to Render's Free tier (where disks are ephemeral and wiped on
-#   container restart/spin-down) or scaling horizontally to multiple web service
-#   instances, migrate the storage layer to Render Managed PostgreSQL (`type: postgres`)
-#   and provide DATABASE_URL. SQLite on persistent disk is single-instance only.
+#   To scale horizontally to multiple web service instances, migrate the storage
+#   layer to managed PostgreSQL (`type: postgres`) and provide DATABASE_URL.
+#   Snapshot persistence is single-instance only (same as a persistent disk).
 # ==============================================================================
 
 services:
@@ -26,8 +33,6 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DB_PATH
-        value: /var/data/safesphere.db
       - key: DEMO_MODE
         value: "false"
       - key: PORT
@@ -38,3 +43,11 @@ services:
         sync: false
       - key: CORS_ORIGIN
         sync: false
+      # Free-tier durable snapshots via private Supabase Storage bucket.
+      # NOTE: do NOT set DB_PATH in snapshot mode — the live DB must be :memory:.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_SNAPSHOT_BUCKET
+        value: safesphere-db

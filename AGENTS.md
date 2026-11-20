@@ -80,11 +80,21 @@ If `--dart-define=SAFESPHERE_API_URL` is omitted, the mobile app defaults to `ht
 repositories via built-in `node:sqlite` with instant `reset()` for tests).
 
 - Responses use the envelope `{ success: boolean, data?, error?: { code, message, details } }`.
-- Storage: Persistent SQLite database driven by Node.js built-in `node:sqlite`
+- Storage: SQLite database driven by Node.js built-in `node:sqlite`
   (`DatabaseSync`). Synchronous execution model matches repository API.
   - Location: `backend/data/safesphere.db` by default in development/production,
     `:memory:` under test runner (`NODE_TEST_CONTEXT` or `NODE_ENV=test`).
     Configurable via `DB_PATH` environment variable.
+  - **Snapshot persistence mode (free-tier deploys):** when `SUPABASE_URL` +
+    `SUPABASE_SERVICE_ROLE_KEY` are set, the live DB runs **in-memory** and
+    durability comes from `backend/src/data/dbSnapshot.js`: hydrate at boot
+    (node:sqlite `deserialize()` — atomic, before `server.listen()`), serialize
+    + upload to a PRIVATE Supabase Storage bucket every 45s (sha256 dirty
+    check), final flush in the SIGTERM shutdown chain before `db.close()`.
+    A failed/garbage hydrate DISABLES uploads for that process so a fresh empty
+    DB can never overwrite the good remote snapshot. node:sqlite `deserialize()`
+    must only target in-memory connections — WAL file connections break after
+    deserialize ("unable to open database file").
   - Schema: Hand-managed additive schema (`CREATE TABLE IF NOT EXISTS` and
     `CREATE INDEX IF NOT EXISTS`). No external migration runner (additive
     `ALTER TABLE` / DDL matching repository convention).
@@ -274,6 +284,10 @@ Search `TODO(REAL_` for the live list. Current stubs:
 
 - **No SMS gateway.** OTP delivery and emergency-contact SMS are not
   implemented; OTP endpoints return dev OTPs only when explicitly enabled.
+- **Snapshot persistence is single-instance.** The Supabase Storage snapshot
+  mode keeps one Render instance durable (same as a persistent disk); it does
+  not enable horizontal scaling. Data loss window ≤ one snapshot interval
+  (45s default) plus any SIGKILL that bypasses the SIGTERM flush.
 - **`dart:io` breaks Flutter web.** `auth_service.dart`, `storage_service.dart`,
   and `share_location_page.dart` use `dart:io` (`HttpClient`, `File`, `WebSocket`).
   This is fine on mobile/desktop but will not compile for the `web` target; use
@@ -296,7 +310,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 # Full gate (recommended)
 npm test
 
-# Backend only — 228 tests across 58 suites (plus 11/11 smoke tests)
+# Backend only — 235 tests across 59 suites (plus 11/11 smoke tests)
 cd backend && npm test
 npm run smoke
 
@@ -312,6 +326,7 @@ node --test tests/auth.test.js
 node --test tests/security_hardening.test.js
 node --test tests/reports_markers.test.js
 node --test tests/ai_chat.test.js             # AI assistant Groq chat, validation & honest fallback
+node --test tests/db_snapshot.test.js         # Supabase snapshot persistence, hydrate fail-safe & pruning
 
 # Python challengers (197 tests across 10 suites: frontend structure, routes, AST invariants, permissions)
 python -m unittest discover -s frontend/test -p "*.py"

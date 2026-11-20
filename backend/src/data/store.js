@@ -348,6 +348,45 @@ class DataStore {
     }
   }
 
+  /**
+   * Returns a consistent serialized image of the whole database (Uint8Array)
+   * for the Supabase snapshot persistence layer (data/dbSnapshot.js).
+   */
+  serializeSnapshot() {
+    if (!this.db) return null;
+    return this.db.serialize();
+  }
+
+  /**
+   * Atomically replaces the live database contents with a serialized image
+   * (node:sqlite deserialize). Used by dbSnapshot.js at boot, before the HTTP
+   * listener starts, to hydrate from the durable remote snapshot.
+   */
+  deserializeSnapshot(buf) {
+    if (!this.db) throw new Error('DataStore is closed');
+    if (!Buffer.isBuffer(buf)) throw new Error('deserializeSnapshot expects a Buffer');
+    this.db.deserialize(buf);
+  }
+
+  /**
+   * Deletes expired OTPs and invalid/expired auth sessions. Called from the
+   * snapshot persistence tick so the durable store stays pruned over time.
+   * Returns { expiredOtpsDeleted, expiredSessionsDeleted }.
+   */
+  pruneExpiredRows() {
+    const now = Date.now();
+    const otps = this.db
+      .prepare('DELETE FROM otps WHERE expiresAt < ?')
+      .run(now);
+    const sessions = this.db
+      .prepare("DELETE FROM sessions WHERE isValid = 0 OR expiresAt < ?")
+      .run(new Date().toISOString());
+    return {
+      expiredOtpsDeleted: otps.changes,
+      expiredSessionsDeleted: sessions.changes
+    };
+  }
+
   // ==========================================
   // User Repository
   // ==========================================
