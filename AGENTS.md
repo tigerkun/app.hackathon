@@ -254,6 +254,11 @@ Search `TODO(REAL_` for the live list. Current stubs:
 | `F4-3 (Onboarding & DPDP)` | `frontend/lib/pages/onboarding_page.dart`, `app_drawer.dart`, `backend/src/controllers/authController.js` | 3-screen onboarding, DPDP consent checkbox, emergency bypass, DELETE /api/v1/auth/me wipe | DONE |
 | `F4-4 (Review Markers)` | `backend/src/controllers/markerController.js`, `frontend/lib/pages/review_markers_page.dart` | GET /pending, POST /verify with audit fields, admin Review Markers UI | DONE |
 | `F4-5 (Report Status)` | `backend/src/controllers/reportController.js`, `frontend/lib/pages/community_alerts_page.dart` | POST /api/v1/reports/:id/status transition, Verified only toggle, status badges | DONE |
+| `F5-1 (Hardware Panic Gestures)` | `frontend/lib/services/gesture_service.dart`, `emergency_page.dart` | Volume-down hold & shake-to-SOS listener funneled into SosCountdownDialog | DONE |
+| `F5-2 (Accessibility & Distress)` | `frontend/lib/pages/emergency_page.dart`, `theme/app_colors.dart` | High contrast (amber #FFC94D), 64px touch targets, Semantics labels, haptics | DONE |
+| `F5-3 (Discreet Fake Call)` | `frontend/lib/pages/fake_call_page.dart`, `auth_state.dart`, `emergency_page.dart` | Realistic incoming call screen, decline/exit, muted SOS visuals toggle | DONE |
+| `F5-4 (Report Photos)` | `backend/src/controllers/reportController.js`, `frontend/lib/pages/report_page.dart`, `community_alerts_page.dart` | Base64 photo attachment, 500KB cap, JPEG/PNG validation, thumbnail display | DONE |
+| `F5-5 (Citizen Marker Submission)` | `frontend/lib/services/auth_service.dart`, `pages/safety_map_page.dart` | Authenticated safety marker submission FAB & dialog into moderator review queue | DONE |
 
 ## Known limitations
 
@@ -279,12 +284,13 @@ Search `TODO(REAL_` for the live list. Current stubs:
 # Full gate (recommended)
 npm test
 
-# Backend only — 209 tests across 56 suites (plus 11/11 smoke tests)
+# Backend only — 220 tests across 57 suites (plus 11/11 smoke tests)
 cd backend && npm test
 npm run smoke
 
 # Individual backend suites
 cd backend
+node --test tests/report_photo.test.js        # F5-4 report photo attachments & base64 cap
 node --test tests/sos_chat.test.js            # F4-1 two-way SOS chat & rate limiting
 node --test tests/sos_escalation.test.js      # F3-1 SOS auto-escalation & watchdog
 node --test tests/tracking_stall.test.js      # F3-2 breadcrumb-stall detection
