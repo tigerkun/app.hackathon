@@ -374,37 +374,39 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
   }
 
   Widget _buildJoinForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text(
-          'Paste the SafeSphere tracking link you received. No account needed — the link itself is the credential.',
-          style: TextStyle(color: AppColors.textSecondary),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: _linkController,
-          decoration: const InputDecoration(
-            labelText: 'Tracking link or session credentials',
-            hintText: 'https://…/?session=…&token=…',
-            border: OutlineInputBorder(),
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Paste the SafeSphere tracking link you received. No account needed — the link itself is the credential.',
+            style: TextStyle(color: AppColors.textSecondary),
           ),
-          maxLines: 2,
-          onSubmitted: (_) => _startWatching(),
-        ),
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: _connecting ? null : _startWatching,
-          icon: _connecting
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.my_location),
-          label: Text(_connecting ? 'Connecting…' : 'Watch Live Location'),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 12),
-          Text(_error!, style: const TextStyle(color: AppColors.red)),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _linkController,
+            decoration: const InputDecoration(
+              labelText: 'Tracking link or session credentials',
+              hintText: 'https://…/?session=…&token=…',
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 2,
+            onSubmitted: (_) => _startWatching(),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: _connecting ? null : _startWatching,
+            icon: _connecting
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.my_location),
+            label: Text(_connecting ? 'Connecting…' : 'Watch Live Location'),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(_error!, style: const TextStyle(color: AppColors.red)),
+          ],
         ],
-      ],
+      ),
     );
   }
 
@@ -582,12 +584,14 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
                 children: [
                   const Icon(Icons.route, size: 20, color: AppColors.teal),
                   const SizedBox(width: 8),
-                  Text(
-                    'Recent Breadcrumb Trail (${_breadcrumbs.length} points)',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
+                  Expanded(
+                    child: Text(
+                      'Recent Breadcrumb Trail (${_breadcrumbs.length} points)',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
                     ),
                   ),
                 ],
@@ -713,11 +717,15 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 160,
+          Expanded(
+            flex: 4,
             child: Text(label, style: const TextStyle(color: AppColors.textSecondary)),
           ),
-          Expanded(child: Text(value, style: const TextStyle(color: AppColors.textPrimary))),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 6,
+            child: Text(value, style: const TextStyle(color: AppColors.textPrimary)),
+          ),
         ],
       ),
     );

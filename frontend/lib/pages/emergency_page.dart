@@ -456,6 +456,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
                 icon: Icons.call,
                 title: "Call Emergency",
                 subtitle: "Dial 112 for immediate help",
+                semanticsLabel: "Call 112",
                 onTap: () => _makeCall(context, "112"),
               ),
 
@@ -482,6 +483,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
                 title: "Inform Trusted Contacts",
                 subtitle:
                     "Send a manual alert with your last known location",
+                semanticsLabel: "Trigger emergency SOS",
                 onTap: () {
                   _showMessagePreview(context);
                 },
@@ -500,6 +502,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
                 () {
                   _triggerDirectSmsFallback(context);
                 },
+                semanticsLabel: "Send emergency SMS fallback",
               ),
 
               const SizedBox(height: 16),
@@ -515,6 +518,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
                 () {
                   Navigator.pushNamed(context, '/share');
                 },
+                semanticsLabel: "Share my current live location",
               ),
 
               const SizedBox(height: 24),
@@ -587,51 +591,59 @@ class _EmergencyPageState extends State<EmergencyPage> {
               const SizedBox(height: 24),
 
               // 🟢 I'M SAFE
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final messenger = ScaffoldMessenger.of(context);
-                  final authService = AuthService.instance;
-                  final activeSosId = await authService.getActiveSosId();
+              Semantics(
+                button: true,
+                label: "I'm safe now",
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    try {
+                      HapticFeedback.lightImpact();
+                    } catch (_) {}
+                    final messenger = ScaffoldMessenger.of(context);
+                    final authService = AuthService.instance;
+                    final activeSosId = await authService.getActiveSosId();
 
-                  if (activeSosId == null || activeSosId.isEmpty) {
-                    messenger.showSnackBar(
-                      const SnackBar(
-                        content: Text("No active emergency SOS session to resolve."),
-                      ),
-                    );
-                    return;
-                  }
+                    if (activeSosId == null || activeSosId.isEmpty) {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text("No active emergency SOS session to resolve."),
+                        ),
+                      );
+                      return;
+                    }
 
-                  final success = await authService.resolveSos(
-                    alertId: activeSosId,
-                    notes: 'Resolved by user directly in Emergency screen',
-                  );
+                    final success = await authService.resolveSos(
+                      alertId: activeSosId,
+                      notes: 'Resolved by user directly in Emergency screen',
+                    );
 
-                  if (success) {
-                    _stopSosPolling();
-                    _loadSosHistory();
-                    messenger.showSnackBar(
-                      const SnackBar(
-                        content: Text("Active SOS alert marked resolved and broadcast updated."),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  } else {
-                    messenger.showSnackBar(
-                      const SnackBar(
-                        content: Text("Could not resolve SOS alert with server. Please check connection."),
-                        backgroundColor: Colors.redAccent,
-                      ),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.check_circle, color: Colors.green),
-                label: const Text("I'm Safe Now"),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.green,
-                  side: const BorderSide(color: Colors.green),
-                  padding: const EdgeInsets.symmetric(
-                      vertical: 14, horizontal: 20),
+                    if (success) {
+                      _stopSosPolling();
+                      _loadSosHistory();
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text("Active SOS alert marked resolved and broadcast updated."),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    } else {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text("Could not resolve SOS alert with server. Please check connection."),
+                          backgroundColor: Colors.redAccent,
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.check_circle, color: Colors.green),
+                  label: const Text("I'm Safe Now"),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.green,
+                    side: const BorderSide(color: Colors.green),
+                    minimumSize: const Size(double.infinity, 64),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 18, horizontal: 20),
+                  ),
                 ),
               ),
 
@@ -747,36 +759,47 @@ class _EmergencyPageState extends State<EmergencyPage> {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    String? semanticsLabel,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: Colors.white, size: 32),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  Text(subtitle,
-                      style: const TextStyle(color: Colors.white70)),
-                ],
-              ),
-            )
-          ],
+    return Semantics(
+      button: true,
+      label: semanticsLabel ?? title,
+      child: GestureDetector(
+        onTap: () {
+          try {
+            HapticFeedback.lightImpact();
+          } catch (_) {}
+          onTap();
+        },
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: Colors.white, size: 32),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Text(subtitle,
+                        style: const TextStyle(color: Colors.white70)),
+                  ],
+                ),
+              )
+            ],
+          ),
         ),
       ),
     );
@@ -789,35 +812,46 @@ class _EmergencyPageState extends State<EmergencyPage> {
     String subtitle,
     Color textColor,
     Color subTextColor,
-    VoidCallback onTap,
-  ) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: Colors.lightBlueAccent),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: TextStyle(
-                          color: textColor,
-                          fontWeight: FontWeight.bold)),
-                  Text(subtitle,
-                      style: TextStyle(color: subTextColor, fontSize: 12)),
-                ],
-              ),
-            )
-          ],
+    VoidCallback onTap, {
+    String? semanticsLabel,
+  }) {
+    return Semantics(
+      button: true,
+      label: semanticsLabel ?? title,
+      child: GestureDetector(
+        onTap: () {
+          try {
+            HapticFeedback.lightImpact();
+          } catch (_) {}
+          onTap();
+        },
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: Colors.lightBlueAccent),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: TextStyle(
+                            color: textColor,
+                            fontWeight: FontWeight.bold)),
+                    Text(subtitle,
+                        style: TextStyle(color: subTextColor, fontSize: 12)),
+                  ],
+                ),
+              )
+            ],
+          ),
         ),
       ),
     );
@@ -826,29 +860,45 @@ class _EmergencyPageState extends State<EmergencyPage> {
   Widget _helplineCard(
       BuildContext context, Color color, Color textColor, String title, String number) {
     return GestureDetector(
-      onTap: () => _makeCall(context, number),
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(title, style: TextStyle(color: textColor)),
-            Text(number,
+      onTap: () => _makeCall(context, number),
+      child: Semantics(
+        button: true,
+        label: "Call $title $number",
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 64),
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(color: textColor, fontWeight: FontWeight.w500),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                number,
                 style: TextStyle(
-                    color: textColor, fontWeight: FontWeight.bold)),
-          ],
+                    color: textColor, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Future<void> _makeCall(BuildContext context, String phoneNumber) async {
+    try {
+      HapticFeedback.lightImpact();
+    } catch (_) {}
     final Uri launchUri = Uri(
       scheme: 'tel',
       path: phoneNumber,
@@ -1181,6 +1231,14 @@ class _EmergencyPageState extends State<EmergencyPage> {
       alertType: 'CRITICAL_SOS',
       notes: 'Manual alert triggered from Emergency screen',
     );
+
+    // F5-2: Short audio cue and heavy tactile impact on SOS dispatch
+    try {
+      SystemSound.play(SystemSoundType.alert);
+    } catch (_) {}
+    try {
+      HapticFeedback.heavyImpact();
+    } catch (_) {}
 
     final locationUrl = "https://www.google.com/maps?q=$lat,$lng";
     final alertMsg = "🚨 [SafeSphere EMERGENCY ALERT] I need immediate help. My current live location is:\n$locationUrl";

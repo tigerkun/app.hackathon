@@ -231,7 +231,12 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
                   return ChoiceChip(
                     label: Text(filter),
                     selected: selectedFilter == filter,
-                    onSelected: (_) => setState(() => selectedFilter = filter),
+                    onSelected: (_) {
+                      try {
+                        HapticFeedback.selectionClick();
+                      } catch (_) {}
+                      setState(() => selectedFilter = filter);
+                    },
                   );
                 }),
                 FilterChip(
@@ -244,6 +249,9 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
                   selected: _verifiedOnly,
                   selectedColor: AppColors.teal,
                   onSelected: (val) {
+                    try {
+                      HapticFeedback.selectionClick();
+                    } catch (_) {}
                     setState(() {
                       _verifiedOnly = val;
                     });

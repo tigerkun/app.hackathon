@@ -206,23 +206,27 @@ class _HomePageState extends State<HomePage> {
             },
           ),
           const SizedBox(height: 10),
-          FloatingActionButton.extended(
-            heroTag: 'home_fab_sos',
-            backgroundColor: const Color(0xFFDC2626),
-            icon: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 24),
-            label: const Text(
-              "EMERGENCY SOS",
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-                letterSpacing: 1.1,
+          Semantics(
+            button: true,
+            label: "Trigger emergency SOS",
+            child: FloatingActionButton.extended(
+              heroTag: 'home_fab_sos',
+              backgroundColor: const Color(0xFFDC2626),
+              icon: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 24),
+              label: const Text(
+                "EMERGENCY SOS",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  letterSpacing: 1.1,
+                ),
               ),
+              tooltip: "Immediate Emergency SOS",
+              onPressed: () {
+                Navigator.pushNamed(context, '/emergency');
+              },
             ),
-            tooltip: "Immediate Emergency SOS",
-            onPressed: () {
-              Navigator.pushNamed(context, '/emergency');
-            },
           ),
         ],
       ),

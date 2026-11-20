@@ -16,6 +16,7 @@ class AppColors {
 
   // Status / action
   static const Color red = Color(0xFFFF4C4C);
+  // F5-2: #FFB020 on #0B0F1A provides 10.46:1 contrast ratio (exceeds WCAG AA 4.5:1 requirement for body text).
   static const Color amber = Color(0xFFFFB020);
 
   // Glass / cards
