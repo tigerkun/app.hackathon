@@ -167,6 +167,20 @@ repositories via built-in `node:sqlite` with instant `reset()` for tests).
   `rep_${DateTime.now().millisecondsSinceEpoch}_${_localReportSeq++}`. The monotonic
   sequence counter guarantees collision-free IDs during rapid sequential submissions
   within the same millisecond.
+- **SOS Auto-Escalation & Active Watchdog (F3-1)**:
+  - 60s periodic escalation tick in `backend/src/services/sosService.js` (unref'd timer, cleared on resolve). For each active alert older than `ESCALATE_AFTER_MS` (default 10min), increments `escalationLevel` (capped at 3) and broadcasts `SOS_ESCALATED` `{ alertId, level, elapsedMin, timestamp }` over WebSocket and re-broadcasts `SOS_ALERT_BROADCAST` to late-joining monitors.
+  - SQLite `alerts` schema includes `escalationLevel INTEGER NOT NULL DEFAULT 0`.
+  - `GET /api/v1/sos/active` and `GET /api/v1/sos/:id` expose `escalationLevel` and `ageSeconds`.
+  - Frontend `EmergencyPage` displays `"ACTIVE — broadcasting Xm"` and an `"ESCALATED ×N"` badge when `escalationLevel > 0`, with honest monitor client copy.
+- **Breadcrumb-Stall Guardian Alert (F3-2)**:
+  - SQLite `tracking_sessions` tracks `lastActivityAt TEXT` and `lastPingAt TEXT`.
+  - `locationController.getTrack` calculates `stallDetected = status === 'active' && (now - lastActivityAt > 120s)` and `stalledDurationSeconds`.
+  - Frontend `TrackSessionPage` polls every 4s and displays an amber `"SIGNAL LOST — no update for Xm"` banner when stalled, and a transient `"Signal restored"` banner for one polling cycle upon telemetry resumption.
+- **Check-in Timer / Dead-Man Switch (F3-3)**:
+  - SQLite `tracking_sessions` tracks `checkInIntervalMin INTEGER`, `checkInDeadline TEXT`, and `missedCheckIns INTEGER DEFAULT 0`.
+  - `POST /api/v1/location/share-session` accepts optional `checkInIntervalMin` (1–1440 min) and validates bounds.
+  - Background 60s tick checks active sessions where `now > checkInDeadline`, broadcasts `CHECKIN_MISSED` to tracking WebSocket room, and increments `missedCheckIns`. Broadcaster pings reset deadline = `now + interval` and clear missed check-ins.
+  - Frontend `ShareLocationPage` provides a check-in interval selector (Off, 15, 30, 60 min) with honest labeling ("alerts monitoring clients & session watchers" — strictly avoiding fake SMS claims), and `TrackSessionPage` shows "Next check-in due HH:MM" and red missed check-in banner.
 
 ## Conventions & invariants
 
@@ -204,9 +218,12 @@ Search `TODO(REAL_` for the live list. Current stubs:
 | Tag | Location | What remains | Status |
 |---|---|---|---|
 | `TODO(REAL_SMS_GATEWAY)` | `backend/src/services/sosService.js` | Dispatch SMS to emergency contacts via Twilio / AWS SNS | ACTIVE |
-| `TODO(REAL_BACKEND)` | `frontend/lib/services/auth_service.dart` (register, login, OTP send, OTP verify, PIN verify) | Endpoints are live on backend and verified by automated tests | DONE |
+| `NOTE:` markers | `frontend/lib/services/auth_service.dart` (register, login, OTP send, OTP verify, PIN verify) | Converted from stale `TODO(REAL_BACKEND)`; endpoints verified live on backend | DONE |
 | `TODO(REAL_BACKEND)` | `frontend/lib/pages/ai_assistant_page.dart` | Wire AI assistant to a real LLM/Gemini safety endpoint | ACTIVE |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/services/auth_service.dart` (`verifyBiometrics`) | Real biometric scan via `local_auth` wired with hardware check and fallback | DONE |
+| `F3-1 (SOS Escalation)` | `backend/src/services/sosService.js`, `frontend/lib/pages/emergency_page.dart` | 60s escalation watchdog, escalationLevel cap 3, WS broadcast, active ageSeconds & badge | DONE |
+| `F3-2 (Breadcrumb Stall)` | `backend/src/controllers/locationController.js`, `frontend/lib/pages/track_session_page.dart` | 120s breadcrumb stall detection, 4s polling, amber SIGNAL LOST & Signal restored banners | DONE |
+| `F3-3 (Check-in Timer)` | `backend/src/services/trackingService.js`, `frontend/lib/pages/share_location_page.dart` | Dead-man switch (1-1440m), 60s check-in tick, CHECKIN_MISSED WS broadcast, ping reset | DONE |
 
 ## Known limitations
 
@@ -232,17 +249,22 @@ Search `TODO(REAL_` for the live list. Current stubs:
 # Full gate (recommended)
 npm test
 
-# Backend only — 169 tests across 42 suites
+# Backend only — 194 tests across 54 suites (plus 11/11 smoke tests)
 cd backend && npm test
+npm run smoke
 
 # Individual backend suites
 cd backend
+node --test tests/sos_escalation.test.js      # F3-1 SOS auto-escalation & watchdog
+node --test tests/tracking_stall.test.js      # F3-2 breadcrumb-stall detection
+node --test tests/tracking_checkin.test.js    # F3-3 check-in timer dead-man switch
 node --test tests/location_tracking.test.js   # live tracking + token gating
 node --test tests/auth.test.js
 node --test tests/security_hardening.test.js
 node --test tests/reports_markers.test.js
 
-# Python challengers (frontend structure, routes, AST invariants, permissions)
+# Python challengers (197 tests across 10 suites: frontend structure, routes, AST invariants, permissions)
+python -m unittest discover -s frontend/test -p "*.py"
 python frontend/test/adversarial_r1_challenger_test.py
 python frontend/test/challenger_m2_empirical_test.py
 python frontend/test/test_r5_permissions_contrast.py

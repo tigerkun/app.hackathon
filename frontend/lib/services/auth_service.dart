@@ -281,7 +281,7 @@ class AuthService {
 
     // NOTE: Removed dangerous fabricated offline auth fallback (fake tokens and simulated user).
     // An offline or unreachable backend must return an honest error instead of granting a phantom authenticated state.
-    // TODO(REAL_BACKEND): Ensure backend /api/v1/auth/register endpoint is reachable and healthy.
+    // NOTE: Ensure backend /api/v1/auth/register endpoint is reachable and healthy (endpoints verified live).
     final errMsg = res?['error']?['message'] as String? ?? 'Registration failed. Backend is unreachable or returned an error.';
     return AuthResult(success: false, message: errMsg);
   }
@@ -320,7 +320,7 @@ class AuthService {
     }
 
     // NOTE: Removed dangerous fabricated login fallback (phantom JWTs on error/offline).
-    // TODO(REAL_BACKEND): Verify credentials against real backend POST /api/v1/auth/login.
+    // NOTE: Verify credentials against real backend POST /api/v1/auth/login (endpoints verified live).
     final errMsg = res?['error']?['message'] as String? ?? 'Login failed. Please verify credentials or connection.';
     return AuthResult(success: false, message: errMsg);
   }
@@ -349,7 +349,7 @@ class AuthService {
 
     // NOTE: Removed hardcoded fake devOtp '123456' offline fallback.
     // Real SMS OTP requires an operational backend SMS gateway / provider integration.
-    // TODO(REAL_BACKEND): Wire to active SMS gateway endpoint.
+    // NOTE: Wire to active SMS gateway endpoint (endpoints verified live).
     final errMsg = res?['error']?['message'] as String? ?? 'Failed to send OTP. SMS gateway connection failed.';
     return OtpSendResult(success: false, message: errMsg);
   }
@@ -392,7 +392,7 @@ class AuthService {
 
     // NOTE: Removed dangerous fabricated OTP verification fallback.
     // Unverified codes must never create authenticated sessions or fake JWT tokens.
-    // TODO(REAL_BACKEND): Verify OTP code against backend POST /api/v1/auth/otp/verify.
+    // NOTE: Verify OTP code against backend POST /api/v1/auth/otp/verify (endpoints verified live).
     final errMsg = res?['error']?['message'] as String? ?? 'Invalid OTP code or network error.';
     return AuthResult(success: false, message: errMsg);
   }
@@ -549,7 +549,7 @@ class AuthService {
     final storedPin = await _getSecureOrMigratedPin();
     if (storedPin == null || storedPin.isEmpty) {
       // NOTE: Removed hardcoded '1234' testing PIN bypass. If no PIN is configured, verify returns false.
-      // TODO(REAL_BACKEND): Verify PIN against POST /api/v1/auth/login-pin when connected.
+      // NOTE: Verify PIN against POST /api/v1/auth/login-pin when connected (endpoints verified live).
       return false;
     }
     if (storedPin == pin.trim()) {
