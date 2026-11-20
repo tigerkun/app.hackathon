@@ -64,6 +64,7 @@ EXPECTED_LIB_FILES = {
     "lib/routes/app_routes.dart",
     "lib/routes/route_guard.dart",
     "lib/services/auth_service.dart",
+    "lib/services/gesture_service.dart",
     "lib/services/map_config.dart",
     "lib/services/storage_service.dart",
     "lib/theme/app_colors.dart",
@@ -102,7 +103,7 @@ class TestReachabilityAndImports(unittest.TestCase):
             EXPECTED_LIB_FILES,
             f"lib/ file inventory mismatch!\nUnexpected: {rel_files - EXPECTED_LIB_FILES}\nMissing: {EXPECTED_LIB_FILES - rel_files}",
         )
-        self.assertEqual(len(dart_files), 36, f"Expected exactly 36 Dart files in lib/, found {len(dart_files)}")
+        self.assertEqual(len(dart_files), 37, f"Expected exactly 37 Dart files in lib/, found {len(dart_files)}")
 
     def test_no_zero_byte_files(self):
         dart_files = get_all_dart_files(LIB_DIR)
@@ -203,6 +204,7 @@ class TestReachabilityAndImports(unittest.TestCase):
             "routes/app_routes.dart",
             "routes/route_guard.dart",
             "services/auth_service.dart",
+            "services/gesture_service.dart",
             "services/map_config.dart",
             "services/storage_service.dart",
             "theme/app_theme.dart",

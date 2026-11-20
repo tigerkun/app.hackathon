@@ -1,9 +1,5 @@
-// TODO(REAL_HARDWARE): Panic gesture (volume-down button long-press ~1.5s or shake-to-SOS)
-// requires hardware interception via a native platform channel, accessibility service, or
-// volume_controller / sensors_plus plugin, which is not present in pubspec.yaml without new
-// native dependencies. Shipped F4-2-alt: persistent floating 1-tap SOS action on HomePage,
-// lock/home-screen emergency widget documentation, and zero extra confirmation dialogs
-// (SosCountdownDialog is the single gate before SOS dispatch).
+// F5-1: Hardware panic gestures (volume-down long-press ~1.5s via volume_controller and shake-to-SOS
+// via sensors_plus) with honest gating, intermediate confirmation, and mandatory 5s countdown dialog.
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -12,6 +8,7 @@ import '../widgets/glass_container.dart';
 import '../widgets/app_drawer.dart';
 import '../services/auth_service.dart';
 import '../services/map_config.dart';
+import '../services/gesture_service.dart';
 import 'auth/login_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -33,6 +30,24 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _refreshDashboard();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        GestureService.instance.startListening(
+          context,
+          onSosConfirmed: () async {
+            if (mounted) {
+              Navigator.pushNamed(context, '/emergency');
+            }
+          },
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    GestureService.instance.stopListening();
+    super.dispose();
   }
 
   Future<void> _refreshDashboard() async {

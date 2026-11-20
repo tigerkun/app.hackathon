@@ -67,6 +67,8 @@ class AuthService {
   static const String keyActiveSosResolveToken = 'safesphere_active_sos_resolve_token';
   static const String keyOnboarded = 'safesphere_onboarded';
   static const String keyPrivacyConsent = 'safesphere_privacy_consent';
+  static const String keyEmergencyGestures = 'safesphere_emergency_gestures';
+  static const String keyDiscreetMode = 'safesphere_discreet_mode';
   static const int maxOfflineSosQueueSize = 20;
 
   /// Compile-time configurable API base URL.

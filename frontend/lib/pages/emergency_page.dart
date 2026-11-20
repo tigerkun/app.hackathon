@@ -1,8 +1,6 @@
-// TODO(REAL_HARDWARE): Panic gesture (volume-down long-press ~1.5s or shake-to-SOS)
-// requires hardware interception via a native platform channel, accessibility service, or
-// volume_controller / sensors_plus plugin, which is not present in pubspec.yaml. Shipped F4-2-alt:
-// persistent floating 1-tap SOS action on HomePage, lock-screen widget recommendation,
-// and zero extra confirmation dialogs (SosCountdownDialog is the single gate before SOS dispatch).
+// F5-1: Hardware panic gestures (volume-down long-press ~1.5s via volume_controller and shake-to-SOS
+// via sensors_plus) with honest gating, intermediate confirmation, and mandatory 5s countdown dialog.
+// Real hardware interception degrades gracefully if platform channels are unsupported.
 
 import 'dart:async';
 import 'dart:convert';
@@ -13,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/auth_service.dart';
+import '../services/gesture_service.dart';
 
 class EmergencyPage extends StatefulWidget {
   const EmergencyPage({super.key});
@@ -47,10 +46,23 @@ class _EmergencyPageState extends State<EmergencyPage> {
     unawaited(AuthService.instance.processQueuedSosAlerts());
     _checkActiveSos();
     _loadSosHistory();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        GestureService.instance.startListening(
+          context,
+          onSosConfirmed: () async {
+            if (mounted) {
+              await _executeSosDispatch(context);
+            }
+          },
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
+    GestureService.instance.stopListening();
     _sosPollTimer?.cancel();
     _teardownChat();
     _chatController.dispose();

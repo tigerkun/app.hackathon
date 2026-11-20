@@ -34,6 +34,8 @@ class AuthState extends ChangeNotifier {
   bool _isOnboarded = false;
   String? _consentVersion;
   String? _consentTimestamp;
+  bool _emergencyGesturesEnabled = true;
+  bool _isDiscreetMode = false;
 
   AuthStatus get status => _status;
   UserModel? get currentUser => _currentUser;
@@ -42,6 +44,8 @@ class AuthState extends ChangeNotifier {
   bool get isOnboarded => _isOnboarded;
   String? get consentVersion => _consentVersion;
   String? get consentTimestamp => _consentTimestamp;
+  bool get emergencyGesturesEnabled => _emergencyGesturesEnabled;
+  bool get isDiscreetMode => _isDiscreetMode;
 
   bool get isAuthenticated => _status == AuthStatus.authenticated;
   bool get isGuest => _status == AuthStatus.guest;
@@ -75,6 +79,10 @@ class AuthState extends ChangeNotifier {
     try {
       final onboardedStr = await authService.storage.getString(AuthService.keyOnboarded);
       _isOnboarded = onboardedStr == 'true';
+      final gesturesStr = await authService.storage.getString(AuthService.keyEmergencyGestures);
+      _emergencyGesturesEnabled = gesturesStr == null ? true : (gesturesStr == 'true');
+      final discreetStr = await authService.storage.getString(AuthService.keyDiscreetMode);
+      _isDiscreetMode = discreetStr == 'true';
       final consentStr = await authService.storage.getString(AuthService.keyPrivacyConsent);
       if (consentStr != null && consentStr.isNotEmpty) {
         try {
@@ -325,6 +333,24 @@ class AuthState extends ChangeNotifier {
     _status = AuthStatus.authenticated;
     notifyListeners();
     return false;
+  }
+
+  Future<void> setEmergencyGestures(bool enabled) async {
+    _emergencyGesturesEnabled = enabled;
+    await authService.storage.setString(
+      AuthService.keyEmergencyGestures,
+      enabled ? 'true' : 'false',
+    );
+    notifyListeners();
+  }
+
+  Future<void> setDiscreetMode(bool enabled) async {
+    _isDiscreetMode = enabled;
+    await authService.storage.setString(
+      AuthService.keyDiscreetMode,
+      enabled ? 'true' : 'false',
+    );
+    notifyListeners();
   }
 
   Future<void> clearLocalData() async {

@@ -98,6 +98,17 @@ class AppDrawer extends StatelessWidget {
                 },
               ),
 
+              SwitchListTile(
+                secondary: const Icon(Icons.sensors, color: AppColors.teal),
+                title: const Text('Emergency Gestures', style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Volume-down hold & shake-to-SOS', style: TextStyle(color: Colors.white60, fontSize: 12)),
+                value: authState.emergencyGesturesEnabled,
+                activeColor: AppColors.teal,
+                onChanged: (val) async {
+                  await authState.setEmergencyGestures(val);
+                },
+              ),
+
               // ===== AUTHENTICATED CITIZEN SECURITY OPTIONS =====
               if (authState.isAuthenticated) ...[
                 const Divider(color: AppColors.border),

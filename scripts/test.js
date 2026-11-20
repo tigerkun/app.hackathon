@@ -36,6 +36,7 @@ const requiredFrontendPaths = [
   'frontend/lib/models/safety_marker.dart',
   'frontend/lib/models/report_model.dart',
   'frontend/lib/services/auth_service.dart',
+  'frontend/lib/services/gesture_service.dart',
   'frontend/lib/services/storage_service.dart',
   'frontend/lib/services/map_config.dart',
   'frontend/lib/data/auth_state.dart',
