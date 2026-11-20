@@ -1,3 +1,9 @@
+// TODO(REAL_HARDWARE): Panic gesture (volume-down long-press ~1.5s or shake-to-SOS)
+// requires hardware interception via a native platform channel, accessibility service, or
+// volume_controller / sensors_plus plugin, which is not present in pubspec.yaml. Shipped F4-2-alt:
+// persistent floating 1-tap SOS action on HomePage, lock-screen widget recommendation,
+// and zero extra confirmation dialogs (SosCountdownDialog is the single gate before SOS dispatch).
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -1073,28 +1079,8 @@ class _EmergencyPageState extends State<EmergencyPage> {
   }
 
   void _showMessagePreview(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Send Alert Message"),
-        content: const Text(
-          "This will dispatch a real-time SOS broadcast with your verified device GPS coordinates and open SMS/Share to notify your contacts.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _startSosGraceCountdownAndDispatch(context);
-            },
-            child: const Text("Dispatch & Share"),
-          ),
-        ],
-      ),
-    );
+    // F4-2-alt: The 5-second countdown dialog is the ONLY gate — no redundant confirmation prompts.
+    _startSosGraceCountdownAndDispatch(context);
   }
 
   Future<void> _startSosGraceCountdownAndDispatch(BuildContext context) async {

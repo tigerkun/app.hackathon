@@ -36,6 +36,7 @@ class AboutPage extends StatelessWidget {
             _feature(Icons.smart_toy, "AI Safety Assistant"),
             _feature(Icons.share_location, "One-Tap Location Sharing"),
             _feature(Icons.warning_amber, "Emergency SOS"),
+            _feature(Icons.touch_app_outlined, "Home & Lock Screen Quick Widget"),
 
             const SizedBox(height: 30),
 

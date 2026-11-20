@@ -1,3 +1,10 @@
+// TODO(REAL_HARDWARE): Panic gesture (volume-down button long-press ~1.5s or shake-to-SOS)
+// requires hardware interception via a native platform channel, accessibility service, or
+// volume_controller / sensors_plus plugin, which is not present in pubspec.yaml without new
+// native dependencies. Shipped F4-2-alt: persistent floating 1-tap SOS action on HomePage,
+// lock/home-screen emergency widget documentation, and zero extra confirmation dialogs
+// (SosCountdownDialog is the single gate before SOS dispatch).
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../theme/app_colors.dart';
@@ -170,12 +177,39 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.purple,
-        child: const Icon(Icons.smart_toy),
-        onPressed: () {
-          Navigator.pushNamed(context, '/ai-assistant');
-        },
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.small(
+            heroTag: 'home_fab_ai',
+            backgroundColor: AppColors.purple,
+            tooltip: "AI Safety Assistant",
+            child: const Icon(Icons.smart_toy, color: Colors.white),
+            onPressed: () {
+              Navigator.pushNamed(context, '/ai-assistant');
+            },
+          ),
+          const SizedBox(height: 10),
+          FloatingActionButton.extended(
+            heroTag: 'home_fab_sos',
+            backgroundColor: const Color(0xFFDC2626),
+            icon: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 24),
+            label: const Text(
+              "EMERGENCY SOS",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                letterSpacing: 1.1,
+              ),
+            ),
+            tooltip: "Immediate Emergency SOS",
+            onPressed: () {
+              Navigator.pushNamed(context, '/emergency');
+            },
+          ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _refreshDashboard,
@@ -184,6 +218,29 @@ class _HomePageState extends State<HomePage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            /// 0️⃣ LOCK / HOME SCREEN WIDGET TIP (F4-2-alt)
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E293B),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white24, width: 1),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.touch_app_outlined, color: Colors.tealAccent, size: 22),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      "Quick SOS Tip: Add the SafeSphere Emergency shortcut to your phone's lock or home screen for instant 1-tap SOS countdown.",
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
             /// 1️⃣ INTENT HEADLINE
             const Text(
               "How can we help you stay safe today?",
