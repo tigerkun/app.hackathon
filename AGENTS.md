@@ -161,7 +161,7 @@ repositories via built-in `node:sqlite` with instant `reset()` for tests).
 - **Live AI Safety Assistant (Groq)**: `POST /api/v1/ai/chat` proxies a sanitized prompt
     (1–1000 chars, ≤12 history turns, strict role allowlist) to Groq's OpenAI-compatible
     completions API. `GROQ_API_KEY` is read from env only and never returned/logged; model
-    defaults to `llama-3.3-70b-versatile` (`GROQ_MODEL` override) with `max_tokens` capped at 400.
+    defaults to `openai/gpt-oss-120b` (`GROQ_MODEL` override) with `max_tokens` capped at 400.
     Guest calls allowed via `optionalAuth`, throttled by a dedicated 10/min `aiLimiter`.
     Failures are honest: `503 AI_NOT_CONFIGURED`, `502 AI_UPSTREAM_ERROR` (key never leaked),
     `429 AI_RATE_LIMITED`. On failure the frontend keeps the offline W2-5 guides visible and
