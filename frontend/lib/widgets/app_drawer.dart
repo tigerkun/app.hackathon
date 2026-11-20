@@ -92,6 +92,16 @@ class AppDrawer extends StatelessWidget {
               // ===== AUTHENTICATED CITIZEN SECURITY OPTIONS =====
               if (authState.isAuthenticated) ...[
                 const Divider(color: AppColors.border),
+                if (authState.isPrivileged) ...[
+                  ListTile(
+                    leading: const Icon(Icons.fact_check_outlined, color: AppColors.teal),
+                    title: const Text('Review Markers (Admin)', style: TextStyle(color: Colors.white)),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, AppRoutes.reviewMarkers);
+                    },
+                  ),
+                ],
                 ListTile(
                   leading: const Icon(Icons.contact_phone_outlined, color: AppColors.teal),
                   title: const Text('Emergency Contacts', style: TextStyle(color: Colors.white)),

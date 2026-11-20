@@ -5,13 +5,15 @@
 
 const express = require('express');
 const markerController = require('../controllers/markerController');
-const { optionalAuth } = require('../middleware/authMiddleware');
+const { requireAuth, optionalAuth } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-router.get('/', markerController.list);
-router.get('/nearby', markerController.nearby);
+router.get('/', optionalAuth, markerController.list);
+router.get('/nearby', optionalAuth, markerController.nearby);
+router.get('/pending', requireAuth, markerController.pending);
 router.post('/', optionalAuth, markerController.create);
 router.get('/:id', markerController.getById);
+router.post('/:id/verify', requireAuth, markerController.verify);
 
 module.exports = router;

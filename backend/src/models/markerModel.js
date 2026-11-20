@@ -25,8 +25,12 @@ function createMarker({
   longitude,
   address = null,
   isVerified = false,
+  status = null,
+  verifiedBy = null,
+  verifiedAt = null,
   createdAt = new Date().toISOString()
 }) {
+  const verifiedBool = Boolean(isVerified);
   return {
     id,
     name: (name || '').trim(),
@@ -34,7 +38,10 @@ function createMarker({
     latitude: Number(latitude),
     longitude: Number(longitude),
     address: address ? String(address).trim() : null,
-    isVerified: Boolean(isVerified),
+    isVerified: verifiedBool,
+    status: status || (verifiedBool ? 'verified' : 'pending'),
+    verifiedBy: verifiedBy ? String(verifiedBy) : null,
+    verifiedAt: verifiedAt ? String(verifiedAt) : null,
     createdAt
   };
 }

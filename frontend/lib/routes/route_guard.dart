@@ -15,6 +15,7 @@ import '../pages/auth/register_page.dart';
 import '../pages/auth/phone_otp_page.dart';
 import '../pages/auth/pin_lock_page.dart';
 import '../pages/onboarding_page.dart';
+import '../pages/review_markers_page.dart';
 
 class RouteGuard {
   static Route<dynamic> generateRoute(RouteSettings settings, AuthState authState) {
@@ -79,6 +80,20 @@ class RouteGuard {
       }
     }
 
+    // Review Markers (Admin / Responder only)
+    if (routeName == AppRoutes.reviewMarkers) {
+      if (!authState.isAuthenticated || !authState.isPrivileged) {
+        return MaterialPageRoute(
+          builder: (_) => const HomePage(),
+          settings: settings,
+        );
+      }
+      return MaterialPageRoute(
+        builder: (_) => const ReviewMarkersPage(),
+        settings: settings,
+      );
+    }
+
     // 5. Protected Route (/report)
     if (routeName == AppRoutes.report) {
       // Allowed for authenticated and guests with emergency reporting
@@ -126,6 +141,8 @@ class RouteGuard {
         return const TrackSessionPage();
       case AppRoutes.about:
         return const AboutPage();
+      case AppRoutes.reviewMarkers:
+        return const ReviewMarkersPage();
       default:
         return const HomePage();
     }

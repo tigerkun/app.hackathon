@@ -31,6 +31,7 @@ class UserModel {
   final String name;
   final String email;
   final String phone;
+  final String role;
   final String? emergencyContactPhone;
   final String? emergencyContactName;
   final List<EmergencyContact> emergencyContacts;
@@ -44,6 +45,7 @@ class UserModel {
     required this.name,
     required this.email,
     required this.phone,
+    this.role = 'citizen',
     this.emergencyContactPhone,
     this.emergencyContactName,
     this.emergencyContacts = const [],
@@ -54,12 +56,14 @@ class UserModel {
   });
 
   bool get isAnonymous => isGuest;
+  bool get isPrivileged => role == 'admin' || role == 'first_responder' || role == 'responder';
 
   factory UserModel.guest() => UserModel(
     id: 'guest_user',
     name: 'Guest Citizen',
     email: '',
     phone: '',
+    role: 'citizen',
     isGuest: true,
     hasPin: false,
     biometricsEnabled: false,
@@ -90,6 +94,7 @@ class UserModel {
       name: json['name'] as String? ?? '',
       email: json['email'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
+      role: json['role'] as String? ?? 'citizen',
       emergencyContactPhone: contactPhone,
       emergencyContactName: contactName,
       emergencyContacts: contacts,
@@ -107,6 +112,7 @@ class UserModel {
     'name': name,
     'email': email,
     'phone': phone,
+    'role': role,
     'emergencyContactPhone': emergencyContactPhone,
     'emergencyContactName': emergencyContactName,
     'emergencyContacts': emergencyContacts.map((c) => c.toJson()).toList(),
@@ -121,6 +127,7 @@ class UserModel {
     String? name,
     String? email,
     String? phone,
+    String? role,
     String? emergencyContactPhone,
     String? emergencyContactName,
     List<EmergencyContact>? emergencyContacts,
@@ -135,6 +142,7 @@ class UserModel {
       name: name ?? this.name,
       email: email ?? this.email,
       phone: phone ?? this.phone,
+      role: role ?? this.role,
       emergencyContactPhone: emergencyContactPhone ?? this.emergencyContactPhone,
       emergencyContactName: emergencyContactName ?? this.emergencyContactName,
       emergencyContacts: emergencyContacts ?? this.emergencyContacts,

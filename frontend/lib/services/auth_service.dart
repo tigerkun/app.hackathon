@@ -1020,6 +1020,36 @@ class AuthService {
     return [];
   }
 
+  /// Fetches pending safety markers awaiting admin/responder verification (GET /api/v1/markers/pending).
+  Future<List<Map<String, dynamic>>> fetchPendingMarkers() async {
+    final token = await storage.getString(keyToken);
+    final res = await _requestDetailed(
+      method: 'GET',
+      path: '/api/v1/markers/pending',
+      token: token,
+    );
+
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      final data = res.data!['data'];
+      if (data is List) {
+        return data.cast<Map<String, dynamic>>();
+      }
+    }
+    return [];
+  }
+
+  /// Verifies or rejects a pending safety marker (POST /api/v1/markers/:id/verify).
+  Future<bool> verifyMarker(String markerId, {required bool approve}) async {
+    final token = await storage.getString(keyToken);
+    final res = await _requestDetailed(
+      method: 'POST',
+      path: '/api/v1/markers/$markerId/verify',
+      token: token,
+      body: {'approve': approve},
+    );
+    return res.isSuccess && res.data != null && res.data!['success'] == true;
+  }
+
   // ---------------------------------------------------------------------------
   // Location Tracking API (/api/v1/location)
   // ---------------------------------------------------------------------------

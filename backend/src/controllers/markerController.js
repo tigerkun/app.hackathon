@@ -112,7 +112,7 @@ function create(req, res, next) {
     }
 
     const isPrivileged = Boolean(
-      req.user && (req.user.role === 'admin' || req.user.role === 'first_responder')
+      req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
     );
 
     const marker = createMarker({
@@ -130,6 +130,92 @@ function create(req, res, next) {
       success: true,
       message: 'Safety marker created successfully',
       data: saved
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function pending(req, res, next) {
+  try {
+    const isPrivileged = Boolean(
+      req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
+    );
+
+    if (!isPrivileged) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Privileged role (admin/responder) required to access pending markers',
+          details: []
+        }
+      });
+    }
+
+    const markers = db.getPendingMarkers();
+    res.status(200).json({
+      success: true,
+      count: markers.length,
+      data: markers
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function verify(req, res, next) {
+  try {
+    const isPrivileged = Boolean(
+      req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
+    );
+
+    if (!isPrivileged) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Privileged role (admin/responder) required to verify markers',
+          details: []
+        }
+      });
+    }
+
+    const { id } = req.params;
+    const { approve } = req.body;
+
+    if (approve === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'approve (boolean) field is required',
+          details: []
+        }
+      });
+    }
+
+    const existing = db.findMarkerById(id);
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'MARKER_NOT_FOUND',
+          message: `Marker with ID ${id} not found`,
+          details: []
+        }
+      });
+    }
+
+    const updated = db.verifyMarker(id, {
+      approve: Boolean(approve),
+      verifiedBy: req.user.id || req.user.name || 'admin'
+    });
+
+    res.status(200).json({
+      success: true,
+      message: Boolean(approve) ? 'Marker verified and published' : 'Marker rejected',
+      data: updated
     });
   } catch (err) {
     next(err);
@@ -165,5 +251,7 @@ module.exports = {
   list,
   nearby,
   create,
+  pending,
+  verify,
   getById
 };

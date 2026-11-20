@@ -44,6 +44,7 @@ class AuthState extends ChangeNotifier {
   bool get isOtpPending => _status == AuthStatus.otpPending;
   bool get isLoading => _status == AuthStatus.loading;
   bool get hasActiveAccess => isAuthenticated || isGuest;
+  bool get isPrivileged => _currentUser != null && _currentUser!.isPrivileged;
 
   void setErrorMessage(String? msg) {
     _errorMessage = msg;

@@ -25,4 +25,5 @@ class AppRoutes {
   static const String report = '/report';
   static const String profile = '${_p}profile';
   static const String contacts = '${_p}contacts';
+  static const String reviewMarkers = '${_p}review-markers';
 }

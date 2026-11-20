@@ -162,6 +162,92 @@ describe('SafeSphere Community Safety & Emergency API Tests', () => {
       assert.equal(responderRes.status, 201);
       assert.equal(responderRes.body.data.isVerified, true, 'First responder creates verified marker');
     });
+
+    it('requires privileged auth (admin/responder) for GET /api/v1/markers/pending', async () => {
+      // 1. Unauthenticated request
+      const unauth = await serverHarness.request('/api/v1/markers/pending');
+      assert.equal(unauth.status, 401);
+
+      // 2. Citizen request
+      const citizen = createTestToken({ role: 'citizen' });
+      const citizenRes = await serverHarness.request('/api/v1/markers/pending', {
+        headers: { Authorization: `Bearer ${citizen.token}` }
+      });
+      assert.equal(citizenRes.status, 403);
+
+      // 3. Admin request
+      const admin = createTestToken({ role: 'admin' });
+      const adminRes = await serverHarness.request('/api/v1/markers/pending', {
+        headers: { Authorization: `Bearer ${admin.token}` }
+      });
+      assert.equal(adminRes.status, 200);
+      assert.ok(Array.isArray(adminRes.body.data));
+    });
+
+    it('allows admin/responder to verify or reject pending markers with audit logging', async () => {
+      // Create an unverified marker first
+      const citizen = createTestToken({ role: 'citizen' });
+      const createdRes = await serverHarness.request('/api/v1/markers', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizen.token}` },
+        body: {
+          name: 'Underground Pedestrian Subway Guard Post',
+          latitude: 28.6350,
+          longitude: 77.2180,
+          category: 'Verified Safe Zone'
+        }
+      });
+      assert.equal(createdRes.status, 201);
+      const markerId = createdRes.body.data.id;
+      assert.equal(createdRes.body.data.isVerified, false);
+      assert.equal(createdRes.body.data.status, 'pending');
+
+      // Unauthenticated verify attempt
+      const unauthVerify = await serverHarness.request(`/api/v1/markers/${markerId}/verify`, {
+        method: 'POST',
+        body: { approve: true }
+      });
+      assert.equal(unauthVerify.status, 401);
+
+      // Citizen verify attempt
+      const citizenVerify = await serverHarness.request(`/api/v1/markers/${markerId}/verify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizen.token}` },
+        body: { approve: true }
+      });
+      assert.equal(citizenVerify.status, 403);
+
+      // Admin approves
+      const admin = createTestToken({ role: 'admin', id: 'admin_test_1' });
+      const approveRes = await serverHarness.request(`/api/v1/markers/${markerId}/verify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${admin.token}` },
+        body: { approve: true }
+      });
+      assert.equal(approveRes.status, 200);
+      assert.equal(approveRes.body.data.isVerified, true);
+      assert.equal(approveRes.body.data.status, 'verified');
+      assert.ok(approveRes.body.data.verifiedBy);
+      assert.ok(approveRes.body.data.verifiedAt);
+
+      // Admin rejects a different unverified marker
+      const secondCreated = await serverHarness.request('/api/v1/markers', {
+        method: 'POST',
+        body: {
+          name: 'Vandalized Kiosk',
+          latitude: 28.6360,
+          longitude: 77.2190
+        }
+      });
+      const rejectRes = await serverHarness.request(`/api/v1/markers/${secondCreated.body.data.id}/verify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${admin.token}` },
+        body: { approve: false }
+      });
+      assert.equal(rejectRes.status, 200);
+      assert.equal(rejectRes.body.data.isVerified, false);
+      assert.equal(rejectRes.body.data.status, 'rejected');
+    });
   });
 
   // ===========================================================================
