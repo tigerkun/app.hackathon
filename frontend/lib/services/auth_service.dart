@@ -1054,6 +1054,39 @@ class AuthService {
     return res.isSuccess && res.data != null && res.data!['success'] == true;
   }
 
+  /// F5-5: Submits a new citizen safety marker for moderator review (POST /api/v1/markers).
+  /// Returns the created marker map on success, null on failure.
+  /// Status defaults to 'pending' — backend queues it for admin/responder verification.
+  Future<Map<String, dynamic>?> createMarker({
+    required String name,
+    required String category,
+    required double latitude,
+    required double longitude,
+    String? address,
+    String? note,
+  }) async {
+    final token = await storage.getString(keyToken);
+    final body = <String, dynamic>{
+      'name': name,
+      'category': category,
+      'latitude': latitude,
+      'longitude': longitude,
+      if (address != null && address.isNotEmpty) 'address': address,
+      if (note != null && note.isNotEmpty) 'note': note,
+      'status': 'pending',
+    };
+    final res = await _requestDetailed(
+      method: 'POST',
+      path: '/api/v1/markers',
+      token: token,
+      body: body,
+    );
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      return res.data!['data'] as Map<String, dynamic>?;
+    }
+    return null;
+  }
+
   // ---------------------------------------------------------------------------
   // Location Tracking API (/api/v1/location)
   // ---------------------------------------------------------------------------

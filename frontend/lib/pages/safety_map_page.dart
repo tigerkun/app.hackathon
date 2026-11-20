@@ -231,6 +231,252 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
     }
   }
 
+  /// F5-5: Shows a dialog allowing authenticated users to submit a safety marker.
+  Future<void> _showSubmitMarkerDialog() async {
+    if (!AuthService.instance.isAuthenticated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Sign in to submit new safety markers")),
+      );
+      return;
+    }
+
+    final nameController = TextEditingController();
+    final addressController = TextEditingController();
+    final noteController = TextEditingController();
+    String selectedCategory = 'Police Station';
+    double markerLat = _userLat;
+    double markerLng = _userLng;
+    final latController = TextEditingController(text: markerLat.toStringAsFixed(6));
+    final lngController = TextEditingController(text: markerLng.toStringAsFixed(6));
+    bool isSubmitting = false;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF131D31),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.add_location_alt, color: AppColors.teal),
+                SizedBox(width: 8),
+                Text(
+                  "Submit Safety Marker",
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Submitted markers will be reviewed and verified by moderators.",
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: nameController,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: "Facility / Location Name *",
+                      labelStyle: const TextStyle(color: Colors.white70),
+                      hintText: "e.g. Connaught Place Police Post",
+                      hintStyle: const TextStyle(color: Colors.white38),
+                      filled: true,
+                      fillColor: Colors.black26,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedCategory,
+                    dropdownColor: const Color(0xFF1E293B),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: "Category *",
+                      labelStyle: const TextStyle(color: Colors.white70),
+                      filled: true,
+                      fillColor: Colors.black26,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'Police Station', child: Text('Police Station')),
+                      DropdownMenuItem(value: 'Hospital', child: Text('Hospital / Clinic')),
+                      DropdownMenuItem(value: 'Verified Safe Zone', child: Text('Safe Zone / Shelter')),
+                      DropdownMenuItem(value: 'Well-lit Transit Hub', child: Text('Transit Hub')),
+                      DropdownMenuItem(value: 'Caution Area', child: Text('Caution Area')),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() => selectedCategory = val);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: latController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: "Latitude *",
+                            labelStyle: const TextStyle(color: Colors.white70),
+                            filled: true,
+                            fillColor: Colors.black26,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onChanged: (v) {
+                            final parsed = double.tryParse(v);
+                            if (parsed != null) markerLat = parsed;
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: lngController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: "Longitude *",
+                            labelStyle: const TextStyle(color: Colors.white70),
+                            filled: true,
+                            fillColor: Colors.black26,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onChanged: (v) {
+                            final parsed = double.tryParse(v);
+                            if (parsed != null) markerLng = parsed;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: addressController,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: "Address (Optional)",
+                      labelStyle: const TextStyle(color: Colors.white70),
+                      hintText: "Street name or landmark",
+                      hintStyle: const TextStyle(color: Colors.white38),
+                      filled: true,
+                      fillColor: Colors.black26,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: noteController,
+                    style: const TextStyle(color: Colors.white),
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      labelText: "Note for Moderators (Optional)",
+                      labelStyle: const TextStyle(color: Colors.white70),
+                      hintText: "e.g. 24/7 security guard on duty",
+                      hintStyle: const TextStyle(color: Colors.white38),
+                      filled: true,
+                      fillColor: Colors.black26,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
+                child: const Text("Cancel", style: TextStyle(color: Colors.white60)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.teal,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        final name = nameController.text.trim();
+                        if (name.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Please enter a facility name")),
+                          );
+                          return;
+                        }
+
+                        final lat = double.tryParse(latController.text.trim());
+                        final lng = double.tryParse(lngController.text.trim());
+                        if (lat == null || lng == null || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Please enter valid GPS coordinates")),
+                          );
+                          return;
+                        }
+
+                        setDialogState(() => isSubmitting = true);
+                        try {
+                          final res = await AuthService.instance.createMarker(
+                            name: name,
+                            category: selectedCategory,
+                            latitude: lat,
+                            longitude: lng,
+                            address: addressController.text.trim().isEmpty ? null : addressController.text.trim(),
+                            note: noteController.text.trim().isEmpty ? null : noteController.text.trim(),
+                          );
+
+                          if (!context.mounted) return;
+                          Navigator.pop(ctx);
+
+                          if (res != null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text("Marker submitted — pending verification by moderators"),
+                                backgroundColor: AppColors.teal,
+                              ),
+                            );
+                            await _loadMapData();
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text("Failed to submit marker. Please try again."),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                          }
+                        } catch (_) {
+                          if (context.mounted) {
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text("An error occurred while submitting marker"),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                child: isSubmitting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                      )
+                    : const Text("Submit", style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filteredItems = _getFilteredItems();
@@ -378,7 +624,18 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.teal))
                       : const Icon(Icons.my_location, color: AppColors.teal),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
+                // F5-5: Submit safety marker FAB (authenticated users only)
+                if (AuthService.instance.isAuthenticated) ...[
+                  FloatingActionButton.small(
+                    heroTag: "submitMarker",
+                    backgroundColor: AppColors.teal,
+                    tooltip: "Submit a safety marker",
+                    onPressed: _showSubmitMarkerDialog,
+                    child: const Icon(Icons.add_location_alt, color: Colors.black, size: 20),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 FloatingActionButton.extended(
                   heroTag: "reportLoc",
                   backgroundColor: AppColors.amber,
