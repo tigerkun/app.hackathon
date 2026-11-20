@@ -181,6 +181,30 @@ repositories via built-in `node:sqlite` with instant `reset()` for tests).
   - `POST /api/v1/location/share-session` accepts optional `checkInIntervalMin` (1–1440 min) and validates bounds.
   - Background 60s tick checks active sessions where `now > checkInDeadline`, broadcasts `CHECKIN_MISSED` to tracking WebSocket room, and increments `missedCheckIns`. Broadcaster pings reset deadline = `now + interval` and clear missed check-ins.
   - Frontend `ShareLocationPage` provides a check-in interval selector (Off, 15, 30, 60 min) with honest labeling ("alerts monitoring clients & session watchers" — strictly avoiding fake SMS claims), and `TrackSessionPage` shows "Next check-in due HH:MM" and red missed check-in banner.
+- **Two-Way SOS Responder Chat (F4-1)**:
+  - WebSocket `/ws/sos`: frame `CHAT_MESSAGE` `{ alertId, token | sessionId?, text }`. Auth verifies alert ownership, privileged responder/admin role, or valid `resolveToken`. Broadcasts to alert room.
+  - SQLite `sos_messages`: additive table storing `id`, `alertId`, `senderRole`, `senderId`, `text`, `createdAt` with 50-message FIFO cap per alert.
+  - Rate limiting: enforced at 1 msg/2s per sender. Max 500 characters.
+  - REST fallback: `POST /api/v1/sos/:id/messages` and `GET /api/v1/sos/:id/messages` for environments where WS is dropped or blocked.
+  - Frontend `EmergencyPage` renders interactive live chat panel with victim vs responder message distinction, WS streaming, and 5s polling fallback.
+- **Panic Gesture & 1-Tap SOS (F4-2 / F4-2-alt)**:
+  - Hardware button intercept deferred under `TODO(REAL_HARDWARE)` due to absence of hardware intercept plugin in `pubspec.yaml`.
+  - Shipped `F4-2-alt`: persistent 1-tap floating SOS action on `HomePage`, single-gate countdown dialog (`SosCountdownDialog`) without superfluous confirmation dialogs, and lock-screen widget recommendation in `AboutPage`.
+- **Onboarding & India DPDP Act Privacy Consent (F4-3)**:
+  - 3-screen `OnboardingPage`: (1) assistive scope & 112 priority, (2) permissions rationale, (3) DPDP consent checkbox required before "Get Started".
+  - Storage flags: `safesphere_onboarded` ('true'/'false') and `safesphere_privacy_consent` (ISO timestamp + policy version).
+  - Invariant #2: `/emergency` and `/share` routes bypass onboarding entirely.
+  - `DELETE /api/v1/auth/me`: requires authentication and PIN re-auth, cascadingly deleting user, sessions, alerts, and tracking sessions.
+  - Drawer exposes "Privacy & Consent (DPDP)" dialog with consent metadata and account erasure.
+- **Marker Verification Admin Queue (F4-4)**:
+  - SQLite `markers`: schema includes `status TEXT DEFAULT 'verified'`, `verifiedBy TEXT`, and `verifiedAt TEXT`.
+  - `GET /api/v1/markers/pending`: privileged admin/responder only, returns pending marker queue.
+  - `POST /api/v1/markers/:id/verify`: `{ approve: boolean }` with privileged role requirement and audit logging.
+  - Frontend `/review-markers` (`ReviewMarkersPage`): admin/responder queue with approve/reject workflow.
+- **Report Status Lifecycle Visibility (F4-5)**:
+  - Valid report statuses: `['pending', 'under_investigation', 'verified', 'resolved', 'rejected']`.
+  - `POST /api/v1/reports/:id/status`: privileged status transition endpoint.
+  - Frontend `CommunityAlertsPage`: added "Verified only" FilterChip toggle, status badges (`Pending`, `Investigating`, `Verified`, `Resolved`, `Rejected`), and detailed modal report inspection.
 
 ## Conventions & invariants
 
@@ -221,9 +245,15 @@ Search `TODO(REAL_` for the live list. Current stubs:
 | `NOTE:` markers | `frontend/lib/services/auth_service.dart` (register, login, OTP send, OTP verify, PIN verify) | Converted from stale `TODO(REAL_BACKEND)`; endpoints verified live on backend | DONE |
 | `TODO(REAL_BACKEND)` | `frontend/lib/pages/ai_assistant_page.dart` | Wire AI assistant to a real LLM/Gemini safety endpoint | ACTIVE |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/services/auth_service.dart` (`verifyBiometrics`) | Real biometric scan via `local_auth` wired with hardware check and fallback | DONE |
+| `TODO(REAL_HARDWARE)` | `frontend/lib/pages/home_page.dart`, `emergency_page.dart` | Volume button / hardware panic intercept requires native plugin, fallback F4-2-alt shipped | DEFERRED |
 | `F3-1 (SOS Escalation)` | `backend/src/services/sosService.js`, `frontend/lib/pages/emergency_page.dart` | 60s escalation watchdog, escalationLevel cap 3, WS broadcast, active ageSeconds & badge | DONE |
 | `F3-2 (Breadcrumb Stall)` | `backend/src/controllers/locationController.js`, `frontend/lib/pages/track_session_page.dart` | 120s breadcrumb stall detection, 4s polling, amber SIGNAL LOST & Signal restored banners | DONE |
 | `F3-3 (Check-in Timer)` | `backend/src/services/trackingService.js`, `frontend/lib/pages/share_location_page.dart` | Dead-man switch (1-1440m), 60s check-in tick, CHECKIN_MISSED WS broadcast, ping reset | DONE |
+| `F4-1 (SOS Chat)` | `backend/src/server.js`, `alertController.js`, `frontend/lib/pages/emergency_page.dart` | Two-way WS & REST responder chat, 1 msg/2s rate limit, 50 msg FIFO cap, victim vs responder UI | DONE |
+| `F4-2 (1-Tap SOS)` | `frontend/lib/pages/home_page.dart`, `emergency_page.dart`, `about_page.dart` | Persistent 1-tap SOS action, single countdown gate, lock-screen widget recommendation | DONE |
+| `F4-3 (Onboarding & DPDP)` | `frontend/lib/pages/onboarding_page.dart`, `app_drawer.dart`, `backend/src/controllers/authController.js` | 3-screen onboarding, DPDP consent checkbox, emergency bypass, DELETE /api/v1/auth/me wipe | DONE |
+| `F4-4 (Review Markers)` | `backend/src/controllers/markerController.js`, `frontend/lib/pages/review_markers_page.dart` | GET /pending, POST /verify with audit fields, admin Review Markers UI | DONE |
+| `F4-5 (Report Status)` | `backend/src/controllers/reportController.js`, `frontend/lib/pages/community_alerts_page.dart` | POST /api/v1/reports/:id/status transition, Verified only toggle, status badges | DONE |
 
 ## Known limitations
 
@@ -249,12 +279,13 @@ Search `TODO(REAL_` for the live list. Current stubs:
 # Full gate (recommended)
 npm test
 
-# Backend only — 194 tests across 54 suites (plus 11/11 smoke tests)
+# Backend only — 209 tests across 56 suites (plus 11/11 smoke tests)
 cd backend && npm test
 npm run smoke
 
 # Individual backend suites
 cd backend
+node --test tests/sos_chat.test.js            # F4-1 two-way SOS chat & rate limiting
 node --test tests/sos_escalation.test.js      # F3-1 SOS auto-escalation & watchdog
 node --test tests/tracking_stall.test.js      # F3-2 breadcrumb-stall detection
 node --test tests/tracking_checkin.test.js    # F3-3 check-in timer dead-man switch
