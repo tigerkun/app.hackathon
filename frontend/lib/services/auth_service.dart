@@ -63,6 +63,10 @@ class AuthService {
   static const String keyPin = 'safesphere_user_pin';
   static const String keyBio = 'safesphere_bio_enabled';
   static const String keyOfflineSosQueue = 'safesphere_offline_sos_queue';
+  /// Queued SOS alerts older than this are dropped on replay: a stale SOS
+  /// broadcast is dangerously misleading for monitoring clients and the
+  /// victim is unlikely to still need an hour-old distress dispatch.
+  static const Duration offlineSosQueueTtl = Duration(hours: 24);
   static const String keyActiveSosId = 'safesphere_active_sos_id';
   static const String keyActiveSosResolveToken = 'safesphere_active_sos_resolve_token';
   static const String keyOnboarded = 'safesphere_onboarded';
@@ -698,6 +702,19 @@ class AuthService {
   // ---------------------------------------------------------------------------
   // Offline SOS Local Storage Queue & Automatic Replay Logic
   // ---------------------------------------------------------------------------
+  /// Returns true when a queue entry's `_queuedAt` stamp is older than the
+  /// TTL or is missing/unparsable (unknown age = treated as stale).
+  bool _isQueueEntryExpired(Map<String, dynamic> entry) {
+    final raw = entry['_queuedAt'];
+    if (raw is! String || raw.isEmpty) return true;
+    try {
+      final queuedAt = DateTime.parse(raw);
+      return DateTime.now().toUtc().difference(queuedAt.toUtc()) > offlineSosQueueTtl;
+    } catch (_) {
+      return true;
+    }
+  }
+
   Future<void> queueOfflineSos(Map<String, dynamic> payload) async {
     try {
       final raw = await storage.getString(keyOfflineSosQueue);
@@ -712,10 +729,16 @@ class AuthService {
           }
         }
       }
+      // TTL: drop entries that are already past their replay window.
+      queue.removeWhere(_isQueueEntryExpired);
       while (queue.length >= maxOfflineSosQueueSize) {
         queue.removeAt(0); // Drop oldest entries to enforce capacity cap
       }
-      queue.add(payload);
+      // Stamp the entry so replay can enforce the TTL. The underscore key
+      // cannot collide with real SOS API fields and is stripped before send.
+      final stamped = Map<String, dynamic>.from(payload)
+        ..['_queuedAt'] = DateTime.now().toUtc().toIso8601String();
+      queue.add(stamped);
       await storage.setString(keyOfflineSosQueue, jsonEncode(queue));
     } catch (_) {}
   }
@@ -729,6 +752,7 @@ class AuthService {
         return decoded
             .whereType<Map<String, dynamic>>()
             .map((e) => Map<String, dynamic>.from(e))
+            .where((entry) => !_isQueueEntryExpired(entry))
             .toList();
       }
     } catch (_) {}
@@ -755,10 +779,13 @@ class AuthService {
 
       for (final item in decoded) {
         if (item is Map<String, dynamic>) {
+          // TTL enforcement: silently drop entries older than the window.
+          if (_isQueueEntryExpired(item)) continue;
+          final body = Map<String, dynamic>.from(item)..remove('_queuedAt');
           final res = await _requestDetailed(
             method: 'POST',
             path: '/api/v1/sos/trigger',
-            body: item,
+            body: body,
             token: token,
           );
 

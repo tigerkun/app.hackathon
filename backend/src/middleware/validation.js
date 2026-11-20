@@ -154,10 +154,32 @@ function validateReportCreate(req, res, next) {
 
   if (!description || typeof description !== 'string' || !description.trim()) {
     issues.push({ field: 'description', issue: 'Report description is required.' });
+  } else if (description.length > 2000) {
+    issues.push({ field: 'description', issue: 'Report description must be at most 2000 characters.' });
   }
 
   if (!location || typeof location !== 'string' || !location.trim()) {
     issues.push({ field: 'location', issue: 'Report location or landmark is required.' });
+  } else if (location.length > 200) {
+    issues.push({ field: 'location', issue: 'Report location must be at most 200 characters.' });
+  }
+
+  // Coordinates are optional but must be real numbers within bounds when present.
+  const lat = Number(req.body?.latitude);
+  const lng = Number(req.body?.longitude);
+  if (req.body?.latitude !== undefined && req.body?.latitude !== null
+    && (!Number.isFinite(lat) || lat < -90 || lat > 90)) {
+    issues.push({ field: 'latitude', issue: 'Valid latitude coordinate is required.' });
+  }
+  if (req.body?.longitude !== undefined && req.body?.longitude !== null
+    && (!Number.isFinite(lng) || lng < -180 || lng > 180)) {
+    issues.push({ field: 'longitude', issue: 'Valid longitude coordinate is required.' });
+  }
+
+  // A client-provided photoUrl bypasses the base64 image validation below —
+  // only values derived from a validated photoBase64 payload may be used.
+  if (req.body?.photoUrl !== undefined && req.body?.photoUrl !== null) {
+    issues.push({ field: 'photoUrl', issue: 'photoUrl cannot be submitted directly. Send the image as photoBase64 instead.' });
   }
 
   if (photoBase64 !== undefined && photoBase64 !== null) {
@@ -227,6 +249,23 @@ function validateSosTrigger(req, res, next) {
 
   if (longitude === undefined || longitude === null || !Number.isFinite(lng) || lng < -180 || lng > 180) {
     issues.push({ field: 'longitude', issue: 'Valid longitude coordinate is required.' });
+  }
+
+  // Length caps on free-text and type fields (defense against oversized payloads).
+  if (req.body?.notes !== undefined && req.body?.notes !== null) {
+    if (typeof req.body.notes !== 'string') {
+      issues.push({ field: 'notes', issue: 'SOS notes must be a string.' });
+    } else if (req.body.notes.length > 500) {
+      issues.push({ field: 'notes', issue: 'SOS notes must be at most 500 characters.' });
+    }
+  }
+
+  if (req.body?.alertType !== undefined && req.body?.alertType !== null) {
+    if (typeof req.body.alertType !== 'string') {
+      issues.push({ field: 'alertType', issue: 'alertType must be a string.' });
+    } else if (req.body.alertType.length > 40) {
+      issues.push({ field: 'alertType', issue: 'alertType must be at most 40 characters.' });
+    }
   }
 
   if (issues.length > 0) {

@@ -6,7 +6,7 @@
 const express = require('express');
 const authController = require('../controllers/authController');
 const { requireAuth } = require('../middleware/authMiddleware');
-const { authLimiter } = require('../middleware/rateLimiter');
+const { authLimiter, otpLimiter } = require('../middleware/rateLimiter');
 const {
   validateRegister,
   validateLogin,
@@ -26,9 +26,10 @@ router.post('/signup', authLimiter, validateRegister, authController.register);
 router.post('/login', authLimiter, validateLogin, authController.login);
 router.post('/login-pin', authLimiter, validateLoginPin, authController.loginPin);
 
-// OTP SMS flow
-router.post('/otp/send', validateOtpSend, authController.sendOtp);
-router.post('/otp/verify', validateOtpVerify, authController.verifyOtp);
+// OTP SMS flow — dedicated limiter: OTP dispatch costs money (SMS) and the
+// verify endpoint is brute-forceable, so both are stricter than authLimiter.
+router.post('/otp/send', otpLimiter, validateOtpSend, authController.sendOtp);
+router.post('/otp/verify', otpLimiter, validateOtpVerify, authController.verifyOtp);
 
 // Session token refresh
 router.post('/refresh', validateRefresh, authController.refresh);

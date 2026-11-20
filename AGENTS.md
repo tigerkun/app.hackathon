@@ -264,6 +264,8 @@ Search `TODO(REAL_` for the live list. Current stubs:
 | `TODO(REAL_SMS_GATEWAY)` | `backend/src/services/sosService.js` | Dispatch SMS to emergency contacts via Twilio / AWS SNS | ACTIVE |
 | `NOTE:` markers | `frontend/lib/services/auth_service.dart` (register, login, OTP send, OTP verify, PIN verify) | Converted from stale `TODO(REAL_BACKEND)`; endpoints verified live on backend | DONE |
 | `AI Assistant (Groq)` | `backend/src/services/aiService.js`, `backend/src/controllers/aiController.js`, `frontend/lib/pages/ai_assistant_page.dart` | `POST /api/v1/ai/chat` (Groq; key via `GROQ_API_KEY` env only), optionalAuth + 10/min `aiLimiter`, sanitized history (12 turns), honest 503 `AI_NOT_CONFIGURED` fallback to offline guides | DONE |
+| `Hardening Wave (audit)` | `alertController.js`, `authMiddleware.js`, `validation.js`, `rateLimiter.js`, `config/index.js`, `auth_service.dart` | Guest SOS identity stripping (body identity ignored), optionalAuth + requireAuth session-revocation gates (missing/invalid session ⇒ guest/rejected), dedicated 10/min `otpLimiter` on `/otp/send`+`/otp/verify`, input caps (SOS notes 500 / alertType 40 / report description 2000 / location 200 / coords validated / direct `photoUrl` rejected), env fail-closed (unknown `NODE_ENV` ⇒ production hygiene, incl. inside `validateJwtSecretHygiene`), offline SOS queue 24h TTL with `_queuedAt` stamps | DONE |
+| `SMS Gateway + Maps key` | `backend/src/services/sosService.js`, `frontend/lib/data/map_config.dart` | Provider accounts (MSG91/Twilio; Google Cloud) — sign-in requires the owner's credentials/phone verification | PENDING (owner) |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/services/auth_service.dart` (`verifyBiometrics`) | Real biometric scan via `local_auth` wired with hardware check and fallback | DONE |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/pages/home_page.dart`, `emergency_page.dart` | Volume button / hardware panic intercept requires native plugin, fallback F4-2-alt shipped | DEFERRED |
 | `F3-1 (SOS Escalation)` | `backend/src/services/sosService.js`, `frontend/lib/pages/emergency_page.dart` | 60s escalation watchdog, escalationLevel cap 3, WS broadcast, active ageSeconds & badge | DONE |
@@ -310,7 +312,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 # Full gate (recommended)
 npm test
 
-# Backend only — 235 tests across 59 suites (plus 11/11 smoke tests)
+# Backend only — 249 tests across 60 suites (plus 11/11 smoke tests)
 cd backend && npm test
 npm run smoke
 
@@ -327,6 +329,7 @@ node --test tests/security_hardening.test.js
 node --test tests/reports_markers.test.js
 node --test tests/ai_chat.test.js             # AI assistant Groq chat, validation & honest fallback
 node --test tests/db_snapshot.test.js         # Supabase snapshot persistence, hydrate fail-safe & pruning
+node --test tests/hardening.test.js           # guest SOS identity stripping, revocation gates, input caps, OTP limiter, env fail-closed
 
 # Python challengers (197 tests across 10 suites: frontend structure, routes, AST invariants, permissions)
 python -m unittest discover -s frontend/test -p "*.py"

@@ -98,10 +98,18 @@ const aiLimiter = createRateLimiter({
   skipInTest: true
 });
 
+const otpLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: 'Too many OTP requests. Please wait a minute before retrying.',
+  skipInTest: true
+});
+
 module.exports = {
   createRateLimiter,
   globalLimiter,
   authLimiter,
   reportLimiter,
-  aiLimiter
+  aiLimiter,
+  otpLimiter
 };

@@ -117,6 +117,15 @@ describe('Two-Way SOS Responder Chat Tests (F4-1)', () => {
       role: 'first_responder'
     }));
 
+    // Hardening wave: access tokens are only accepted when their session row
+    // exists and is valid — back the fabricated session ID with a real row.
+    db.saveSession({
+      id: 'ses_responder_1',
+      userId: responderUser.id,
+      expiresAt: new Date(Date.now() + 3600e3).toISOString(),
+      isValid: 1
+    });
+
     const responderToken = tokenService.signAccessToken(responderUser, 'ses_responder_1');
 
     const res = await apiRequest(`/api/v1/sos/${alert.id}/messages`, {
@@ -166,6 +175,14 @@ describe('Two-Way SOS Responder Chat Tests (F4-1)', () => {
       phone: '+919999888877',
       role: 'citizen'
     }));
+
+    // Real session row backing the fabricated session ID (see hardening note above)
+    db.saveSession({
+      id: 'ses_bystander',
+      userId: bystanderUser.id,
+      expiresAt: new Date(Date.now() + 3600e3).toISOString(),
+      isValid: 1
+    });
 
     const bystanderToken = tokenService.signAccessToken(bystanderUser, 'ses_bystander');
 

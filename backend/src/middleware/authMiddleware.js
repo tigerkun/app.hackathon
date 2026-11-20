@@ -36,10 +36,12 @@ function requireAuth(req, res, next) {
   try {
     const payload = verifyAccessToken(token);
 
-    // Verify Session validity if sessionId is present
+    // Verify Session validity if sessionId is present. A missing session row
+    // (pruned or deleted) is treated as revoked — the JWT alone must never
+    // outlive the session record it was minted for.
     if (payload.sessionId) {
       const session = db.findSessionById(payload.sessionId);
-      if (session && !session.isValid) {
+      if (!session || !session.isValid) {
         return res.status(401).json({
           success: false,
           error: {
@@ -98,6 +100,18 @@ function optionalAuth(req, res, next) {
 
   try {
     const payload = verifyAccessToken(token);
+
+    // Revocation check (mirrors requireAuth): a token whose session row is
+    // missing or invalidated degrades to guest instead of granting identity.
+    if (payload.sessionId) {
+      const session = db.findSessionById(payload.sessionId);
+      if (!session || !session.isValid) {
+        req.user = null;
+        req.userId = null;
+        return next();
+      }
+    }
+
     const user = db.findUserById(payload.sub);
     if (user && user.isActive) {
       req.user = toSafeUser(user);

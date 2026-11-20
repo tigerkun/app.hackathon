@@ -34,6 +34,14 @@ describe('SafeSphere Wave 2 User-Facing Enhancements', () => {
       role: 'citizen'
     }));
     testUserId = user1.id;
+    // Hardening wave: access tokens are only accepted when their session row
+    // exists and is valid — back the fabricated session ID with a real row.
+    db.saveSession({
+      id: 'sess_1',
+      userId: user1.id,
+      expiresAt: new Date(Date.now() + 3600e3).toISOString(),
+      isValid: 1
+    });
     testUserToken = signAccessToken(user1, 'sess_1');
 
     const user2 = db.saveUser(createUser({
@@ -446,6 +454,13 @@ describe('SafeSphere Wave 2 User-Facing Enhancements', () => {
         email: 'responder_legacy@safesphere.test',
         role: 'first_responder'
       });
+      // Hardening wave: back the fabricated session ID with a real row
+      db.saveSession({
+        id: 'sess_responder',
+        userId: responderUser.id,
+        expiresAt: new Date(Date.now() + 3600e3).toISOString(),
+        isValid: 1
+      });
       const responderToken = signAccessToken(responderUser, 'sess_responder');
       const responderResolve = await serverHarness.request(`/api/v1/sos/${legacyAlert.id}/resolve`, {
         method: 'POST',
@@ -462,6 +477,13 @@ describe('SafeSphere Wave 2 User-Facing Enhancements', () => {
         name: 'Admin Tester',
         email: 'admin_legacy@safesphere.test',
         role: 'admin'
+      });
+      // Hardening wave: back the fabricated session ID with a real row
+      db.saveSession({
+        id: 'sess_admin',
+        userId: adminUser.id,
+        expiresAt: new Date(Date.now() + 3600e3).toISOString(),
+        isValid: 1
       });
       const adminToken = signAccessToken(adminUser, 'sess_admin');
       const adminResolve = await serverHarness.request(`/api/v1/sos/${legacyAlert.id}/resolve`, {

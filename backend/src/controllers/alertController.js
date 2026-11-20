@@ -65,9 +65,14 @@ function trigger(req, res, next) {
     const alertType = body.alertType || body.alert_type || 'CRITICAL_SOS';
     const notes = body.notes;
 
-    const userId = req.user ? req.user.id : (body.userId || body.user_id || null);
-    const userName = req.user ? req.user.name : (body.userName || body.user_name || 'SafeSphere Citizen');
-    const userPhone = req.user ? req.user.phone : (body.userPhone || body.user_phone || '');
+    // Identity comes exclusively from the verified token. For guests
+    // (optionalAuth → req.user = null) any client-supplied userId/userName/
+    // userPhone in the body is STRIPPED: an unauthenticated caller must never
+    // be able to impersonate a citizen or attach someone else's emergency
+    // contacts to their alert.
+    const userId = req.user ? req.user.id : null;
+    const userName = req.user ? req.user.name : 'SafeSphere Citizen';
+    const userPhone = req.user ? req.user.phone : '';
 
     const alert = sosService.triggerSos({
       userId,

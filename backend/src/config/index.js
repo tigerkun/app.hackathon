@@ -21,7 +21,13 @@ const INSECURE_SECRET_DENYLIST = new Set([
 
 function validateJwtSecretHygiene({ jwtSecret, refreshSecret, nodeEnv } = {}) {
   const env = nodeEnv || process.env.NODE_ENV || 'development';
-  const isProd = env === 'production';
+  // Fail-closed: mirror the config-level environment gate. Unknown env values
+  // are treated as production so the hygiene check cannot be bypassed by an
+  // unrecognized NODE_ENV like 'staging' or a typo.
+  const KNOWN_HYGIENE_ENVS = new Set(['development', 'dev', 'test', 'production', 'prod']);
+  const isProd = KNOWN_HYGIENE_ENVS.has(env)
+    ? (env === 'production' || env === 'prod')
+    : true;
   if (!isProd) {
     return { valid: true, warnings: [] };
   }
@@ -66,7 +72,15 @@ function validateJwtSecretHygiene({ jwtSecret, refreshSecret, nodeEnv } = {}) {
 }
 
 const nodeEnv = process.env.NODE_ENV || 'development';
-const isProduction = nodeEnv === 'production';
+// Fail-closed environment gate: only explicitly known environments are
+// trusted. An unrecognized NODE_ENV value (typo, staging name, hijack) is
+// treated as PRODUCTION so JWT secret hygiene and strict validation cannot be
+// bypassed by claiming a non-production env.
+const KNOWN_ENVS = new Set(['development', 'dev', 'test', 'production', 'prod']);
+const isKnownEnv = KNOWN_ENVS.has(nodeEnv);
+const isProduction = isKnownEnv
+  ? (nodeEnv === 'production' || nodeEnv === 'prod')
+  : true;
 const isTest = nodeEnv === 'test';
 const isDev = !isProduction;
 
