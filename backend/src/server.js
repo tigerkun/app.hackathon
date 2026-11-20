@@ -149,6 +149,55 @@ wss.on('connection', (ws, req) => {
         } catch (_) {}
 
         broadcastStreamTerminate(sessionId, reason, ws);
+      } else if (message.type === 'CHAT_MESSAGE') {
+        const { alertId, token, text } = message;
+        if (!alertId) {
+          return ws.send(JSON.stringify({
+            type: 'ERROR',
+            code: 'MISSING_ALERT_ID',
+            message: 'alertId is required for CHAT_MESSAGE'
+          }), (err) => {});
+        }
+        if (typeof text !== 'string' || text.trim().length === 0 || text.trim().length > 500) {
+          return ws.send(JSON.stringify({
+            type: 'ERROR',
+            code: 'INVALID_CHAT_TEXT',
+            message: 'Chat text must be between 1 and 500 characters'
+          }), (err) => {});
+        }
+        const alert = db.findAlertById(alertId);
+        if (!alert) {
+          return ws.send(JSON.stringify({
+            type: 'ERROR',
+            code: 'ALERT_NOT_FOUND',
+            message: `Alert ${alertId} not found`
+          }), (err) => {});
+        }
+        const sosService = require('./services/sosService');
+        const authResult = sosService.authenticateChatSender({ alert, token });
+        if (!authResult.authorized) {
+          return ws.send(JSON.stringify({
+            type: 'ERROR',
+            code: 'UNAUTHORIZED_CHAT',
+            message: 'Authentication or valid resolveToken is required to send chat messages'
+          }), (err) => {});
+        }
+        const rateKey = `${alertId}:${authResult.senderId || authResult.role}`;
+        if (!sosService.checkChatRateLimit(rateKey)) {
+          return ws.send(JSON.stringify({
+            type: 'ERROR',
+            code: 'RATE_LIMIT_EXCEEDED',
+            message: 'Rate limit: max 1 message per 2 seconds'
+          }), (err) => {});
+        }
+        const saved = db.saveSosMessage({
+          alertId,
+          senderRole: authResult.role,
+          senderId: authResult.senderId,
+          text: text.trim(),
+          createdAt: new Date().toISOString()
+        });
+        broadcastSosChatMessage({ alertId, message: saved });
       } else if (message.type === 'PING') {
         ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }), (err) => {});
       }
@@ -280,6 +329,22 @@ function broadcastSosEscalated({ alertId, level, elapsedMin }) {
     level: Number(level),
     elapsedMin: Number(elapsedMin),
     timestamp: new Date().toISOString()
+  });
+
+  for (const client of clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(payload, (err) => {});
+    }
+  }
+}
+
+// Broadcast SOS chat message to all connected monitors and responders
+function broadcastSosChatMessage({ alertId, message }) {
+  const payload = JSON.stringify({
+    type: 'CHAT_MESSAGE',
+    alertId,
+    message,
+    timestamp: message.createdAt || new Date().toISOString()
   });
 
   for (const client of clients) {
@@ -431,6 +496,7 @@ module.exports = {
   shutdown,
   broadcastSosAlert,
   broadcastSosEscalated,
+  broadcastSosChatMessage,
   broadcastLocationUpdate,
   broadcastStreamTerminate,
   broadcastCheckInMissed,

@@ -262,11 +262,163 @@ function resolve(req, res, next) {
   }
 }
 
+function getChatBroadcastHelper() {
+  try {
+    const serverModule = require('../server');
+    return serverModule.broadcastSosChatMessage;
+  } catch (_) {
+    return null;
+  }
+}
+
+function postMessage(req, res, next) {
+  try {
+    const alertId = req.params.id;
+    const body = req.body || {};
+    const text = body.text;
+    const token = body.token || body.resolveToken || req.query.token;
+
+    if (!alertId) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'MISSING_ALERT_ID',
+          message: 'Alert ID is required to post messages',
+          details: []
+        }
+      });
+    }
+
+    if (typeof text !== 'string' || text.trim().length === 0 || text.trim().length > 500) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_CHAT_TEXT',
+          message: 'Message text must be between 1 and 500 characters',
+          details: []
+        }
+      });
+    }
+
+    const alert = db.findAlertById(alertId);
+    if (!alert) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ALERT_NOT_FOUND',
+          message: `SOS alert ${alertId} not found`,
+          details: []
+        }
+      });
+    }
+
+    const authResult = sosService.authenticateChatSender({ alert, user: req.user, token });
+    if (!authResult.authorized) {
+      return res.status(req.user ? 403 : 401).json({
+        success: false,
+        error: {
+          code: req.user ? 'FORBIDDEN_CHAT' : 'UNAUTHORIZED_CHAT',
+          message: 'Authentication or a valid resolveToken is required to participate in SOS chat',
+          details: []
+        }
+      });
+    }
+
+    const senderKey = `${alertId}:${authResult.senderId || authResult.role}:${req.ip || 'ip'}`;
+    if (!sosService.checkChatRateLimit(senderKey)) {
+      return res.status(429).json({
+        success: false,
+        error: {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: 'Rate limit: max 1 message per 2 seconds',
+          details: []
+        }
+      });
+    }
+
+    const saved = db.saveSosMessage({
+      alertId,
+      senderRole: authResult.role,
+      senderId: authResult.senderId,
+      text: text.trim(),
+      createdAt: new Date().toISOString()
+    });
+
+    const broadcast = getChatBroadcastHelper();
+    if (typeof broadcast === 'function') {
+      broadcast({ alertId, message: saved });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'SOS chat message posted successfully',
+      data: saved
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function getMessages(req, res, next) {
+  try {
+    const alertId = req.params.id;
+    const token = req.query.token || (req.body && (req.body.token || req.body.resolveToken));
+
+    if (!alertId) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'MISSING_ALERT_ID',
+          message: 'Alert ID is required to fetch messages',
+          details: []
+        }
+      });
+    }
+
+    const alert = db.findAlertById(alertId);
+    if (!alert) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ALERT_NOT_FOUND',
+          message: `SOS alert ${alertId} not found`,
+          details: []
+        }
+      });
+    }
+
+    const authResult = sosService.authenticateChatSender({ alert, user: req.user, token });
+    if (!authResult.authorized) {
+      return res.status(req.user ? 403 : 401).json({
+        success: false,
+        error: {
+          code: req.user ? 'FORBIDDEN_CHAT' : 'UNAUTHORIZED_CHAT',
+          message: 'Authentication or a valid resolveToken is required to read SOS chat messages',
+          details: []
+        }
+      });
+    }
+
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 50), 50);
+    const messages = db.getSosMessages(alertId, limit);
+
+    res.status(200).json({
+      success: true,
+      count: messages.length,
+      data: messages
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   trigger,
   active,
   list,
   mine,
   getById,
-  resolve
+  resolve,
+  postMessage,
+  getMessages
 };

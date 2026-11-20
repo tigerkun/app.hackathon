@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -23,6 +25,16 @@ class _EmergencyPageState extends State<EmergencyPage> {
   List<Map<String, dynamic>> _sosHistory = [];
   bool _isLoadingHistory = false;
 
+  // Two-way SOS responder chat (F4-1)
+  final TextEditingController _chatController = TextEditingController();
+  final ScrollController _chatScrollController = ScrollController();
+  List<Map<String, dynamic>> _chatMessages = [];
+  bool _isSendingChat = false;
+  WebSocket? _chatWs;
+  bool _isWsConnected = false;
+  Timer? _chatPollTimer;
+  String? _resolveToken;
+
   @override
   void initState() {
     super.initState();
@@ -34,6 +46,9 @@ class _EmergencyPageState extends State<EmergencyPage> {
   @override
   void dispose() {
     _sosPollTimer?.cancel();
+    _teardownChat();
+    _chatController.dispose();
+    _chatScrollController.dispose();
     super.dispose();
   }
 
@@ -52,6 +67,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
 
   void _startSosPolling(String alertId) {
     _sosPollTimer?.cancel();
+    _initChat(alertId);
     _pollActiveSos(alertId);
     _sosPollTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       if (!mounted) {
@@ -65,6 +81,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
   void _stopSosPolling() {
     _sosPollTimer?.cancel();
     _sosPollTimer = null;
+    _teardownChat();
     AuthService.instance.clearActiveSos();
     if (mounted) {
       setState(() {
@@ -74,6 +91,180 @@ class _EmergencyPageState extends State<EmergencyPage> {
         _escalationLevel = 0;
         _ageSeconds = 0;
       });
+    }
+  }
+
+  Future<void> _initChat(String alertId) async {
+    _resolveToken = await AuthService.instance.storage.getString(AuthService.keyActiveSosResolveToken);
+    await _loadChatMessages(alertId);
+    unawaited(_connectChatWs(alertId));
+  }
+
+  void _teardownChat() {
+    _chatPollTimer?.cancel();
+    _chatPollTimer = null;
+    try {
+      _chatWs?.close();
+    } catch (_) {}
+    _chatWs = null;
+    if (mounted) {
+      setState(() {
+        _isWsConnected = false;
+        _chatMessages = [];
+      });
+    }
+  }
+
+  Future<void> _connectChatWs(String alertId) async {
+    try {
+      _chatWs?.close();
+      final base = AuthService.instance.baseUrl;
+      final wsBase = base.startsWith('https://')
+          ? base.replaceFirst('https://', 'wss://')
+          : base.replaceFirst('http://', 'ws://');
+      final wsUrl = '$wsBase/ws/sos';
+
+      final ws = await WebSocket.connect(wsUrl).timeout(const Duration(seconds: 4));
+      _chatWs = ws;
+      if (mounted) setState(() => _isWsConnected = true);
+
+      ws.listen(
+        (event) {
+          try {
+            final data = jsonDecode(event as String);
+            if (data is Map<String, dynamic> && data['type'] == 'CHAT_MESSAGE') {
+              if (data['alertId'] == alertId && data['message'] is Map) {
+                final newMsg = Map<String, dynamic>.from(data['message'] as Map);
+                if (mounted) {
+                  setState(() {
+                    if (!_chatMessages.any((m) => m['id'] == newMsg['id'])) {
+                      _chatMessages.add(newMsg);
+                    }
+                  });
+                  _scrollChatToBottom();
+                }
+              }
+            }
+          } catch (_) {}
+        },
+        onDone: () {
+          if (mounted) setState(() => _isWsConnected = false);
+          _startChatFallbackPolling(alertId);
+        },
+        onError: (_) {
+          if (mounted) setState(() => _isWsConnected = false);
+          _startChatFallbackPolling(alertId);
+        },
+      );
+    } catch (_) {
+      if (mounted) setState(() => _isWsConnected = false);
+      _startChatFallbackPolling(alertId);
+    }
+  }
+
+  void _startChatFallbackPolling(String alertId) {
+    if (_chatPollTimer != null && _chatPollTimer!.isActive) return;
+    _chatPollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (!mounted || _isWsConnected) {
+        if (_isWsConnected) _chatPollTimer?.cancel();
+        return;
+      }
+      await _loadChatMessages(alertId);
+    });
+  }
+
+  Future<void> _loadChatMessages(String alertId) async {
+    try {
+      final messages = await AuthService.instance.fetchSosMessages(alertId, token: _resolveToken);
+      if (mounted) {
+        setState(() {
+          _chatMessages = messages;
+        });
+        _scrollChatToBottom();
+      }
+    } catch (_) {}
+  }
+
+  void _scrollChatToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_chatScrollController.hasClients) {
+        _chatScrollController.animateTo(
+          _chatScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  String _formatRelativeTime(dynamic isoString) {
+    if (isoString == null) return '';
+    try {
+      final dt = DateTime.parse(isoString.toString());
+      final diff = DateTime.now().difference(dt);
+      if (diff.inSeconds < 60) return 'just now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24) return '${diff.inHours}h ago';
+      return '${diff.inDays}d ago';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<void> _sendChatMessage() async {
+    final text = _chatController.text.trim();
+    if (text.isEmpty || _activeSosId == null || _isSendingChat) return;
+
+    if (text.length > 500) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Message too long (max 500 characters)')),
+      );
+      return;
+    }
+
+    setState(() => _isSendingChat = true);
+    _chatController.clear();
+
+    final alertId = _activeSosId!;
+    bool sentViaWs = false;
+
+    if (_chatWs != null && _chatWs!.readyState == WebSocket.open) {
+      try {
+        final frame = jsonEncode({
+          'type': 'CHAT_MESSAGE',
+          'alertId': alertId,
+          'token': _resolveToken,
+          'text': text,
+        });
+        _chatWs!.add(frame);
+        sentViaWs = true;
+      } catch (_) {
+        sentViaWs = false;
+      }
+    }
+
+    if (!sentViaWs) {
+      try {
+        final res = await AuthService.instance.sendSosMessage(alertId, text, token: _resolveToken);
+        if (res != null && mounted) {
+          setState(() {
+            if (!_chatMessages.any((m) => m['id'] == res['id'])) {
+              _chatMessages.add(res);
+            }
+          });
+          _scrollChatToBottom();
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to send: $e')),
+          );
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() => _isSendingChat = false);
     }
   }
 
@@ -222,6 +413,11 @@ class _EmergencyPageState extends State<EmergencyPage> {
                     ],
                   ),
                 ),
+              ],
+
+              // 💬 TWO-WAY SOS RESPONDER CHAT (F4-1)
+              if (_isBroadcasting && _activeSosId != null) ...[
+                _buildResponderChatPanel(textColor, cardColor, isDark),
               ],
 
               // 🚨 EMERGENCY CALL
@@ -644,6 +840,217 @@ class _EmergencyPageState extends State<EmergencyPage> {
         );
       }
     }
+  }
+
+  Widget _buildResponderChatPanel(Color textColor, Color cardColor, bool isDark) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _isWsConnected ? Colors.teal.withValues(alpha: 0.5) : Colors.orangeAccent.withValues(alpha: 0.5),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.forum, color: Colors.tealAccent, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    "Two-Way Responder Chat",
+                    style: TextStyle(
+                      color: textColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _isWsConnected ? Colors.teal.withValues(alpha: 0.2) : Colors.orange.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _isWsConnected ? Colors.teal : Colors.orange,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _isWsConnected ? Colors.tealAccent : Colors.orangeAccent,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _isWsConnected ? "WS Live" : "REST Poll (5s)",
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: _isWsConnected ? Colors.tealAccent : Colors.orangeAccent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            height: 180,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: _chatMessages.isEmpty
+                ? Center(
+                    child: Text(
+                      "No messages yet.\nType below to update emergency responders or clarify your situation.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: isDark ? Colors.white54 : Colors.black45, fontSize: 12),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _chatScrollController,
+                    itemCount: _chatMessages.length,
+                    itemBuilder: (context, index) {
+                      final msg = _chatMessages[index];
+                      final isVictim = msg['senderRole'] == 'victim';
+                      final text = msg['text']?.toString() ?? '';
+                      final roleLabel = isVictim ? "You (Victim)" : "Emergency Responder";
+                      final timeStr = msg['createdAt'] != null
+                          ? _formatRelativeTime(msg['createdAt'])
+                          : '';
+
+                      return Align(
+                        alignment: isVictim ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          constraints: const BoxConstraints(maxWidth: 280),
+                          decoration: BoxDecoration(
+                            color: isVictim
+                                ? (isDark ? const Color(0xFF0F766E) : const Color(0xFF0D9488))
+                                : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                            borderRadius: BorderRadius.only(
+                              topLeft: const Radius.circular(12),
+                              topRight: const Radius.circular(12),
+                              bottomLeft: Radius.circular(isVictim ? 12 : 2),
+                              bottomRight: Radius.circular(isVictim ? 2 : 12),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment:
+                                isVictim ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    roleLabel,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: isVictim ? Colors.tealAccent : Colors.amberAccent,
+                                    ),
+                                  ),
+                                  if (timeStr.isNotEmpty) ...[
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      timeStr,
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        color: isDark ? Colors.white60 : Colors.black54,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                text,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: isVictim ? Colors.white : (isDark ? Colors.white : Colors.black87),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _chatController,
+                    maxLength: 500,
+                    style: TextStyle(color: textColor, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: "Tell responders: 'Urgent', 'Safe'...",
+                      hintStyle: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 12),
+                      counterText: "",
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide(color: isDark ? Colors.white24 : Colors.black26),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: const BorderSide(color: Colors.tealAccent),
+                      ),
+                      isDense: true,
+                    ),
+                    onSubmitted: (_) => _sendChatMessage(),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                _isSendingChat
+                    ? const SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: Padding(
+                          padding: EdgeInsets.all(6),
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : IconButton(
+                        icon: const Icon(Icons.send_rounded, color: Colors.tealAccent, size: 22),
+                        onPressed: _sendChatMessage,
+                        tooltip: "Send message",
+                      ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _tipCard(Color color, Color textColor, String text) {

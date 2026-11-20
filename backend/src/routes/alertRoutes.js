@@ -16,6 +16,8 @@ router.get('/mine', requireAuth, alertController.mine);
 router.get('/', optionalAuth, alertController.list);
 router.post('/resolve', optionalAuth, alertController.resolve);
 router.post('/:id/resolve', optionalAuth, alertController.resolve);
+router.get('/:id/messages', optionalAuth, alertController.getMessages);
+router.post('/:id/messages', optionalAuth, alertController.postMessage);
 router.get('/:id', optionalAuth, alertController.getById);
 
 module.exports = router;

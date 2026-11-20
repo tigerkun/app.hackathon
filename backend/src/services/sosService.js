@@ -199,6 +199,66 @@ function resolveSos(alertId, notes = null) {
   return updated;
 }
 
+// In-memory rate limiter for SOS chat: 1 msg per 2 seconds per sender
+const chatRateLimits = new Map();
+
+function checkChatRateLimit(key, now = Date.now()) {
+  const last = chatRateLimits.get(key) || 0;
+  if (now - last < 2000) {
+    return false;
+  }
+  chatRateLimits.set(key, now);
+  return true;
+}
+
+function resetChatRateLimits() {
+  chatRateLimits.clear();
+}
+
+function authenticateChatSender({ alert, user = null, token = null }) {
+  if (!alert) return { authorized: false };
+
+  // 1. Authenticated user object (from middleware)
+  if (user) {
+    if (user.role === 'admin' || user.role === 'responder' || user.role === 'first_responder') {
+      return { authorized: true, role: 'responder', senderId: user.id };
+    }
+    if (alert.userId && alert.userId === user.id) {
+      return { authorized: true, role: 'victim', senderId: user.id };
+    }
+  }
+
+  // 2. Token (JWT access token or resolveToken)
+  if (token) {
+    try {
+      const tokenService = require('./tokenService');
+      const decoded = tokenService.verifyAccessToken(token);
+      const uid = decoded && (decoded.sub || decoded.userId);
+      if (uid) {
+        const u = db.findUserById(uid);
+        const role = (u && u.role) || decoded.role || 'citizen';
+        if (role === 'admin' || role === 'responder' || role === 'first_responder') {
+          return { authorized: true, role: 'responder', senderId: uid };
+        }
+        if (alert.userId && alert.userId === uid) {
+          return { authorized: true, role: 'victim', senderId: uid };
+        }
+      }
+    } catch (_) {}
+
+    if (alert.resolveTokenHash) {
+      const presentedHash = crypto.createHash('sha256').update(String(token)).digest('hex');
+      const a = Buffer.from(presentedHash, 'utf8');
+      const b = Buffer.from(String(alert.resolveTokenHash), 'utf8');
+      if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+        return { authorized: true, role: 'victim', senderId: alert.userId || 'anonymous' };
+      }
+    }
+  }
+
+  return { authorized: false };
+}
+
 module.exports = {
   triggerSos,
   getActiveAlerts,
@@ -208,5 +268,8 @@ module.exports = {
   tickEscalation,
   startEscalationWatchdog,
   stopEscalationWatchdog,
-  isEscalationWatchdogRunning
+  isEscalationWatchdogRunning,
+  checkChatRateLimit,
+  resetChatRateLimits,
+  authenticateChatSender
 };

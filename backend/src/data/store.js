@@ -155,6 +155,16 @@ class DataStore {
       );
       CREATE INDEX IF NOT EXISTS idx_tracking_token ON tracking_sessions(token);
       CREATE INDEX IF NOT EXISTS idx_tracking_status ON tracking_sessions(status);
+
+      CREATE TABLE IF NOT EXISTS sos_messages (
+        id TEXT PRIMARY KEY,
+        alertId TEXT NOT NULL,
+        senderRole TEXT NOT NULL,
+        senderId TEXT,
+        text TEXT NOT NULL,
+        createdAt TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_sos_messages_alertId ON sos_messages(alertId, createdAt);
     `);
 
     try {
@@ -247,6 +257,15 @@ class DataStore {
     };
   }
 
+  get sosMessages() {
+    const store = this;
+    return {
+      get size() {
+        return store._count('sos_messages');
+      }
+    };
+  }
+
   _count(table) {
     if (!this.db) return 0;
     const row = this.db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get();
@@ -268,6 +287,7 @@ class DataStore {
         DELETE FROM alerts;
         DELETE FROM otps;
         DELETE FROM tracking_sessions;
+        DELETE FROM sos_messages;
       `);
 
       const seed = getSeedData();
@@ -1092,6 +1112,65 @@ class DataStore {
   getAllTrackingSessions() {
     const rows = this.db.prepare('SELECT * FROM tracking_sessions').all();
     return rows.map((r) => this._formatTrackingSession(r));
+  }
+
+  // ==========================================
+  // SOS Chat Message Repository
+  // ==========================================
+
+  _formatSosMessage(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      alertId: row.alertId,
+      senderRole: row.senderRole,
+      senderId: row.senderId ?? null,
+      text: row.text,
+      createdAt: row.createdAt
+    };
+  }
+
+  findSosMessageById(id) {
+    if (!id) return null;
+    const row = this.db.prepare('SELECT * FROM sos_messages WHERE id = ? LIMIT 1').get(id);
+    return this._formatSosMessage(row);
+  }
+
+  saveSosMessage({ alertId, senderRole, senderId = null, text, createdAt = null }) {
+    if (!alertId || !text) throw new Error('alertId and text are required');
+    const id = `msg_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const timestamp = createdAt || new Date().toISOString();
+
+    this.db.prepare(`
+      INSERT INTO sos_messages (id, alertId, senderRole, senderId, text, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, alertId, senderRole, senderId, String(text).trim(), timestamp);
+
+    // Enforce FIFO cap: keep last 50 messages per alertId
+    this.db.prepare(`
+      DELETE FROM sos_messages
+      WHERE alertId = ?
+        AND id NOT IN (
+          SELECT id FROM sos_messages
+          WHERE alertId = ?
+          ORDER BY createdAt DESC, id DESC
+          LIMIT 50
+        )
+    `).run(alertId, alertId);
+
+    return this.findSosMessageById(id);
+  }
+
+  getSosMessages(alertId, limit = 50) {
+    if (!alertId) return [];
+    const clampedLimit = Math.min(Math.max(1, parseInt(limit, 10) || 50), 50);
+    const rows = this.db.prepare(`
+      SELECT * FROM sos_messages
+      WHERE alertId = ?
+      ORDER BY createdAt ASC
+      LIMIT ?
+    `).all(alertId, clampedLimit);
+    return rows.map((r) => this._formatSosMessage(r));
   }
 }
 

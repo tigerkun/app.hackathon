@@ -839,6 +839,44 @@ class AuthService {
     return [];
   }
 
+  /// Fetches real-time responder chat messages for an active SOS alert.
+  Future<List<Map<String, dynamic>>> fetchSosMessages(String alertId, {String? token}) async {
+    final activeResolveToken = token ?? await storage.getString(keyActiveSosResolveToken);
+    final userJwt = await storage.getString(keyToken);
+    final query = activeResolveToken != null && activeResolveToken.isNotEmpty
+        ? '?token=${Uri.encodeQueryComponent(activeResolveToken)}'
+        : '';
+    final res = await _requestDetailed(
+      method: 'GET',
+      path: '/api/v1/sos/$alertId/messages$query',
+      token: userJwt,
+    );
+    if (res.isSuccess && res.data != null && res.data!['data'] is List) {
+      return (res.data!['data'] as List).cast<Map<String, dynamic>>();
+    }
+    return [];
+  }
+
+  /// Sends a real-time chat message on an active SOS alert.
+  Future<Map<String, dynamic>?> sendSosMessage(String alertId, String text, {String? token}) async {
+    final activeResolveToken = token ?? await storage.getString(keyActiveSosResolveToken);
+    final userJwt = await storage.getString(keyToken);
+    final body = <String, dynamic>{
+      'text': text.trim(),
+      if (activeResolveToken != null && activeResolveToken.isNotEmpty) 'token': activeResolveToken,
+    };
+    final res = await _requestDetailed(
+      method: 'POST',
+      path: '/api/v1/sos/$alertId/messages',
+      body: body,
+      token: userJwt,
+    );
+    if (res.isSuccess && res.data != null && res.data!['data'] is Map<String, dynamic>) {
+      return res.data!['data'] as Map<String, dynamic>;
+    }
+    return null;
+  }
+
   // ---------------------------------------------------------------------------
   // Reports API (/api/v1/reports)
   // ---------------------------------------------------------------------------
