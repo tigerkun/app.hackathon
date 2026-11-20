@@ -112,6 +112,7 @@ class DataStore {
         batteryLevel REAL,
         alertType TEXT NOT NULL,
         status TEXT NOT NULL,
+        escalationLevel INTEGER NOT NULL DEFAULT 0,
         triggeredAt TEXT NOT NULL,
         resolvedAt TEXT,
         emergencyContactsNotified INTEGER NOT NULL DEFAULT 0,
@@ -156,6 +157,9 @@ class DataStore {
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE alerts ADD COLUMN resolveTokenHash TEXT");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE alerts ADD COLUMN escalationLevel INTEGER DEFAULT 0");
     } catch (_) {}
   }
 
@@ -731,6 +735,7 @@ class DataStore {
       batteryLevel: row.batteryLevel !== null && row.batteryLevel !== undefined ? Number(row.batteryLevel) : null,
       alertType: row.alertType,
       status: row.status,
+      escalationLevel: row.escalationLevel !== null && row.escalationLevel !== undefined ? Number(row.escalationLevel) : 0,
       triggeredAt: row.triggeredAt,
       resolvedAt: row.resolvedAt ?? null,
       emergencyContactsNotified: Boolean(row.emergencyContactsNotified),
@@ -760,9 +765,9 @@ class DataStore {
     this.db.prepare(`
       INSERT INTO alerts (
         id, userId, userName, userPhone, latitude, longitude, accuracy,
-        batteryLevel, alertType, status, triggeredAt, resolvedAt,
+        batteryLevel, alertType, status, escalationLevel, triggeredAt, resolvedAt,
         emergencyContactsNotified, notes, resolveTokenHash
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         userId = excluded.userId,
         userName = excluded.userName,
@@ -773,6 +778,7 @@ class DataStore {
         batteryLevel = excluded.batteryLevel,
         alertType = excluded.alertType,
         status = excluded.status,
+        escalationLevel = excluded.escalationLevel,
         triggeredAt = excluded.triggeredAt,
         resolvedAt = excluded.resolvedAt,
         emergencyContactsNotified = excluded.emergencyContactsNotified,
@@ -789,6 +795,7 @@ class DataStore {
       alert.batteryLevel !== undefined && alert.batteryLevel !== null ? Number(alert.batteryLevel) : null,
       alert.alertType ?? 'SOS',
       alert.status ?? 'active',
+      alert.escalationLevel !== undefined && alert.escalationLevel !== null ? Number(alert.escalationLevel) : 0,
       alert.triggeredAt || new Date().toISOString(),
       alert.resolvedAt ?? null,
       alert.emergencyContactsNotified ? 1 : 0,

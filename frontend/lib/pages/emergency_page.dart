@@ -17,6 +17,8 @@ class _EmergencyPageState extends State<EmergencyPage> {
   String? _activeSosId;
   bool _isBroadcasting = false;
   int _monitorsCount = 0;
+  int _escalationLevel = 0;
+  int _ageSeconds = 0;
   Timer? _sosPollTimer;
   List<Map<String, dynamic>> _sosHistory = [];
   bool _isLoadingHistory = false;
@@ -69,6 +71,8 @@ class _EmergencyPageState extends State<EmergencyPage> {
         _isBroadcasting = false;
         _activeSosId = null;
         _monitorsCount = 0;
+        _escalationLevel = 0;
+        _ageSeconds = 0;
       });
     }
   }
@@ -80,13 +84,21 @@ class _EmergencyPageState extends State<EmergencyPage> {
       if (!mounted) return;
       if (statusData != null) {
         final status = statusData['status'] as String? ?? 'active';
-        final monitors = statusData['monitorsConnected'] as int? ?? 0;
+        final monitorsRaw = statusData['monitorsConnected'] ?? statusData['wsClients'];
+        final monitors = monitorsRaw is int ? monitorsRaw : (int.tryParse('$monitorsRaw') ?? 0);
+        final escalationRaw = statusData['escalationLevel'];
+        final escalation = escalationRaw is int ? escalationRaw : (int.tryParse('$escalationRaw') ?? 0);
+        final ageSecRaw = statusData['ageSeconds'];
+        final ageSec = ageSecRaw is int ? ageSecRaw : (int.tryParse('$ageSecRaw') ?? 0);
+
         if (status != 'active') {
           _stopSosPolling();
           _loadSosHistory();
         } else {
           setState(() {
             _monitorsCount = monitors;
+            _escalationLevel = escalation;
+            _ageSeconds = ageSec;
           });
         }
       }
@@ -147,7 +159,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
 
               const SizedBox(height: 20),
 
-              // 📡 BROADCASTING STATUS BANNER (W2-3)
+              // 📡 BROADCASTING STATUS BANNER (W2-3 / F3-1)
               if (_isBroadcasting) ...[
                 Container(
                   width: double.infinity,
@@ -166,18 +178,43 @@ class _EmergencyPageState extends State<EmergencyPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              "BROADCASTING — $_monitorsCount monitors connected",
-                              style: const TextStyle(
-                                color: Colors.redAccent,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
+                            Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                Text(
+                                  "ACTIVE — broadcasting ${(_ageSeconds / 60).floor()}m",
+                                  style: const TextStyle(
+                                    color: Colors.redAccent,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                if (_escalationLevel > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orangeAccent,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      "ESCALATED ×$_escalationLevel",
+                                      style: const TextStyle(
+                                        color: Colors.black,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
-                            const SizedBox(height: 2),
-                            const Text(
-                              "Real-time GPS telemetry active • Tap I'm Safe Now to cease",
-                              style: TextStyle(color: Colors.white70, fontSize: 12),
+                            const SizedBox(height: 4),
+                            Text(
+                              _monitorsCount > 0
+                                  ? "$_monitorsCount monitoring clients • Real-time GPS telemetry active • Tap I'm Safe Now to cease"
+                                  : "Real-time GPS telemetry active • Tap I'm Safe Now to cease",
+                              style: const TextStyle(color: Colors.white70, fontSize: 12),
                             ),
                           ],
                         ),

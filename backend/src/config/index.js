@@ -119,6 +119,8 @@ const config = {
   otpExpirySeconds: 300, // 5 minutes
   otpCooldownSeconds: 60, // 60 seconds
   otpMaxAttempts: 3,
+  escalateAfterMs: parseInt(process.env.ESCALATE_AFTER_MS || '600000', 10),
+  escalationTickMs: parseInt(process.env.ESCALATION_TICK_MS || '60000', 10),
   corsOrigin: process.env.CORS_ORIGIN || '*',
   dbPath,
   isTest,

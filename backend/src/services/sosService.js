@@ -5,7 +5,94 @@
 
 const { db } = require('../data/store');
 const { createAlert } = require('../models/alertModel');
+const config = require('../config');
 const crypto = require('crypto');
+
+let watchdogInterval = null;
+
+function getBroadcastHelpers() {
+  try {
+    const serverModule = require('../server');
+    return {
+      broadcastSosAlert: serverModule.broadcastSosAlert,
+      broadcastSosEscalated: serverModule.broadcastSosEscalated
+    };
+  } catch (_) {
+    return {};
+  }
+}
+
+function tickEscalation({
+  now = Date.now(),
+  escalateAfterMs = config.escalateAfterMs,
+  broadcastEscalation = null,
+  broadcastAlert = null
+} = {}) {
+  const activeAlerts = db.getActiveAlerts();
+  const escalated = [];
+  const helpers = getBroadcastHelpers();
+  const sendEscalated = broadcastEscalation || helpers.broadcastSosEscalated;
+  const sendAlert = broadcastAlert || helpers.broadcastSosAlert;
+
+  for (const alert of activeAlerts) {
+    const currentLevel = Number(alert.escalationLevel || 0);
+    if (currentLevel >= 3) continue;
+
+    const triggeredMs = alert.triggeredAt ? new Date(alert.triggeredAt).getTime() : now;
+    const elapsedMs = Math.max(0, now - triggeredMs);
+    const thresholdMs = escalateAfterMs * (currentLevel + 1);
+
+    if (elapsedMs >= thresholdMs) {
+      const nextLevel = currentLevel + 1;
+      const elapsedMin = Math.floor(elapsedMs / 60000);
+      const updated = db.updateAlert(alert.id, { escalationLevel: nextLevel });
+      escalated.push(updated);
+
+      if (typeof sendEscalated === 'function') {
+        sendEscalated({
+          alertId: alert.id,
+          level: nextLevel,
+          elapsedMin
+        });
+      }
+
+      if (typeof sendAlert === 'function') {
+        const { toSafeAlert } = require('../models/alertModel');
+        sendAlert(toSafeAlert(updated, false));
+      }
+    }
+  }
+
+  return escalated;
+}
+
+function startEscalationWatchdog({
+  intervalMs = config.escalationTickMs,
+  escalateAfterMs = config.escalateAfterMs
+} = {}) {
+  if (watchdogInterval) return;
+  watchdogInterval = setInterval(() => {
+    try {
+      tickEscalation({ escalateAfterMs });
+    } catch (err) {
+      console.error('Watchdog escalation tick error:', err);
+    }
+  }, intervalMs);
+  if (watchdogInterval && watchdogInterval.unref) {
+    watchdogInterval.unref();
+  }
+}
+
+function stopEscalationWatchdog() {
+  if (watchdogInterval) {
+    clearInterval(watchdogInterval);
+    watchdogInterval = null;
+  }
+}
+
+function isEscalationWatchdogRunning() {
+  return watchdogInterval !== null;
+}
 
 function hashToken(token) {
   if (!token) return null;
@@ -66,6 +153,7 @@ function triggerSos({
 
   db.saveAlert(alert);
   alert.resolveToken = resolveToken;
+  startEscalationWatchdog();
   return alert;
 }
 
@@ -103,6 +191,11 @@ function resolveSos(alertId, notes = null) {
     notes: notes || existing.notes
   });
 
+  const remainingActive = db.getActiveAlerts();
+  if (remainingActive.length === 0) {
+    stopEscalationWatchdog();
+  }
+
   return updated;
 }
 
@@ -111,5 +204,9 @@ module.exports = {
   getActiveAlerts,
   getAllAlerts,
   getAlertById,
-  resolveSos
+  resolveSos,
+  tickEscalation,
+  startEscalationWatchdog,
+  stopEscalationWatchdog,
+  isEscalationWatchdogRunning
 };

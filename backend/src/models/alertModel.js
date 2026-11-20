@@ -22,6 +22,7 @@ function createAlert({
   batteryLevel = null,
   alertType = 'CRITICAL_SOS',
   status = 'active',
+  escalationLevel = 0,
   triggeredAt = new Date().toISOString(),
   resolvedAt = null,
   emergencyContactsNotified = 0,
@@ -39,6 +40,7 @@ function createAlert({
     batteryLevel: batteryLevel !== null ? Number(batteryLevel) : null,
     alertType: String(alertType || 'CRITICAL_SOS'),
     status: VALID_ALERT_STATUSES.includes(status) ? status : 'active',
+    escalationLevel: Number(escalationLevel || 0),
     triggeredAt,
     resolvedAt: resolvedAt ? String(resolvedAt) : null,
     emergencyContactsNotified: Number(emergencyContactsNotified || 0),
@@ -49,8 +51,12 @@ function createAlert({
 
 function toSafeAlert(alert, isOwnerOrAdmin = false) {
   if (!alert) return null;
+  const triggeredMs = alert.triggeredAt ? new Date(alert.triggeredAt).getTime() : Date.now();
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - triggeredMs) / 1000));
+  const escalationLevel = Number(alert.escalationLevel || 0);
+
   if (isOwnerOrAdmin) {
-    const safe = { ...alert };
+    const safe = { ...alert, escalationLevel, ageSeconds };
     delete safe.resolveTokenHash;
     return safe;
   }
@@ -72,6 +78,8 @@ function toSafeAlert(alert, isOwnerOrAdmin = false) {
     batteryLevel: alert.batteryLevel,
     alertType: alert.alertType,
     status: alert.status,
+    escalationLevel,
+    ageSeconds,
     triggeredAt: alert.triggeredAt,
     resolvedAt: alert.resolvedAt,
     emergencyContactsNotified: alert.emergencyContactsNotified,

@@ -34,7 +34,7 @@ wss.on('connection', (ws, req) => {
     type: 'CONNECTION_ESTABLISHED',
     message: 'Connected to SafeSphere SOS WebSocket channel',
     timestamp: new Date().toISOString()
-  }));
+  }), (err) => {});
 
   ws.on('message', (data) => {
     try {
@@ -49,7 +49,7 @@ wss.on('connection', (ws, req) => {
 
         for (const client of clients) {
           if (client !== ws && client.readyState === WebSocket.OPEN) {
-            client.send(payload);
+            client.send(payload, (err) => {});
           }
         }
       } else if (message.type === 'SUBSCRIBE_TRACKING') {
@@ -59,7 +59,7 @@ wss.on('connection', (ws, req) => {
             type: 'ERROR',
             code: 'MISSING_SESSION_ID',
             message: 'sessionId is required to subscribe to live tracking stream'
-          }));
+          }), (err) => {});
         }
 
         if (!verifyTrackingCredential(ws, sessionId, message.token)) {
@@ -77,7 +77,7 @@ wss.on('connection', (ws, req) => {
           sessionId,
           status: 'subscribed',
           timestamp: new Date().toISOString()
-        }));
+        }), (err) => {});
 
         // Send existing session snapshot if available in database
         try {
@@ -88,7 +88,7 @@ wss.on('connection', (ws, req) => {
               sessionId,
               session,
               timestamp: new Date().toISOString()
-            }));
+            }), (err) => {});
           }
         } catch (_) {}
       } else if (message.type === 'LOCATION_STREAM_UPDATE') {
@@ -98,7 +98,7 @@ wss.on('connection', (ws, req) => {
             type: 'ERROR',
             code: 'INVALID_STREAM_PAYLOAD',
             message: 'sessionId, latitude, and longitude are required for LOCATION_STREAM_UPDATE'
-          }));
+          }), (err) => {});
         }
 
         if (!verifyTrackingCredential(ws, sessionId, message.token)) {
@@ -136,7 +136,7 @@ wss.on('connection', (ws, req) => {
             type: 'ERROR',
             code: 'MISSING_SESSION_ID',
             message: 'sessionId is required to terminate a live tracking stream'
-          }));
+          }), (err) => {});
         }
 
         if (!verifyTrackingCredential(ws, sessionId, token)) {
@@ -150,10 +150,10 @@ wss.on('connection', (ws, req) => {
 
         broadcastStreamTerminate(sessionId, reason, ws);
       } else if (message.type === 'PING') {
-        ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }));
+        ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }), (err) => {});
       }
     } catch (e) {
-      ws.send(JSON.stringify({ type: 'ERROR', message: 'Malformed JSON payload' }));
+      ws.send(JSON.stringify({ type: 'ERROR', message: 'Malformed JSON payload' }), (err) => {});
     }
   });
 
@@ -205,6 +205,10 @@ if (pingInterval.unref) {
 
 wss.on('close', () => {
   clearInterval(pingInterval);
+  try {
+    const { stopEscalationWatchdog } = require('./services/sosService');
+    stopEscalationWatchdog();
+  } catch (_) {}
 });
 
 /**
@@ -218,7 +222,7 @@ function verifyTrackingCredential(ws, sessionId, token) {
       type: 'ERROR',
       code: 'MISSING_TRACKING_TOKEN',
       message: 'token is required to access this live tracking stream'
-    }));
+    }), (err) => {});
     return false;
   }
 
@@ -234,7 +238,7 @@ function verifyTrackingCredential(ws, sessionId, token) {
       type: 'ERROR',
       code: 'INVALID_TRACKING_TOKEN',
       message: 'Invalid tracking token for this live tracking session'
-    }));
+    }), (err) => {});
     return false;
   }
 
@@ -251,7 +255,24 @@ function broadcastSosAlert(alertData) {
 
   for (const client of clients) {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(payload);
+      client.send(payload, (err) => {});
+    }
+  }
+}
+
+// Broadcast escalation event to all connected monitors
+function broadcastSosEscalated({ alertId, level, elapsedMin }) {
+  const payload = JSON.stringify({
+    type: 'SOS_ESCALATED',
+    alertId,
+    level: Number(level),
+    elapsedMin: Number(elapsedMin),
+    timestamp: new Date().toISOString()
+  });
+
+  for (const client of clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(payload, (err) => {});
     }
   }
 }
@@ -276,7 +297,7 @@ function broadcastLocationUpdate(sessionId, locationData, senderWs = null) {
   let sentCount = 0;
   for (const client of room) {
     if (client !== senderWs && client.readyState === WebSocket.OPEN) {
-      client.send(payload);
+      client.send(payload, (err) => {});
       sentCount++;
     }
   }
@@ -298,7 +319,7 @@ function broadcastStreamTerminate(sessionId, reason = 'Stream terminated by user
   let sentCount = 0;
   for (const client of room) {
     if (client !== senderWs && client.readyState === WebSocket.OPEN) {
-      client.send(payload);
+      client.send(payload, (err) => {});
       sentCount++;
     }
   }
@@ -319,6 +340,11 @@ function getWebSocketClientCount() {
 const shutdown = (callback) => {
   console.log('\nGracefully shutting down SafeSphere server...');
   clearInterval(pingInterval);
+
+  try {
+    const { stopEscalationWatchdog } = require('./services/sosService');
+    stopEscalationWatchdog();
+  } catch (_) {}
 
   for (const client of clients) {
     try {
@@ -368,6 +394,7 @@ module.exports = {
   getWebSocketClientCount,
   shutdown,
   broadcastSosAlert,
+  broadcastSosEscalated,
   broadcastLocationUpdate,
   broadcastStreamTerminate,
   trackingRooms
