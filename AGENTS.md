@@ -267,7 +267,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 | `NOTE:` markers | `frontend/lib/services/auth_service.dart` (register, login, OTP send, OTP verify, PIN verify) | Converted from stale `TODO(REAL_BACKEND)`; endpoints verified live on backend | DONE |
 | `AI Assistant (Groq)` | `backend/src/services/aiService.js`, `backend/src/controllers/aiController.js`, `frontend/lib/pages/ai_assistant_page.dart` | `POST /api/v1/ai/chat` (Groq; key via `GROQ_API_KEY` env only), optionalAuth + 10/min `aiLimiter`, sanitized history (12 turns), honest 503 `AI_NOT_CONFIGURED` fallback to offline guides | DONE |
 | `Hardening Wave (audit)` | `alertController.js`, `authMiddleware.js`, `validation.js`, `rateLimiter.js`, `config/index.js`, `auth_service.dart` | Guest SOS identity stripping (body identity ignored), optionalAuth + requireAuth session-revocation gates (missing/invalid session ⇒ guest/rejected), dedicated 10/min `otpLimiter` on `/otp/send`+`/otp/verify`, input caps (SOS notes 500 / alertType 40 / report description 2000 / location 200 / coords validated / direct `photoUrl` rejected), env fail-closed (unknown `NODE_ENV` ⇒ production hygiene, incl. inside `validateJwtSecretHygiene`), offline SOS queue 24h TTL with `_queuedAt` stamps | DONE |
-| `SMS Gateway + Maps key` | `backend/src/services/sosService.js`, `frontend/lib/data/map_config.dart` | Provider accounts (MSG91/Twilio; Google Cloud) — sign-in requires the owner's credentials/phone verification | PENDING (owner) |
+| `SMS Gateway + Maps key` | `backend/src/services/sosService.js`, `frontend/lib/data/map_config.dart` | MSG91 account created (tejasgaur94@gmail.com) — **blocked at control-panel login** (login OTP emails never arrive; Google OAuth callback bounces). Maps: Google abandoned — Safety Map now runs on `flutter_map` + OSM/CARTO tiles, zero key/card; optional MapTiler key via dart-define | SMS PENDING (owner login), MAPS DONE (free tier) |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/services/auth_service.dart` (`verifyBiometrics`) | Real biometric scan via `local_auth` wired with hardware check and fallback | DONE |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/pages/home_page.dart`, `emergency_page.dart` | Volume button / hardware panic intercept requires native plugin, fallback F4-2-alt shipped | DEFERRED |
 | `F3-1 (SOS Escalation)` | `backend/src/services/sosService.js`, `frontend/lib/pages/emergency_page.dart` | 60s escalation watchdog, escalationLevel cap 3, WS broadcast, active ageSeconds & badge | DONE |
@@ -297,10 +297,14 @@ Search `TODO(REAL_` for the live list. Current stubs:
   This is fine on mobile/desktop but will not compile for the `web` target; use
   `web_preview/` for browser demos.
 - **Stale/missing `pubspec.lock` entries.** The lockfile does not list every
-  direct dependency (e.g. `geolocator`, `google_maps_flutter`, `local_auth`, `flutter_secure_storage`). Run
+  direct dependency (e.g. `geolocator`, `flutter_map`, `local_auth`, `flutter_secure_storage`). Run
   `flutter pub get` on a Flutter-equipped machine before building; do NOT edit `pubspec.lock` by hand.
-- **`map_config.dart` API key is a placeholder** (`YOUR_GOOGLE_MAPS_API_KEY_HERE`);
-  `SafeSphereMapConfig.isConfigured` is `false` until a real key is provided.
+- **Maps are OSM-based via `flutter_map`** — no API key, no card, no billing
+  account. The Safety Map renders CARTO dark raster tiles (OSM data) with an
+  OSM attribution; a free MapTiler key can be passed at build time via
+  `--dart-define=SAFESPHERE_MAP_TILER_KEY=<key>` to upgrade tiles. The former
+  `google_maps_flutter` dependency was removed (it was never imported and its
+  SDK required a billing-verified Google Cloud account).
 - **AI assistant requires `GROQ_API_KEY`.** Without it `POST /api/v1/ai/chat`
   returns an honest `503 AI_NOT_CONFIGURED` and the UI falls back to the
   offline safety guides. The key is never committed or returned to clients.

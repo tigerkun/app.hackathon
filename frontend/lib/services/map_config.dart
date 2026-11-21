@@ -1,82 +1,37 @@
-/// Google Maps Configuration & Map Theming for SafeSphere
+/// Tile provider configuration for the SafeSphere map (flutter_map).
+///
+/// Free by default: OpenStreetMap raster tiles — no account, no API key, no
+/// card. If prettier vector-style tiles are wanted later, pass a free MapTiler
+/// key (100k loads/month) at build time:
+///   flutter build apk --release --dart-define=SAFESPHERE_MAP_TILER_KEY=<key>
+/// The same map code then switches providers automatically.
 class SafeSphereMapConfig {
-  /// Default center coordinates (fallback when GPS is disabled)
+  /// Fallback map center (old Delhi default) used only before a real GPS fix —
+  /// the UI never presents it as the user's location.
   static const double defaultLatitude = 28.6139;
   static const double defaultLongitude = 77.2090;
 
-  /// Configured Google Maps API Key
-  /// Replace with your active Google Cloud Console Maps API Key
-  static const String apiKey = "YOUR_GOOGLE_MAPS_API_KEY_HERE";
+  static const String _mapTilerKey =
+      String.fromEnvironment('SAFESPHERE_MAP_TILER_KEY');
 
-  /// Returns true if a genuine API key has been configured
-  static bool get isConfigured =>
-      apiKey.isNotEmpty && apiKey != "YOUR_GOOGLE_MAPS_API_KEY_HERE";
+  /// True when a MapTiler key was provided at build time.
+  static bool get isMapTilerConfigured => _mapTilerKey.isNotEmpty;
 
-  /// Custom Dark Cyberpunk Map Style JSON for Google Maps
-  static const String darkMapStyle = '''
-[
-  {
-    "elementType": "geometry",
-    "stylers": [{"color": "#0B1220"}]
-  },
-  {
-    "elementType": "labels.text.fill",
-    "stylers": [{"color": "#8E9BB0"}]
-  },
-  {
-    "elementType": "labels.text.stroke",
-    "stylers": [{"color": "#0B1220"}]
-  },
-  {
-    "featureType": "administrative.locality",
-    "elementType": "labels.text.fill",
-    "stylers": [{"color": "#2FE0C9"}]
-  },
-  {
-    "featureType": "poi",
-    "elementType": "labels.text.fill",
-    "stylers": [{"color": "#6B7280"}]
-  },
-  {
-    "featureType": "poi.park",
-    "elementType": "geometry",
-    "stylers": [{"color": "#111C30"}]
-  },
-  {
-    "featureType": "road",
-    "elementType": "geometry",
-    "stylers": [{"color": "#1E293B"}]
-  },
-  {
-    "featureType": "road",
-    "elementType": "geometry.stroke",
-    "stylers": [{"color": "#0F172A"}]
-  },
-  {
-    "featureType": "road.highway",
-    "elementType": "geometry",
-    "stylers": [{"color": "#3A7BFF"}]
-  },
-  {
-    "featureType": "road.highway",
-    "elementType": "geometry.stroke",
-    "stylers": [{"color": "#1E40AF"}]
-  },
-  {
-    "featureType": "transit",
-    "elementType": "geometry",
-    "stylers": [{"color": "#182234"}]
-  },
-  {
-    "featureType": "water",
-    "elementType": "geometry",
-    "stylers": [{"color": "#060A12"}]
-  },
-  {
-    "featureType": "water",
-    "elementType": "labels.text.fill",
-    "stylers": [{"color": "#38BDF8"}]
-  }
-]
-''';
+  /// Raster tile URL template consumed by flutter_map's TileLayer.
+  /// Default: CARTO dark basemap (fits the app's dark theme; free with
+  /// attribution, OSM data). Switch the string to
+  /// 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' for classic OSM tiles.
+  static String get tileUrlTemplate => isMapTilerConfigured
+      ? 'https://api.maptiler.com/maps/basic-v2/{z}/{x}/{y}.png?key=$_mapTilerKey'
+      : 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+
+  /// Attribution text shown on the map (required by tile usage policies).
+  static String get attribution => isMapTilerConfigured
+      ? '© MapTiler © OpenStreetMap contributors'
+      : '© OpenStreetMap contributors © CARTO';
+
+  static const String attributionUrl = 'https://www.openstreetmap.org/copyright';
+
+  /// Package name sent as User-Agent with tile requests (OSM policy compliance).
+  static const String userAgentPackageName = 'com.safesphere.app';
 }

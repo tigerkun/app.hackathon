@@ -1,5 +1,5 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_drawer.dart';
@@ -536,7 +536,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
           if (_isListView)
             _buildDirectoryList(filteredItems)
           else
-            _buildMapRadarCanvas(filteredItems),
+            _buildLiveMap(filteredItems),
 
           /// ---------------- TOP FILTER CHIPS ----------------
           Positioned(
@@ -666,137 +666,141 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
     );
   }
 
-  Widget _buildMapRadarCanvas(List<_MapPinItem> items) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final double centerX = constraints.maxWidth / 2;
-        final double centerY = constraints.maxHeight / 2;
-
-        // Scaling factor: 1 km = 28 screen logical pixels
-        const double pxPerKm = 28.0;
-        const double kmPerDegLat = 111.0;
-        final double kmPerDegLng = 111.0 * math.cos(_userLat * math.pi / 180.0);
-
-        return Stack(
+  /// Real pannable/zoomable map (flutter_map + OpenStreetMap-derived raster
+  /// tiles). Free by default: no API key, no card, no billing account.
+  Widget _buildLiveMap(List<_MapPinItem> items) {
+    return Stack(
+      children: [
+        FlutterMap(
+          options: MapOptions(
+            initialCenter: LatLng(_userLat, _userLng),
+            initialZoom: 13.5,
+            minZoom: 3.0,
+            maxZoom: 18.0,
+            interactionOptions: const InteractionOptions(
+              flags: InteractiveFlag.all,
+            ),
+            onTap: (_, __) {
+              if (_selectedItem != null) {
+                setState(() => _selectedItem = null);
+              }
+            },
+          ),
           children: [
-            // Dark vector road and radar background
-            Container(
-              width: double.infinity,
-              height: double.infinity,
-              color: const Color(0xFF070B14),
-              child: CustomPaint(
-                painter: _DarkVectorMapPainter(layer: "Safety"),
-              ),
+            TileLayer(
+              urlTemplate: SafeSphereMapConfig.tileUrlTemplate,
+              userAgentPackageName: SafeSphereMapConfig.userAgentPackageName,
+              maxNativeZoom: 19,
             ),
-
-            // Radar mode indicator
-            Positioned(
-              top: 56,
-              left: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.75),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.teal.withValues(alpha: 0.35)),
+            RichAttributionWidget(
+              attributions: [
+                TextSourceAttribution(
+                  SafeSphereMapConfig.attribution,
+                  onTap: () => launchUrl(
+                    Uri.parse(SafeSphereMapConfig.attributionUrl),
+                    mode: LaunchMode.externalApplication,
+                  ),
                 ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.radar, size: 12, color: AppColors.teal),
-                    SizedBox(width: 5),
-                    Text(
-                      "Radar Proximity View (10km)",
-                      style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              ),
+              ],
             ),
-
-            // User Center Pin
-            Positioned(
-              left: centerX - 24,
-              top: centerY - 24,
-              child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedItem = _MapPinItem(
-                      id: "you",
-                      name: "Your Live Location",
-                      category: "Current Location",
-                      latitude: _userLat,
-                      longitude: _userLng,
-                      distanceKm: 0.0,
-                      address: "Live GPS Fix (${_userLat.toStringAsFixed(4)}, ${_userLng.toStringAsFixed(4)})",
-                      isVerified: true,
-                      isHazardReport: false,
+            if (_hasGpsFix)
+              CircleLayer(
+                circles: [
+                  CircleMarker(
+                    point: LatLng(_userLat, _userLng),
+                    radius: 400,
+                    useRadiusInMeter: true,
+                    color: AppColors.teal.withValues(alpha: 0.14),
+                    borderColor: AppColors.teal.withValues(alpha: 0.45),
+                    borderStrokeWidth: 2,
+                  ),
+                ],
+              ),
+            MarkerLayer(
+              markers: [
+                // User location pin
+                Marker(
+                  point: LatLng(_userLat, _userLng),
+                  width: 48,
+                  height: 48,
+                  alignment: Alignment.topCenter,
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedItem = _MapPinItem(
+                          id: "you",
+                          name: "Your Live Location",
+                          category: "Current Location",
+                          latitude: _userLat,
+                          longitude: _userLng,
+                          distanceKm: 0.0,
+                          address:
+                              "Live GPS Fix (${_userLat.toStringAsFixed(4)}, ${_userLng.toStringAsFixed(4)})",
+                          isVerified: true,
+                          isHazardReport: false,
+                          icon: Icons.my_location,
+                          color: AppColors.teal,
+                        );
+                      });
+                    },
+                    child: const _InteractivePin(
                       icon: Icons.my_location,
                       color: AppColors.teal,
-                    );
-                  });
-                },
-                child: const _InteractivePin(
-                  icon: Icons.my_location,
-                  color: AppColors.teal,
-                  label: "You",
-                  isPulsing: true,
+                      label: "You",
+                      isPulsing: true,
+                    ),
+                  ),
                 ),
+                // Verified safety markers + citizen hazard reports at true coordinates
+                for (final item in items)
+                  Marker(
+                    point: LatLng(item.latitude, item.longitude),
+                    width: 48,
+                    height: 52,
+                    alignment: Alignment.topCenter,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedItem = item),
+                      child: _InteractivePin(
+                        icon: item.icon,
+                        color: item.color,
+                        label:
+                            item.name.length > 14 ? "${item.name.substring(0, 12)}.." : item.name,
+                        distanceText: "${item.distanceKm.toStringAsFixed(1)}km",
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+
+        // Honest GPS-off indicator: the map centers on the Delhi fallback
+        // until a real fix arrives — never presented as the user's location.
+        if (!_hasGpsFix)
+          Positioned(
+            top: 56,
+            left: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.amber.withValues(alpha: 0.4)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.gps_off, size: 12, color: AppColors.amber),
+                  SizedBox(width: 5),
+                  Text(
+                    "GPS off — showing default area",
+                    style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ],
               ),
             ),
-
-            // Dynamic Geo Pins mapped relative to user's real coordinates
-            for (final item in items)
-              _buildProjectedPin(item, centerX, centerY, pxPerKm, kmPerDegLat, kmPerDegLng, constraints),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildProjectedPin(
-    _MapPinItem item,
-    double centerX,
-    double centerY,
-    double pxPerKm,
-    double kmPerDegLat,
-    double kmPerDegLng,
-    BoxConstraints constraints,
-  ) {
-    final double deltaLng = item.longitude - _userLng;
-    final double deltaLat = item.latitude - _userLat;
-
-    final double dX_km = deltaLng * kmPerDegLng;
-    final double dY_km = -(deltaLat * kmPerDegLat); // Negative because screen Y increases downward
-
-    double posX = centerX + (dX_km * pxPerKm) - 24;
-    double posY = centerY + (dY_km * pxPerKm) - 24;
-
-    // Clamp inside viewport margins so distant pins stay accessible on the radar edge
-    final double minX = 16.0;
-    final double maxX = constraints.maxWidth - 64.0;
-    final double minY = 64.0;
-    final double maxY = constraints.maxHeight - 140.0;
-
-    final bool isClamped = posX < minX || posX > maxX || posY < minY || posY > maxY;
-    posX = posX.clamp(minX, maxX);
-    posY = posY.clamp(minY, maxY);
-
-    return Positioned(
-      left: posX,
-      top: posY,
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedItem = item),
-        child: Opacity(
-          opacity: isClamped ? 0.75 : 1.0,
-          child: _InteractivePin(
-            icon: item.icon,
-            color: item.color,
-            label: item.name.length > 14 ? "${item.name.substring(0, 12)}.." : item.name,
-            distanceText: "${item.distanceKm.toStringAsFixed(1)}km",
           ),
-        ),
-      ),
+      ],
     );
   }
 
@@ -1126,52 +1130,4 @@ class _InteractivePin extends StatelessWidget {
       ],
     );
   }
-}
-
-class _DarkVectorMapPainter extends CustomPainter {
-  final String layer;
-  _DarkVectorMapPainter({required this.layer});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final roadPaint = Paint()
-      ..color = const Color(0xFF152238)
-      ..strokeWidth = 5;
-
-    final secondaryRoad = Paint()
-      ..color = const Color(0xFF0E182A)
-      ..strokeWidth = 2.5;
-
-    // Major arteries
-    canvas.drawLine(Offset(0, size.height * 0.35), Offset(size.width, size.height * 0.35), roadPaint);
-    canvas.drawLine(Offset(0, size.height * 0.65), Offset(size.width, size.height * 0.65), roadPaint);
-    canvas.drawLine(Offset(size.width * 0.4, 0), Offset(size.width * 0.4, size.height), roadPaint);
-    canvas.drawLine(Offset(size.width * 0.75, 0), Offset(size.width * 0.75, size.height), roadPaint);
-
-    // Diagonal arterial bypass
-    canvas.drawLine(Offset(0, size.height * 0.8), Offset(size.width * 0.85, 0), secondaryRoad);
-
-    // Minor streets grid
-    for (double y = 40; y < size.height; y += 65) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), secondaryRoad);
-    }
-    for (double x = 40; x < size.width; x += 65) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), secondaryRoad);
-    }
-
-    // Safety Patrol Zone Polygon
-    final safeZonePaint = Paint()
-      ..color = const Color(0x182FE0C9)
-      ..style = PaintingStyle.fill;
-    final path = Path()
-      ..moveTo(size.width * 0.2, size.height * 0.2)
-      ..lineTo(size.width * 0.6, size.height * 0.25)
-      ..lineTo(size.width * 0.55, size.height * 0.5)
-      ..lineTo(size.width * 0.15, size.height * 0.45)
-      ..close();
-    canvas.drawPath(path, safeZonePaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
