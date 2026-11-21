@@ -148,6 +148,15 @@ class AppDrawer extends StatelessWidget {
                   },
                 ),
                 ListTile(
+                  leading: const Icon(Icons.group_outlined, color: AppColors.teal),
+                  title: const Text('My Circle (Trusted People)', style: TextStyle(color: Colors.white)),
+                  subtitle: const Text('Safe ID, watchers & scoped live views', style: TextStyle(color: Colors.white60, fontSize: 12)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, AppRoutes.circle);
+                  },
+                ),
+                ListTile(
                   leading: const Icon(Icons.lock_clock_outlined, color: AppColors.teal),
                   title: const Text('PIN & Biometric Lock', style: TextStyle(color: Colors.white)),
                   onTap: () {
@@ -217,6 +226,13 @@ class AppDrawer extends StatelessWidget {
               user.email.isNotEmpty ? user.email : user.phone,
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
+            if (user.safeId != null && user.safeId!.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                'Safe ID: ${user.safeId}',
+                style: const TextStyle(color: AppColors.teal, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.0),
+              ),
+            ],
             const SizedBox(height: 2),
             Text(
               'Emergency Contact: $contactPhone',

@@ -9,6 +9,15 @@ function generateUserId() {
   return `usr_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 }
 
+// M3: short unique public Safe ID (e.g. SF-7X4K-2Q) — used to send
+// connection requests without exposing email/phone.
+function generateSafeId() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
+  const pick = (n) => Array.from(crypto.randomBytes(n))
+    .map((b) => alphabet[b % alphabet.length]).join('');
+  return `SF-${pick(4)}-${pick(2)}`;
+}
+
 function normalizeEmail(email) {
   return (email || '').trim().toLowerCase();
 }
@@ -35,12 +44,14 @@ function createUser({
   banned = false,
   aadhaarLast4Salt = null,
   aadhaarLast4Hash = null,
+  safeId = generateSafeId(),
   createdAt = new Date().toISOString(),
   updatedAt = new Date().toISOString()
 }) {
   const resolvedPin = pinHash || pin || null;
   return {
     id,
+    safeId,
     name: (name || '').trim(),
     email: normalizeEmail(email),
     phone: normalizePhone(phone),
@@ -71,6 +82,7 @@ function toSafeUser(user) {
     email: user.email,
     phone: user.phone,
     role: user.role || 'citizen',
+    safeId: user.safeId || null,
     hasPin: Boolean(user.pin || user.pinHash),
     biometricsEnabled: Boolean(user.biometricsEnabled),
     emergencyContacts: user.emergencyContacts || [],
@@ -89,6 +101,7 @@ module.exports = {
   createUser,
   toSafeUser,
   generateUserId,
+  generateSafeId,
   normalizeEmail,
   normalizePhone
 };

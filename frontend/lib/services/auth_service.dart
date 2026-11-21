@@ -1346,6 +1346,143 @@ class AuthService {
   }
 
   // ---------------------------------------------------------------------------
+  // M3: Trusted circle connections (SafeSphere IDs, scoped guardian views)
+  // ---------------------------------------------------------------------------
+  /// Connection methods return `{ ok: true, data: <payload> }` on success or
+  /// `{ ok: false, code: '<ERROR_CODE>', message: '...' }` on honest failure
+  /// so callers can surface the real reason (scope denied, revoked, rate
+  /// limited) instead of a generic failure.
+
+  Future<Map<String, dynamic>> _connectionCall({
+    required String method,
+    required String path,
+    Map<String, dynamic>? body,
+  }) async {
+    final token = await storage.getString(keyToken);
+    final res = await _requestDetailed(
+      method: method,
+      path: path,
+      body: body,
+      token: token,
+    );
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      return { 'ok': true, 'data': res.data!['data'] };
+    }
+    final error = res.data != null && res.data!['error'] is Map<String, dynamic>
+        ? res.data!['error'] as Map<String, dynamic>
+        : null;
+    return {
+      'ok': false,
+      'code': error != null ? (error['code'] ?? 'UNKNOWN') : 'NETWORK_ERROR',
+      'message': error != null ? (error['message'] ?? 'Request failed') : 'Network unavailable',
+    };
+  }
+
+  /// Sends a connection request addressed by the owner's public Safe ID.
+  Future<Map<String, dynamic>> sendConnectionRequest({
+    required String ownerSafeId,
+    required List<String> scopes,
+    String mode = 'sos_only',
+  }) {
+    return _connectionCall(
+      method: 'POST',
+      path: '/api/v1/connections',
+      body: { 'ownerSafeId': ownerSafeId, 'scopes': scopes, 'mode': mode },
+    );
+  }
+
+  /// Lists both directions of the user's circle (outgoing + incoming).
+  Future<Map<String, dynamic>> fetchMyConnections() {
+    return _connectionCall(method: 'GET', path: '/api/v1/connections/mine');
+  }
+
+  /// Accept/decline a pending request (owner), or withdraw own request (grantee).
+  Future<Map<String, dynamic>> respondToConnection({
+    required String connectionId,
+    required bool accept,
+  }) {
+    return _connectionCall(
+      method: 'POST',
+      path: '/api/v1/connections/$connectionId/respond',
+      body: { 'accept': accept },
+    );
+  }
+
+  /// Either party revokes — immediate, every scoped read re-verifies.
+  Future<Map<String, dynamic>> revokeConnection(String connectionId) {
+    return _connectionCall(
+      method: 'POST',
+      path: '/api/v1/connections/$connectionId/revoke',
+    );
+  }
+
+  /// Owner-only scope adjustment on an active connection.
+  Future<Map<String, dynamic>> updateConnectionScopes({
+    required String connectionId,
+    required List<String> scopes,
+  }) {
+    return _connectionCall(
+      method: 'PATCH',
+      path: '/api/v1/connections/$connectionId/scopes',
+      body: { 'scopes': scopes },
+    );
+  }
+
+  /// Owner beacons a location point into the connection's 200-point buffer.
+  Future<Map<String, dynamic>> pingConnectionLocation({
+    required String connectionId,
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+  }) {
+    return _connectionCall(
+      method: 'POST',
+      path: '/api/v1/connections/$connectionId/ping',
+      body: {
+        'latitude': latitude,
+        'longitude': longitude,
+        if (accuracy != null) 'accuracy': accuracy,
+      },
+    );
+  }
+
+  /// Grantee reads the owner's latest beacon (requires 'location' scope).
+  Future<Map<String, dynamic>> fetchConnectionLive(String connectionId) {
+    return _connectionCall(
+      method: 'GET',
+      path: '/api/v1/connections/$connectionId/live',
+    );
+  }
+
+  /// Grantee reads the owner's SOS/tracking status (requires 'sos_status').
+  Future<Map<String, dynamic>> fetchConnectionStatus(String connectionId) {
+    return _connectionCall(
+      method: 'GET',
+      path: '/api/v1/connections/$connectionId/status',
+    );
+  }
+
+  /// Grantee reads the owner's active alerts (requires 'nearby_alerts').
+  Future<Map<String, dynamic>> fetchConnectionAlerts(String connectionId) {
+    return _connectionCall(
+      method: 'GET',
+      path: '/api/v1/connections/$connectionId/alerts',
+    );
+  }
+
+  /// Grantee "checks on" the owner — rate-limited server-side to 1 per 5 min.
+  Future<Map<String, dynamic>> checkInOnConnection({
+    required String connectionId,
+    String? message,
+  }) {
+    return _connectionCall(
+      method: 'POST',
+      path: '/api/v1/connections/$connectionId/checkin',
+      body: { if (message != null) 'message': message },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // M1.6b: Forgot-PIN recovery (POST /api/v1/auth/pin/reset)
   // ---------------------------------------------------------------------------
   /// Resets the account PIN using the OTP sent to the registered phone.

@@ -181,6 +181,32 @@ class DataStore {
       );
       CREATE INDEX IF NOT EXISTS idx_report_votes_report ON report_votes(reportId, vote);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_report_votes_unique ON report_votes(reportId, userId);
+
+      -- M3 Connections: consent-based trusted circle (replaces share-links)
+      CREATE TABLE IF NOT EXISTS connections (
+        id TEXT PRIMARY KEY,
+        ownerId TEXT NOT NULL,
+        granteeId TEXT NOT NULL,
+        scopes TEXT NOT NULL DEFAULT '[]',
+        mode TEXT NOT NULL DEFAULT 'sos_only' CHECK (mode IN ('always', 'sos_only')),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'revoked', 'expired')),
+        createdAt TEXT NOT NULL,
+        acceptedAt TEXT,
+        revokedAt TEXT,
+        expiresAt TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_connections_owner ON connections(ownerId, status);
+      CREATE INDEX IF NOT EXISTS idx_connections_grantee ON connections(granteeId, status);
+
+      CREATE TABLE IF NOT EXISTS connection_locations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        connectionId TEXT NOT NULL,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        accuracy REAL,
+        timestamp TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_connection_locations_conn ON connection_locations(connectionId, timestamp);
     `);
 
     try {
@@ -237,6 +263,10 @@ class DataStore {
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE users ADD COLUMN aadhaarLast4Hash TEXT");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE users ADD COLUMN safeId TEXT");
+      this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_safeId ON users(safeId)");
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE reports ADD COLUMN expiresAt TEXT");
@@ -376,6 +406,126 @@ class DataStore {
   }
 
   // ==========================================
+  // M3 Connections Repository (consent-based trusted circle)
+  // ==========================================
+
+  _formatConnection(row) {
+    if (!row) return null;
+    let scopes = [];
+    try {
+      scopes = typeof row.scopes === 'string' ? JSON.parse(row.scopes) : (row.scopes || []);
+    } catch (_) {
+      scopes = [];
+    }
+    return {
+      id: row.id,
+      ownerId: row.ownerId,
+      granteeId: row.granteeId,
+      scopes: Array.isArray(scopes) ? scopes : [],
+      mode: row.mode || 'sos_only',
+      status: row.status,
+      createdAt: row.createdAt,
+      acceptedAt: row.acceptedAt ?? null,
+      revokedAt: row.revokedAt ?? null,
+      expiresAt: row.expiresAt ?? null
+    };
+  }
+
+  saveConnection(conn) {
+    if (!conn || !conn.id) throw new Error('Connection must have an ID');
+    const scopesStr = typeof conn.scopes === 'string' ? conn.scopes : JSON.stringify(conn.scopes || []);
+    this.db.prepare(`
+      INSERT INTO connections (
+        id, ownerId, granteeId, scopes, mode, status,
+        createdAt, acceptedAt, revokedAt, expiresAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        scopes = excluded.scopes,
+        mode = excluded.mode,
+        status = excluded.status,
+        acceptedAt = excluded.acceptedAt,
+        revokedAt = excluded.revokedAt,
+        expiresAt = excluded.expiresAt
+    `).run(
+      conn.id,
+      conn.ownerId,
+      conn.granteeId,
+      scopesStr,
+      conn.mode || 'sos_only',
+      conn.status || 'pending',
+      conn.createdAt || new Date().toISOString(),
+      conn.acceptedAt ?? null,
+      conn.revokedAt ?? null,
+      conn.expiresAt ?? null
+    );
+    return this.findConnectionById(conn.id);
+  }
+
+  findConnectionById(id) {
+    if (!id) return null;
+    return this._formatConnection(
+      this.db.prepare('SELECT * FROM connections WHERE id = ? LIMIT 1').get(id)
+    );
+  }
+
+  listConnectionsByOwner(ownerId) {
+    return this.db
+      .prepare("SELECT * FROM connections WHERE ownerId = ? ORDER BY createdAt DESC")
+      .all(ownerId)
+      .map((r) => this._formatConnection(r));
+  }
+
+  listConnectionsByGrantee(granteeId) {
+    return this.db
+      .prepare("SELECT * FROM connections WHERE granteeId = ? ORDER BY createdAt DESC")
+      .all(granteeId)
+      .map((r) => this._formatConnection(r));
+  }
+
+  countPendingConnectionRequests(ownerId) {
+    const row = this.db.prepare(
+      "SELECT COUNT(*) AS c FROM connections WHERE ownerId = ? AND status = 'pending'"
+    ).get(ownerId);
+    return Number(row?.c || 0);
+  }
+
+  saveConnectionLocation({ connectionId, latitude, longitude, accuracy }) {
+    this.db.prepare(`
+      INSERT INTO connection_locations (connectionId, latitude, longitude, accuracy, timestamp)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      connectionId,
+      Number(latitude),
+      Number(longitude),
+      accuracy !== undefined && accuracy !== null ? Number(accuracy) : null,
+      new Date().toISOString()
+    );
+    // Rolling buffer: cap 200 points per connection
+    this.db.prepare(`
+      DELETE FROM connection_locations
+      WHERE connectionId = ? AND id NOT IN (
+        SELECT id FROM connection_locations
+        WHERE connectionId = ?
+        ORDER BY timestamp DESC, id DESC
+        LIMIT 200
+      )
+    `).run(connectionId, connectionId);
+  }
+
+  getLatestConnectionLocation(connectionId) {
+    const row = this.db.prepare(`
+      SELECT * FROM connection_locations WHERE connectionId = ?
+      ORDER BY timestamp DESC, id DESC LIMIT 1
+    `).get(connectionId);
+    return row ? {
+      latitude: Number(row.latitude),
+      longitude: Number(row.longitude),
+      accuracy: row.accuracy !== null ? Number(row.accuracy) : null,
+      timestamp: row.timestamp
+    } : null;
+  }
+
+  // ==========================================
   // M2 Community Trust Repository
   // ==========================================
 
@@ -500,6 +650,7 @@ class DataStore {
       biometricsEnabled: Boolean(row.biometricsEnabled),
       emergencyContacts: Array.isArray(emergencyContacts) ? emergencyContacts.map((c) => ({ ...c })) : [],
       isActive: Boolean(row.isActive),
+      safeId: row.safeId ?? null,
       reputationScore: Number(row.reputationScore || 0),
       strikes: Number(row.strikes || 0),
       banned: Boolean(row.banned),
@@ -555,8 +706,8 @@ class DataStore {
       INSERT INTO users (
         id, name, email, phone, role, passwordHash, pin, pinHash, biometricToken,
         biometricsEnabled, emergencyContacts, isActive, createdAt, updatedAt,
-        reputationScore, strikes, banned, aadhaarLast4Salt, aadhaarLast4Hash
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        reputationScore, strikes, banned, aadhaarLast4Salt, aadhaarLast4Hash, safeId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         email = excluded.email,
@@ -575,7 +726,8 @@ class DataStore {
         strikes = excluded.strikes,
         banned = excluded.banned,
         aadhaarLast4Salt = excluded.aadhaarLast4Salt,
-        aadhaarLast4Hash = excluded.aadhaarLast4Hash
+        aadhaarLast4Hash = excluded.aadhaarLast4Hash,
+        safeId = excluded.safeId
     `).run(
       user.id,
       user.name ?? '',
@@ -595,7 +747,8 @@ class DataStore {
       user.strikes !== undefined && user.strikes !== null ? Number(user.strikes) : 0,
       user.banned !== undefined && user.banned !== null ? (user.banned ? 1 : 0) : 0,
       user.aadhaarLast4Salt ?? null,
-      user.aadhaarLast4Hash ?? null
+      user.aadhaarLast4Hash ?? null,
+      user.safeId ?? null
     );
 
     return this.findUserById(user.id);
@@ -1349,6 +1502,14 @@ class DataStore {
 
   getAllTrackingSessions() {
     const rows = this.db.prepare('SELECT * FROM tracking_sessions').all();
+    return rows.map((r) => this._formatTrackingSession(r));
+  }
+
+  getActiveTrackingSessionsByUser(userId) {
+    if (!userId) return [];
+    const rows = this.db.prepare(
+      "SELECT * FROM tracking_sessions WHERE userId = ? AND status = 'active' ORDER BY createdAt DESC"
+    ).all(userId);
     return rows.map((r) => this._formatTrackingSession(r));
   }
 

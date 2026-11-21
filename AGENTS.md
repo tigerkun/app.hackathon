@@ -227,6 +227,13 @@ repositories via built-in `node:sqlite` with instant `reset()` for tests).
   - Valid report statuses: `['pending', 'under_investigation', 'verified', 'resolved', 'rejected']`.
   - `POST /api/v1/reports/:id/status`: privileged status transition endpoint.
   - Frontend `CommunityAlertsPage`: added "Verified only" FilterChip toggle, status badges (`Pending`, `Investigating`, `Verified`, `Resolved`, `Rejected`), and detailed modal report inspection.
+- **Trusted Circle Connections & SafeSphere IDs (M3)**:
+  - Every user gets a public **Safe ID** (`SF-XXXX-XX`, unambiguous alphabet — no `O/0/I/1`) generated at registration (`users.safeId`, unique index). It is the ONLY address other users need — never an email or phone.
+  - `POST /api/v1/connections`: grantee requests by `ownerSafeId` with scopes ⊆ `['location','nearby_alerts','sos_status']` and mode `always | sos_only`. Self-connection 400, unknown Safe ID 404, invalid scope/mode 400, duplicate live pair 409 (`CONNECTION_EXISTS` — one live connection per pair; revoked pairs may re-request), pending cap 20/owner, 25 live connections/grantee.
+  - Respond/revoke: `POST /:id/respond` (owner-only accept; grantee may withdraw own pending), `POST /:id/revoke` (either party, immediate). `PATCH /:id/scopes` owner-only on active connections.
+  - **Scoped reads re-verify per request**: `GET /:id/live|alerts|status` each re-check grantee identity, `status === 'active'`, and the specific scope → `403 SCOPE_NOT_GRANTED` (grantee without scope) or `403 CONNECTION_REVOKED` (revoked/pending, immediate). `sos_only` mode gates `location` to active SOS/tracking windows → `403 SOS_ONLY_NO_ACTIVE_WINDOW`.
+  - Beacon: `POST /:id/ping` (owner-only) stores into `connection_locations` with a 200-point rolling cap; `GET /:id/live` returns the latest point. Check-in: `POST /:id/checkin` (grantee-only, 1 per 5 min → `429 CHECKIN_RATE_LIMITED`).
+  - Frontend `/circle` (`MyCirclePage`, drawer "My Circle (Trusted People)"): copyable Safe ID card, accept/decline incoming requests, scoped live-view bottom sheet (5s poll, honest scope-denied copy), check-in, revoke. Connection client methods in `auth_service.dart` return `{ ok, data }` / `{ ok, code, message }` so UI surfaces the real server error. Safe ID shows in the drawer header.
 
 ## Conventions & invariants
 
@@ -276,6 +283,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 | `F3-3 (Check-in Timer)` | `backend/src/services/trackingService.js`, `frontend/lib/pages/share_location_page.dart` | Dead-man switch (1-1440m), 60s check-in tick, CHECKIN_MISSED WS broadcast, ping reset | DONE |
 | `F4-1 (SOS Chat)` | `backend/src/server.js`, `alertController.js`, `frontend/lib/pages/emergency_page.dart` | Two-way WS & REST responder chat, 1 msg/2s rate limit, 50 msg FIFO cap, victim vs responder UI | DONE |
 | `M1 Distress-first SOS` | `home_page.dart`, `emergency_page.dart`, `pin_lock_page.dart`, `ai_assistant_page.dart`, `authService.js`, `aiService.js` | SOS-first home (40% viewport hero), elapsed-time countdown ring + huge CANCEL + PopScope guard, plain-language reassurance hero + honest I'm-Safe dialog, forgot-PIN OTP reset (`POST /api/v1/auth/pin/reset`), contacts cap 5 + optional email, connectivity listener + queued-SOS banner, chat quick-replies, AI safety-only guardrails (prompt + client pre-filter) | DONE (home widget deferred — TODO(REAL_HARDWARE)) |
+| `M3 Connections (Trusted Circle)` | `backend/src/services/connectionService.js`, `connectionController.js`, `frontend/lib/pages/my_circle_page.dart`, `auth_service.dart`, `userModel.js`, `store.js` | SafeSphere IDs (`SF-XXXX-XX`) at registration, Safe-ID-addressed connection requests (scopes `location|nearby_alerts|sos_status`, mode `always|sos_only`), owner-only accept, either-party instant revoke, per-request scope re-verification (403 on missing scope / revoked), 200-point beacon buffer, 1-per-5-min check-in, `/circle` My Circle UI with live-view sheet | DONE |
 | `F4-2 (1-Tap SOS)` | `frontend/lib/pages/home_page.dart`, `emergency_page.dart`, `about_page.dart` | Persistent 1-tap SOS action, single countdown gate, lock-screen widget recommendation | DONE |
 | `F4-3 (Onboarding & DPDP)` | `frontend/lib/pages/onboarding_page.dart`, `app_drawer.dart`, `backend/src/controllers/authController.js` | 3-screen onboarding, DPDP consent checkbox, emergency bypass, DELETE /api/v1/auth/me wipe | DONE |
 | `F4-4 (Review Markers)` | `backend/src/controllers/markerController.js`, `frontend/lib/pages/review_markers_page.dart` | GET /pending, POST /verify with audit fields, admin Review Markers UI | DONE |
@@ -336,6 +344,7 @@ node --test tests/sos_chat.test.js            # F4-1 two-way SOS chat & rate lim
 node --test tests/sos_escalation.test.js      # F3-1 SOS auto-escalation & watchdog
 node --test tests/tracking_stall.test.js      # F3-2 breadcrumb-stall detection
 node --test tests/tracking_checkin.test.js    # F3-3 check-in timer dead-man switch
+node --test tests/connections.test.js         # M3 trusted circle: Safe IDs, scopes, revoke, beacons, check-in
 node --test tests/location_tracking.test.js   # live tracking + token gating
 node --test tests/auth.test.js
 node --test tests/security_hardening.test.js

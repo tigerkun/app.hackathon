@@ -48,6 +48,10 @@ class UserModel {
   final int reputationScore;
   final bool trustedReporter;
   final bool aadhaarLinked;
+
+  /// M3: public SafeSphere ID (SF-XXXX-XX) — the only address other users
+  /// need to send this user a connection request. Never an email/phone.
+  final String? safeId;
   final DateTime createdAt;
 
   const UserModel({
@@ -65,6 +69,7 @@ class UserModel {
     this.reputationScore = 0,
     this.trustedReporter = false,
     this.aadhaarLinked = false,
+    this.safeId,
     required this.createdAt,
   });
 
@@ -117,6 +122,7 @@ class UserModel {
       reputationScore: json['reputationScore'] as int? ?? 0,
       trustedReporter: json['trustedReporter'] as bool? ?? false,
       aadhaarLinked: json['aadhaarLinked'] as bool? ?? false,
+      safeId: json['safeId'] as String?,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
           : DateTime.now(),
@@ -135,6 +141,7 @@ class UserModel {
     'isGuest': isGuest,
     'hasPin': hasPin,
     'biometricsEnabled': biometricsEnabled,
+    if (safeId != null) 'safeId': safeId,
     'createdAt': createdAt.toIso8601String(),
   };
 

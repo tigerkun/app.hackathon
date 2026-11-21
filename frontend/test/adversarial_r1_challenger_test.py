@@ -349,7 +349,7 @@ class TestMilestone2AdversarialRouting(unittest.TestCase):
                 duplicates.add(k)
             seen.add(k)
         self.assertEqual(len(duplicates), 0, f"Found duplicate route keys in main.dart: {duplicates}")
-        self.assertEqual(len(route_keys), 15, f"Expected exactly 15 route entries in main.dart, found {len(route_keys)}")
+        self.assertEqual(len(route_keys), 16, f"Expected exactly 16 route entries in main.dart, found {len(route_keys)}")
 
     def test_14_route_arguments_fuzzing(self):
         """Fuzz route navigation with arbitrary payload arguments across all valid routes."""

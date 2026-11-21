@@ -10,6 +10,7 @@ const markerRoutes = require('./markerRoutes');
 const alertRoutes = require('./alertRoutes');
 const locationRoutes = require('./locationRoutes');
 const aiRoutes = require('./aiRoutes');
+const connectionRoutes = require('./connectionRoutes');
 
 const router = express.Router();
 
@@ -25,7 +26,8 @@ router.get('/', (req, res) => {
       markers: '/api/v1/markers',
       sos: '/api/v1/sos',
       location: '/api/v1/location',
-      ai: '/api/v1/ai'
+      ai: '/api/v1/ai',
+      connections: '/api/v1/connections'
     }
   });
 });
@@ -37,5 +39,6 @@ router.use('/markers', markerRoutes);
 router.use('/sos', alertRoutes);
 router.use('/location', locationRoutes);
 router.use('/ai', aiRoutes);
+router.use('/connections', connectionRoutes);
 
 module.exports = router;
