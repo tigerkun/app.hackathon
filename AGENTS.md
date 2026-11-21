@@ -267,7 +267,8 @@ Search `TODO(REAL_` for the live list. Current stubs:
 | `NOTE:` markers | `frontend/lib/services/auth_service.dart` (register, login, OTP send, OTP verify, PIN verify) | Converted from stale `TODO(REAL_BACKEND)`; endpoints verified live on backend | DONE |
 | `AI Assistant (Groq)` | `backend/src/services/aiService.js`, `backend/src/controllers/aiController.js`, `frontend/lib/pages/ai_assistant_page.dart` | `POST /api/v1/ai/chat` (Groq; key via `GROQ_API_KEY` env only), optionalAuth + 10/min `aiLimiter`, sanitized history (12 turns), honest 503 `AI_NOT_CONFIGURED` fallback to offline guides | DONE |
 | `Hardening Wave (audit)` | `alertController.js`, `authMiddleware.js`, `validation.js`, `rateLimiter.js`, `config/index.js`, `auth_service.dart` | Guest SOS identity stripping (body identity ignored), optionalAuth + requireAuth session-revocation gates (missing/invalid session ⇒ guest/rejected), dedicated 10/min `otpLimiter` on `/otp/send`+`/otp/verify`, input caps (SOS notes 500 / alertType 40 / report description 2000 / location 200 / coords validated / direct `photoUrl` rejected), env fail-closed (unknown `NODE_ENV` ⇒ production hygiene, incl. inside `validateJwtSecretHygiene`), offline SOS queue 24h TTL with `_queuedAt` stamps | DONE |
-| `SMS Gateway + Maps key` | `backend/src/services/sosService.js`, `frontend/lib/data/map_config.dart` | MSG91 account created (tejasgaur94@gmail.com) — **blocked at control-panel login** (login OTP emails never arrive; Google OAuth callback bounces). Maps: Google abandoned — Safety Map now runs on `flutter_map` + OSM/CARTO tiles, zero key/card; optional MapTiler key via dart-define | SMS PENDING (owner login), MAPS DONE (free tier) |
+| `SMS Gateway (Fast2SMS)` | `backend/src/services/smsGatewayService.js`, `otpService.js`, `sosService.js` | Real SMS delivery via Fast2SMS (key via `SMS_API_KEY` env only): login/verify OTP through the pre-approved route (no DLT paperwork needed), SOS → emergency-contact dispatch via the Quick route (₹7/SMS, honest `contactsNotified` counts persisted + re-broadcast). Failed dispatches fail honestly (`502 OTP_DISPATCH_FAILED`). MSG91 was abandoned — its login pipeline is broken. | DONE |
+| `Maps key` | `frontend/lib/services/map_config.dart` | Google Maps abandoned — Safety Map runs on `flutter_map` + OSM/CARTO tiles, zero key/card; optional MapTiler key via dart-define | DONE (free tier) |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/services/auth_service.dart` (`verifyBiometrics`) | Real biometric scan via `local_auth` wired with hardware check and fallback | DONE |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/pages/home_page.dart`, `emergency_page.dart` | Volume button / hardware panic intercept requires native plugin, fallback F4-2-alt shipped | DEFERRED |
 | `F3-1 (SOS Escalation)` | `backend/src/services/sosService.js`, `frontend/lib/pages/emergency_page.dart` | 60s escalation watchdog, escalationLevel cap 3, WS broadcast, active ageSeconds & badge | DONE |
@@ -286,8 +287,13 @@ Search `TODO(REAL_` for the live list. Current stubs:
 
 ## Known limitations
 
-- **No SMS gateway.** OTP delivery and emergency-contact SMS are not
-  implemented; OTP endpoints return dev OTPs only when explicitly enabled.
+- **No SMS gateway.** ~~OTP delivery and emergency-contact SMS are not
+  implemented~~ → **DONE via Fast2SMS**: with `SMS_API_KEY` set, login OTPs are
+  really delivered (pre-approved route, no DLT needed) and SOS triggers
+  dispatch to emergency contacts (Quick route, ₹7/SMS). Without the key the
+  old honest no-delivery behavior applies. DLT-registered sender IDs and
+  templates are still required for custom-branded SMS beyond Fast2SMS's
+  pre-approved templates.
 - **Snapshot persistence is single-instance.** The Supabase Storage snapshot
   mode keeps one Render instance durable (same as a persistent disk); it does
   not enable horizontal scaling. Data loss window ≤ one snapshot interval
@@ -318,7 +324,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 # Full gate (recommended)
 npm test
 
-# Backend only — 249 tests across 60 suites (plus 11/11 smoke tests)
+# Backend only — 257 tests across 61 suites (plus 11/11 smoke tests)
 cd backend && npm test
 npm run smoke
 
@@ -336,6 +342,7 @@ node --test tests/reports_markers.test.js
 node --test tests/ai_chat.test.js             # AI assistant Groq chat, validation & honest fallback
 node --test tests/db_snapshot.test.js         # Supabase snapshot persistence, hydrate fail-safe & pruning
 node --test tests/hardening.test.js           # guest SOS identity stripping, revocation gates, input caps, OTP limiter, env fail-closed
+node --test tests/sms_gateway.test.js         # Fast2SMS SMS gateway: OTP dispatch, SOS contacts, honest failures
 
 # Python challengers (197 tests across 10 suites: frontend structure, routes, AST invariants, permissions)
 python -m unittest discover -s frontend/test -p "*.py"

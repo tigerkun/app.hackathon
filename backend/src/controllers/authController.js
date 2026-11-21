@@ -94,7 +94,7 @@ async function loginPin(req, res, next) {
 async function sendOtp(req, res, next) {
   try {
     const { phone, purpose } = req.body;
-    const result = otpService.sendOtp(phone, purpose);
+    const result = await otpService.sendOtp(phone, purpose);
 
     res.status(200).json({
       success: true,

@@ -905,7 +905,7 @@ class DataStore {
       escalationLevel: row.escalationLevel !== null && row.escalationLevel !== undefined ? Number(row.escalationLevel) : 0,
       triggeredAt: row.triggeredAt,
       resolvedAt: row.resolvedAt ?? null,
-      emergencyContactsNotified: Boolean(row.emergencyContactsNotified),
+      emergencyContactsNotified: Number(row.emergencyContactsNotified || 0),
       notes: row.notes ?? null,
       resolveTokenHash: row.resolveTokenHash ?? null
     };
@@ -965,7 +965,9 @@ class DataStore {
       alert.escalationLevel !== undefined && alert.escalationLevel !== null ? Number(alert.escalationLevel) : 0,
       alert.triggeredAt || new Date().toISOString(),
       alert.resolvedAt ?? null,
-      alert.emergencyContactsNotified ? 1 : 0,
+      alert.emergencyContactsNotified !== undefined && alert.emergencyContactsNotified !== null
+        ? Number(alert.emergencyContactsNotified)
+        : 0,
       alert.notes ?? null,
       alert.resolveTokenHash ?? null
     );

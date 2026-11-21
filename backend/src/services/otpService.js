@@ -13,7 +13,7 @@ function generateOtpCode() {
   return String(crypto.randomInt(100000, 1000000));
 }
 
-function sendOtp(rawPhone, purpose = 'login') {
+async function sendOtp(rawPhone, purpose = 'login') {
   const phone = normalizePhone(rawPhone);
   if (!phone) {
     const error = new Error('Valid phone number is required');
@@ -56,6 +56,23 @@ function sendOtp(rawPhone, purpose = 'login') {
     expiresInSeconds: config.otpExpirySeconds,
     cooldownSeconds: config.otpCooldownSeconds
   };
+
+  // REAL_SMS_GATEWAY (Fast2SMS, DONE): real SMS delivery when the gateway is
+  // configured. A failed dispatch FAILS the request with OTP_DISPATCH_FAILED
+  // (invariant #3): the user must know the code never went out rather than
+  // waiting for an SMS that will never arrive. Without the gateway the
+  // request succeeds as before (dev mode / honest no-delivery limitation).
+  const smsGateway = require('./smsGatewayService');
+  if (smsGateway.isConfigured()) {
+    const dispatch = await smsGateway.sendOtpSms({ to: phone, otp: code });
+    if (!dispatch.delivered) {
+      const error = new Error('Failed to dispatch the OTP SMS. Please try again shortly.');
+      error.status = 502;
+      error.code = 'OTP_DISPATCH_FAILED';
+      throw error;
+    }
+    result.smsDispatched = true;
+  }
 
   // Provide devOtp in non-production environments for automated testing
   if (config.isDev || config.isTest) {

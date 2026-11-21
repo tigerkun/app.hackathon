@@ -126,8 +126,8 @@ function triggerSos({
     const user = db.findUserById(userId);
     if (user) {
       // NOTE: contactsNotified indicates actual dispatched notifications.
-      // In local mode without SMS/Twilio API keys configured, this remains 0 until real SMS gateway is wired.
-      // TODO(REAL_SMS_GATEWAY): Integrate Twilio / AWS SNS SMS dispatch for user.emergencyContacts
+      // The real Fast2SMS dispatch runs in the background after the alert is
+      // persisted (see below) and updates this count via db.updateAlert.
       contactsNotified = 0;
       if (!finalUserName) finalUserName = user.name;
       if (!finalUserPhone) finalUserPhone = user.phone;
@@ -154,6 +154,38 @@ function triggerSos({
   db.saveAlert(alert);
   alert.resolveToken = resolveToken;
   startEscalationWatchdog();
+
+  // REAL_SMS_GATEWAY (Fast2SMS, DONE): background dispatch to the owner's
+  // emergency contacts. The WS broadcast and HTTP response never wait on SMS
+  // — an emergency must not be delayed by network latency. Dispatch failures
+  // are logged and the honest delivered count is persisted + re-broadcast so
+  // polling monitors see reality, never a fabricated number.
+  if (userId) {
+    const smsGateway = require('./smsGatewayService');
+    if (smsGateway.isConfigured()) {
+      const owner = db.findUserById(userId);
+      smsGateway
+        .dispatchSosNotifications({
+          contacts: owner ? owner.emergencyContacts : null,
+          userName: finalUserName,
+          latitude: alert.latitude,
+          longitude: alert.longitude,
+          alertId: alert.id
+        })
+        .then(({ notified, total }) => {
+          if (total === 0) return;
+          db.updateAlert(alert.id, { emergencyContactsNotified: notified });
+          console.log(`[smsGateway] SOS ${alert.id}: ${notified}/${total} emergency contacts notified`);
+          const helpers = getBroadcastHelpers();
+          const { toSafeAlert } = require('../models/alertModel');
+          const fresh = db.findAlertById(alert.id);
+          if (helpers.broadcastSosAlert && fresh) {
+            helpers.broadcastSosAlert(toSafeAlert(fresh, false));
+          }
+        })
+        .catch((err) => console.warn(`[smsGateway] SOS dispatch failed for ${alert.id}:`, err.message));
+    }
+  }
   return alert;
 }
 
