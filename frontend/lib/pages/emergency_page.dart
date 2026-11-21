@@ -27,6 +27,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
   int _monitorsCount = 0;
   int _escalationLevel = 0;
   int _ageSeconds = 0;
+  int _contactsNotified = 0;
   Timer? _sosPollTimer;
   List<Map<String, dynamic>> _sosHistory = [];
   bool _isLoadingHistory = false;
@@ -312,6 +313,8 @@ class _EmergencyPageState extends State<EmergencyPage> {
         final escalation = escalationRaw is int ? escalationRaw : (int.tryParse('$escalationRaw') ?? 0);
         final ageSecRaw = statusData['ageSeconds'];
         final ageSec = ageSecRaw is int ? ageSecRaw : (int.tryParse('$ageSecRaw') ?? 0);
+        final notifiedRaw = statusData['emergencyContactsNotified'];
+        final notified = notifiedRaw is int ? notifiedRaw : (int.tryParse('$notifiedRaw') ?? 0);
 
         if (status != 'active') {
           _stopSosPolling();
@@ -321,6 +324,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
             _monitorsCount = monitors;
             _escalationLevel = escalation;
             _ageSeconds = ageSec;
+            _contactsNotified = notified;
           });
         }
       }
@@ -381,65 +385,71 @@ class _EmergencyPageState extends State<EmergencyPage> {
 
               const SizedBox(height: 20),
 
-              // 📡 BROADCASTING STATUS BANNER (W2-3 / F3-1)
+              // 🆘 POST-DISPATCH REASSURANCE HERO (M1.3): plain-language,
+              // jargon-free. A person in distress reads reassurance, not
+              // engineering status words.
               if (_isBroadcasting) ...[
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.all(18),
                   margin: const EdgeInsets.only(bottom: 20),
                   decoration: BoxDecoration(
                     color: const Color(0xFFB71C1C).withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: Colors.redAccent, width: 1.5),
                   ),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.radio_button_checked, color: Colors.redAccent, size: 24),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 8,
-                              runSpacing: 4,
-                              children: [
-                                Text(
-                                  "ACTIVE — broadcasting ${(_ageSeconds / 60).floor()}m",
-                                  style: const TextStyle(
-                                    color: Colors.redAccent,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                if (_escalationLevel > 0)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.orangeAccent,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      "ESCALATED ×$_escalationLevel",
-                                      style: const TextStyle(
-                                        color: Colors.black,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _monitorsCount > 0
-                                  ? "$_monitorsCount monitoring clients • Real-time GPS telemetry active • Tap I'm Safe Now to cease"
-                                  : "Real-time GPS telemetry active • Tap I'm Safe Now to cease",
-                              style: const TextStyle(color: Colors.white70, fontSize: 12),
-                            ),
-                          ],
+                      const Text(
+                        "HELP IS ON THE WAY",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 22,
+                          letterSpacing: 1.0,
                         ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        "Your SOS is active. Stay on this screen.",
+                        style: TextStyle(color: Colors.white, fontSize: 14),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on, color: Colors.redAccent, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            "Help requested ${(_ageSeconds / 60).floor()} min ${_ageSeconds % 60} sec ago",
+                            style: const TextStyle(color: Colors.white70, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                      if (_escalationLevel > 0) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.orangeAccent,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            "Alerted again — still waiting for help",
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      Text(
+                        _monitorsCount > 0
+                            ? "$_monitorsCount ${_monitorsCount == 1 ? 'person is' : 'people are'} watching your location live"
+                            : "Your emergency contacts can see your location live",
+                        style: const TextStyle(color: Colors.white60, fontSize: 12),
                       ),
                     ],
                   ),
@@ -656,12 +666,67 @@ class _EmergencyPageState extends State<EmergencyPage> {
                     if (success) {
                       _stopSosPolling();
                       _loadSosHistory();
-                      messenger.showSnackBar(
-                        const SnackBar(
-                          content: Text("Active SOS alert marked resolved and broadcast updated."),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
+                      // M1.4: "I'm Safe" confirmation — show exactly who was
+                      // notified, honestly accounting for channels that are
+                      // not configured yet (no fabricated delivery claims).
+                      if (mounted) {
+                        final contacts =
+                            AuthService.instance.currentUser?.emergencyContacts ??
+                            const [];
+                        final names = contacts
+                            .map((c) => c.name)
+                            .where((n) => n.isNotEmpty)
+                            .toList();
+                        final contactLine = names.isEmpty
+                            ? "Your emergency contacts"
+                            : names.join(", ");
+                        final channelLine = _contactsNotified > 0
+                            ? "$_contactsNotified notification(s) were delivered to them."
+                            : "SMS/email alerts activate when a delivery gateway is configured — your live monitoring clients were notified.";
+                        await showDialog<void>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20)),
+                            title: Row(
+                              children: const [
+                                Icon(Icons.verified, color: Colors.green, size: 28),
+                                SizedBox(width: 8),
+                                Text("You're Safe",
+                                    style: TextStyle(fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                            content: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  "✓ Your SOS was resolved and everyone watching was updated.",
+                                  style: TextStyle(fontSize: 14),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  "Notified: $contactLine",
+                                  style: const TextStyle(
+                                      fontSize: 14, fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  channelLine,
+                                  style: const TextStyle(
+                                      fontSize: 12, color: Colors.grey),
+                                ),
+                              ],
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(ctx).pop(),
+                                child: const Text("Done"),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
                     } else {
                       messenger.showSnackBar(
                         const SnackBar(
@@ -1119,6 +1184,40 @@ class _EmergencyPageState extends State<EmergencyPage> {
                   ),
           ),
           const Divider(height: 1),
+          // M1.8: one-tap quick replies — each sends a real CHAT_MESSAGE
+          // through the same delivery path (server rate limits still apply).
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final reply in const [
+                    "I'm OK",
+                    "Call 112",
+                    "Come get me",
+                    "False alarm — I'm safe"
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ActionChip(
+                        label: Text(reply, style: const TextStyle(fontSize: 11)),
+                        backgroundColor:
+                            isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                        side: BorderSide(
+                            color: Colors.tealAccent.withValues(alpha: 0.4)),
+                        onPressed: _isSendingChat || _activeSosId == null
+                            ? null
+                            : () {
+                                _chatController.text = reply;
+                                _sendChatMessage();
+                              },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: Row(
@@ -1400,22 +1499,27 @@ class SosCountdownDialog extends StatefulWidget {
 }
 
 class _SosCountdownDialogState extends State<SosCountdownDialog> {
-  late int _remaining;
+  late DateTime _deadline; // elapsed-time based (M1.2): immune to timer drift
+  int _remaining = 0;
   Timer? _timer;
 
   @override
   void initState() {
     super.initState();
+    _deadline = DateTime.now().add(Duration(seconds: widget.durationSeconds));
     _remaining = widget.durationSeconds;
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    _timer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
       if (!mounted) return;
-      if (_remaining <= 1) {
+      final int left =
+          _deadline.difference(DateTime.now()).inMilliseconds.clamp(0, 1 << 31);
+      final int leftSeconds = (left / 1000).ceil();
+      if (left <= 0) {
         timer.cancel();
         Navigator.of(context).pop(true);
-      } else {
-        setState(() {
-          _remaining--;
-        });
+      } else if (leftSeconds != _remaining) {
+        // Haptic tick each second so the countdown is felt, not just seen.
+        HapticFeedback.mediumImpact();
+        setState(() => _remaining = leftSeconds);
       }
     });
   }
@@ -1433,69 +1537,85 @@ class _SosCountdownDialogState extends State<SosCountdownDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Row(
-        children: const [
-          Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
-          SizedBox(width: 8),
-          Text("SOS Countdown", style: TextStyle(fontWeight: FontWeight.bold)),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 10),
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              SizedBox(
-                width: 90,
-                height: 90,
-                child: CircularProgressIndicator(
-                  value: _remaining / widget.durationSeconds,
-                  strokeWidth: 8,
-                  backgroundColor: Colors.grey.shade300,
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.redAccent),
-                ),
-              ),
-              Text(
-                "$_remaining",
-                style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: Colors.redAccent),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Text(
-            "Dispatching SOS alert to responders and contacts in $_remaining seconds...",
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 14),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            "Tap Cancel SOS immediately if triggered by accident.",
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-        ],
-      ),
-      actionsAlignment: MainAxisAlignment.center,
-      actions: [
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.grey.shade800,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: _cancel,
-            icon: const Icon(Icons.close),
-            label: const Text("Cancel SOS", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          ),
+    // M1.2: Android back must NOT bypass the countdown — only the explicit
+    // huge CANCEL button aborts the dispatch (PopScope canPop: false).
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: const [
+            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
+            SizedBox(width: 8),
+            Text("SOS Countdown", style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
         ),
-      ],
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            SizedBox(
+              width: 120,
+              height: 120,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 120,
+                    height: 120,
+                    child: CircularProgressIndicator(
+                      value: _remaining / widget.durationSeconds,
+                      strokeWidth: 10,
+                      backgroundColor: Colors.grey.shade300,
+                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.redAccent),
+                    ),
+                  ),
+                  Text(
+                    "$_remaining",
+                    style: const TextStyle(
+                        fontSize: 44,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.redAccent),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "Dispatching SOS alert to responders and contacts in $_remaining seconds...",
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "Tap CANCEL SOS immediately if triggered by accident.",
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey.shade900,
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.redAccent, width: 2),
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+              onPressed: _cancel,
+              icon: const Icon(Icons.close, size: 28),
+              label: const Text(
+                "CANCEL SOS",
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20, letterSpacing: 1.2),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

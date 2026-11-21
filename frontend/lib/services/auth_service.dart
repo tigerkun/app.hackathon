@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 import '../models/user_model.dart';
@@ -107,7 +108,22 @@ class AuthService {
   AuthService._internal({
     required this.baseUrl,
     required this.storage,
-  });
+  }) {
+    // M1.7: instant offline-SOS queue replay — when connectivity returns,
+    // queued SOS alerts flush immediately instead of waiting for the next
+    // unrelated API call to trigger processQueuedSosAlerts.
+    try {
+      Connectivity().onConnectivityChanged.listen((results) {
+        final hasConnection =
+            results.isNotEmpty && !results.contains(ConnectivityResult.none);
+        if (hasConnection) {
+          unawaited(processQueuedSosAlerts());
+        }
+      });
+    } catch (_) {
+      // Listener setup is best-effort; manual replay paths remain.
+    }
+  }
 
   UserModel? _currentUser;
   bool _isPinLocked = false;
@@ -1286,6 +1302,29 @@ class AuthService {
       }
     }
     return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // M1.6b: Forgot-PIN recovery (POST /api/v1/auth/pin/reset)
+  // ---------------------------------------------------------------------------
+  /// Resets the account PIN using the OTP sent to the registered phone.
+  /// Returns true when the reset succeeded (the user can then log in with
+  /// the new PIN). Honest failures return false — never a fabricated reset.
+  Future<bool> resetPin({
+    required String phone,
+    required String otp,
+    required String newPin,
+  }) async {
+    final res = await _requestDetailed(
+      method: 'POST',
+      path: '/api/v1/auth/pin/reset',
+      body: {
+        'phone': phone,
+        'otp': otp,
+        'newPin': newPin,
+      },
+    );
+    return res.isSuccess && res.data != null && res.data!['success'] == true;
   }
 
   Future<bool> signup({

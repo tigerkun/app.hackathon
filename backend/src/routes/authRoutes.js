@@ -13,6 +13,7 @@ const {
   validateLoginPin,
   validateOtpSend,
   validateOtpVerify,
+  validatePinReset,
   validateRefresh
 } = require('../middleware/validation');
 
@@ -30,6 +31,9 @@ router.post('/login-pin', authLimiter, validateLoginPin, authController.loginPin
 // verify endpoint is brute-forceable, so both are stricter than authLimiter.
 router.post('/otp/send', otpLimiter, validateOtpSend, authController.sendOtp);
 router.post('/otp/verify', otpLimiter, validateOtpVerify, authController.verifyOtp);
+
+// M1.6b: Forgot-PIN recovery — phone OTP + new PIN
+router.post('/pin/reset', authLimiter, validatePinReset, authController.resetPin);
 
 // Session token refresh
 router.post('/refresh', validateRefresh, authController.refresh);

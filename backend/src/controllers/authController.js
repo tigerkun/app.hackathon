@@ -145,6 +145,25 @@ async function verifyOtp(req, res, next) {
   }
 }
 
+/**
+ * M1.6b: Forgot-PIN recovery — phone + OTP + new PIN resets the account PIN
+ * (bcrypt-hashed) and revokes all pre-reset sessions.
+ */
+async function resetPin(req, res, next) {
+  try {
+    const { phone, otp, newPin } = req.body;
+    const result = await authService.resetPinWithOtp({ phone, otp, newPin });
+
+    res.status(200).json({
+      success: true,
+      message: 'PIN reset successfully. Log in with your new PIN.',
+      data: result
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function refresh(req, res, next) {
   try {
     const { refreshToken } = req.body;
@@ -319,6 +338,7 @@ module.exports = {
   loginPin,
   sendOtp,
   verifyOtp,
+  resetPin,
   refresh,
   me,
   logout,

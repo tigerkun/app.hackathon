@@ -6,22 +6,29 @@ class EmergencyContact {
   final String phone;
   final String relationship;
 
+  /// Optional email — SOS alerts are also delivered by email via the free
+  /// Brevo channel when the contact has an address (email_gateway_service).
+  final String? email;
+
   const EmergencyContact({
     required this.name,
     required this.phone,
     this.relationship = 'Family',
+    this.email,
   });
 
   Map<String, dynamic> toJson() => {
     'name': name,
     'phone': phone,
     'relationship': relationship,
+    if (email != null && email!.isNotEmpty) 'email': email,
   };
 
   factory EmergencyContact.fromJson(Map<String, dynamic> json) => EmergencyContact(
     name: json['name'] as String? ?? '',
     phone: json['phone'] as String? ?? '',
     relationship: json['relationship'] as String? ?? 'Family',
+    email: json['email'] as String?,
   );
 }
 

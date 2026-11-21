@@ -25,11 +25,13 @@ class _HomePageState extends State<HomePage> {
   double? _userLng;
   List<Map<String, dynamic>> _reports = [];
   DateTime? _lastFetchTime;
+  List<Map<String, dynamic>> _queuedSos = [];
 
   @override
   void initState() {
     super.initState();
     _refreshDashboard();
+    _loadQueuedSos();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         GestureService.instance.startListening(
@@ -104,9 +106,37 @@ class _HomePageState extends State<HomePage> {
         });
       }
     }
+
+    // M1.7: refresh the queued-SOS banner state
+    await _loadQueuedSos();
   }
 
   bool get _isBackendUnavailable => AuthService.instance.lastFetchFailed;
+
+  /// M1.7: honest queued-SOS banner state — pending offline SOS alerts show
+  /// "will send automatically when signal returns" with their queue time.
+  Future<void> _loadQueuedSos() async {
+    try {
+      final queued = await AuthService.instance.getQueuedSosAlerts();
+      if (mounted) setState(() => _queuedSos = queued);
+    } catch (_) {
+      // Queue read is best-effort; the banner simply won't show.
+    }
+  }
+
+  String _queuedAtLabel() {
+    final stamps = _queuedSos
+        .map((e) => e['_queuedAt'])
+        .whereType<String>()
+        .toList();
+    if (stamps.isEmpty) return 'unknown';
+    try {
+      final dt = DateTime.parse(stamps.first).toLocal();
+      return "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+    } catch (_) {
+      return 'unknown';
+    }
+  }
 
   String _calculateSafetyLevel() {
     if (_isBackendUnavailable) return "Unavailable — connect to backend";
@@ -237,54 +267,95 @@ class _HomePageState extends State<HomePage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            /// 0️⃣ LOCK / HOME SCREEN WIDGET TIP (F4-2-alt)
-            Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E293B),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white24, width: 1),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.touch_app_outlined, color: Colors.tealAccent, size: 22),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      "Quick SOS Tip: Add the SafeSphere Emergency shortcut to your phone's lock or home screen for instant 1-tap SOS countdown.",
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
+            /// 🆘 SOS-FIRST HERO (M1.1): the dominant first-paint element.
+            /// Minimum 40% of viewport, high-contrast red, one-handed reach.
+            /// Everything else on this page is secondary.
+            GestureDetector(
+              onTap: () => Navigator.pushNamed(context, '/emergency'),
+              child: Semantics(
+                button: true,
+                label: "Trigger emergency SOS now",
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 20),
+                  width: double.infinity,
+                  height: MediaQuery.of(context).size.height * 0.40,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDC2626),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white24, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFDC2626).withValues(alpha: 0.35),
+                        blurRadius: 24,
+                        spreadRadius: 2,
+                      ),
+                    ],
                   ),
-                ],
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: Colors.white,
+                        size: 56,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        "EMERGENCY SOS",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 2.0,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        "Press for immediate help",
+                        style: TextStyle(color: Colors.white70, fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
 
-            /// 1️⃣ INTENT HEADLINE
-            const Text(
-              "How can we help you stay safe today?",
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
+            /// ⏳ QUEUED-SOS HONEST BANNER (M1.7): pending offline alerts
+            /// tell the truth about their state and auto-send on signal.
+            if (_queuedSos.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.amber.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.amber, width: 1.5),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.schedule_send,
+                        color: AppColors.amber, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        "${_queuedSos.length} SOS alert(s) queued — will send automatically when signal returns • Queued at ${_queuedAtLabel()}",
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              "Real-time safety insights from your community",
-              style: TextStyle(color: Colors.white60),
-            ),
 
-            const SizedBox(height: 20),
-
-            /// 2️⃣ LOCAL SAFETY STATUS (ANCHOR CARD)
+            /// 1️⃣ LOCAL SAFETY STATUS (condensed strip — secondary to SOS)
             GlassContainer(
               borderColor: safetyColor,
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
                 child: Row(
                   children: [
-                    Icon(_isBackendUnavailable ? Icons.cloud_off : Icons.shield, size: 40, color: safetyColor),
-                    const SizedBox(width: 14),
+                    Icon(_isBackendUnavailable ? Icons.cloud_off : Icons.shield, size: 28, color: safetyColor),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,44 +363,38 @@ class _HomePageState extends State<HomePage> {
                           Text(
                             safetyLevel,
                             style: const TextStyle(
-                              fontSize: 18,
+                              fontSize: 15,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 2),
                           Text(
                             _isBackendUnavailable
                                 ? "Connect to backend to assess local safety"
-                                : (_lastFetchTime == null && _isLoading)
-                                    ? "Connecting to live safety telemetry..."
-                                    : "Based on ${_reports.length} verified community report(s)",
-                            style: const TextStyle(color: Colors.white60),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _isBackendUnavailable
-                                ? (_lastFetchTime != null
-                                    ? "Last synced: ${_formatRelativeTime(_lastFetchTime!.toIso8601String())} (Offline)"
-                                    : "Sync failed — pull down to retry")
-                                : (_lastFetchTime != null
-                                    ? "Last synced: ${_formatRelativeTime(_lastFetchTime!.toIso8601String())}"
-                                    : "Syncing live telemetry..."),
-                            style: const TextStyle(
-                              color: Colors.white38,
-                              fontSize: 12,
-                            ),
+                                : "Based on ${_reports.length} verified community report(s)",
+                            style: const TextStyle(color: Colors.white60, fontSize: 12),
                           ),
                         ],
                       ),
+                    ),
+                    Text(
+                      _isBackendUnavailable
+                          ? (_lastFetchTime != null
+                              ? "Offline"
+                              : "Syncing...")
+                          : (_lastFetchTime != null
+                              ? "Synced ${_formatRelativeTime(_lastFetchTime!.toIso8601String())}"
+                              : ""),
+                      style: const TextStyle(color: Colors.white38, fontSize: 11),
                     ),
                   ],
                 ),
               ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
-            /// 3️⃣ PRIMARY ACTIONS
+            /// 2️⃣ PRIMARY ACTIONS
             Row(
               children: [
                 Expanded(
@@ -353,7 +418,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
             /// 🤖 AI SAFETY RECOMMENDATIONS
             GestureDetector(
@@ -408,7 +473,7 @@ class _HomePageState extends State<HomePage> {
 
             const SizedBox(height: 20),
 
-            /// 4️⃣ RECENT LOCAL ACTIVITY
+            /// 3️⃣ RECENT LOCAL ACTIVITY
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [

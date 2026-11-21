@@ -122,6 +122,23 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     super.dispose();
   }
 
+  /// M1.9 client-side guardrail: obvious off-topic prompts get an instant
+  /// local refusal WITHOUT an API call (saves tokens; the backend enforces
+  /// the same scope authoritatively via its system prompt).
+  static const List<String> _offTopicMarkers = [
+    'joke', 'jokes', 'funny', 'homework', 'assignment', 'coding', 'code me',
+    'write code', 'recipe', 'movie', 'song lyrics', 'poem', 'essay',
+    'cricket score', 'stock market', 'capital of'
+  ];
+
+  bool _isObviousOffTopic(String text) {
+    final t = text.toLowerCase();
+    for (final m in _offTopicMarkers) {
+      if (t.contains(m)) return true;
+    }
+    return false;
+  }
+
   void _sendMessage() {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
@@ -138,6 +155,28 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
       );
       _controller.clear();
     });
+
+    // M1.9: instant local refusal for obvious off-topic prompts — no API call.
+    if (_isObviousOffTopic(text)) {
+      if (mounted) {
+        setState(() {
+          _showOfflineGuides = true;
+          final typingIndex = messages.indexWhere((m) => m.id == typingMsgId);
+          final refusal = _ChatMessage(
+            id: 'refusal_${timestamp}_$seq',
+            text:
+                "I only help with safety questions. For immediate danger, dial 112.",
+            isUser: false,
+          );
+          if (typingIndex != -1) {
+            messages[typingIndex] = refusal;
+          } else {
+            messages.add(refusal);
+          }
+        });
+      }
+      return;
+    }
 
     _sendPromptToRealAiBackend(text, userMsgId, typingMsgId, timestamp, seq);
   }

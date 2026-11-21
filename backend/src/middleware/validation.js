@@ -134,6 +134,33 @@ function validateOtpVerify(req, res, next) {
   next();
 }
 
+// M1.6b: Forgot-PIN reset — phone + OTP + new 4-6 digit PIN.
+function validatePinReset(req, res, next) {
+  const { phone, otp, newPin } = req.body || {};
+  const issues = [];
+
+  if (!phone || typeof phone !== 'string' || !PHONE_REGEX.test(phone.trim())) {
+    issues.push({ field: 'phone', issue: 'A valid phone number is required.' });
+  }
+
+  if (!otp || !/^\d{6}$/.test(String(otp).trim())) {
+    issues.push({ field: 'otp', issue: 'A 6-digit numeric OTP is required.' });
+  }
+
+  if (!newPin || !/^\d{4,6}$/.test(String(newPin).trim())) {
+    issues.push({ field: 'newPin', issue: 'New PIN must be 4 to 6 numeric digits.' });
+  }
+
+  if (issues.length > 0) {
+    return formatValidationError(res, issues);
+  }
+
+  req.body.phone = phone.trim();
+  req.body.otp = String(otp).trim();
+  req.body.newPin = String(newPin).trim();
+  next();
+}
+
 function validateRefresh(req, res, next) {
   const body = req.body || {};
   const refreshToken = body.refreshToken || body.refresh_token;
@@ -283,5 +310,6 @@ module.exports = {
   validateOtpVerify,
   validateRefresh,
   validateReportCreate,
-  validateSosTrigger
+  validateSosTrigger,
+  validatePinReset
 };

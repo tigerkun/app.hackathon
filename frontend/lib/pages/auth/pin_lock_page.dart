@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../data/auth_state.dart';
 import '../../routes/app_routes.dart';
+import '../../services/auth_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/glass_container.dart';
 
@@ -96,6 +97,33 @@ class _PinLockPageState extends State<PinLockPage> with SingleTickerProviderStat
     if (_enteredPin.isNotEmpty) {
       setState(() {
         _enteredPin = _enteredPin.substring(0, _enteredPin.length - 1);
+        _errorMessage = null;
+      });
+    }
+  }
+
+  /// M1.6b: Forgot-PIN recovery — OTP sent to the registered phone resets the
+  /// PIN. On success the user returns here and logs in with the new PIN.
+  Future<void> _openForgotPinFlow() async {
+    final reset = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF101A33),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => const _ForgotPinSheet(),
+    );
+    if (reset == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'PIN reset successfully. Log in with your new PIN.'),
+          backgroundColor: Colors.teal,
+        ),
+      );
+      setState(() {
+        _enteredPin = '';
         _errorMessage = null;
       });
     }
@@ -337,6 +365,15 @@ class _PinLockPageState extends State<PinLockPage> with SingleTickerProviderStat
               ),
             ),
 
+            // M1.6b: Forgot-PIN recovery — OTP to the registered phone
+            TextButton(
+              onPressed: _openForgotPinFlow,
+              child: const Text(
+                'Forgot PIN?',
+                style: TextStyle(color: AppColors.teal, fontSize: 13),
+              ),
+            ),
+
             const SizedBox(height: 10),
 
             // 🚨 Unconditional Bottom Emergency SOS Button
@@ -373,6 +410,205 @@ class _PinLockPageState extends State<PinLockPage> with SingleTickerProviderStat
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// M1.6b: Forgot-PIN recovery sheet — OTP to the registered phone, then a new
+/// PIN. Honest failures surface as inline errors; no fabricated success.
+class _ForgotPinSheet extends StatefulWidget {
+  const _ForgotPinSheet();
+
+  @override
+  State<_ForgotPinSheet> createState() => _ForgotPinSheetState();
+}
+
+class _ForgotPinSheetState extends State<_ForgotPinSheet> {
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _otpController = TextEditingController();
+  final TextEditingController _pinController = TextEditingController();
+  bool _otpSent = false;
+  bool _isBusy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    _otpController.dispose();
+    _pinController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendOtp() async {
+    final phone = _phoneController.text.trim();
+    if (phone.isEmpty) {
+      setState(() => _error = 'Enter your registered phone number.');
+      return;
+    }
+    setState(() {
+      _isBusy = true;
+      _error = null;
+    });
+    final res = await AuthService.instance.sendOtp(phone: phone, purpose: 'login');
+    if (!mounted) return;
+    setState(() {
+      _isBusy = false;
+      if (res != null && res['success'] == true) {
+        _otpSent = true;
+        _error = null;
+      } else {
+        _error = 'Could not send the OTP. Check the number and try again.';
+      }
+    });
+  }
+
+  Future<void> _resetPin() async {
+    final otp = _otpController.text.trim();
+    final newPin = _pinController.text.trim();
+    if (otp.isEmpty || newPin.isEmpty) {
+      setState(() => _error = 'Enter the OTP and your new PIN.');
+      return;
+    }
+    setState(() {
+      _isBusy = true;
+      _error = null;
+    });
+    final ok = await AuthService.instance.resetPin(
+      phone: _phoneController.text.trim(),
+      otp: otp,
+      newPin: newPin,
+    );
+    if (!mounted) return;
+    setState(() => _isBusy = false);
+    if (ok) {
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() {
+        _error =
+            'Reset failed. Check the OTP and PIN (4-6 digits), then retry.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Reset your PIN',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'We will text a 6-digit code to your registered phone number.',
+            style: TextStyle(color: Colors.white60, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _phoneController,
+            keyboardType: TextInputType.phone,
+            maxLength: 10,
+            enabled: !_otpSent,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(
+              labelText: 'Registered mobile number',
+              prefixText: '+91 ',
+              counterText: '',
+              labelStyle: TextStyle(color: Colors.white60),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.white24),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: AppColors.teal),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isBusy ? null : _sendOtp,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.teal,
+                foregroundColor: Colors.black,
+              ),
+              child: Text(_otpSent ? 'OTP sent ✓' : 'Send OTP'),
+            ),
+          ),
+          if (_otpSent) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _otpController,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              style: const TextStyle(color: Colors.white, letterSpacing: 4),
+              decoration: const InputDecoration(
+                labelText: '6-digit OTP',
+                counterText: '',
+                labelStyle: TextStyle(color: Colors.white60),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white24),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: AppColors.teal),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _pinController,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white, letterSpacing: 4),
+              decoration: const InputDecoration(
+                labelText: 'New PIN (4-6 digits)',
+                counterText: '',
+                labelStyle: TextStyle(color: Colors.white60),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white24),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: AppColors.teal),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isBusy ? null : _resetPin,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.teal,
+                  foregroundColor: Colors.black,
+                ),
+                icon: const Icon(Icons.lock_reset),
+                label: const Text('Reset PIN'),
+              ),
+            ),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _error!,
+              style: const TextStyle(color: AppColors.red, fontSize: 12),
+            ),
+          ],
+        ],
       ),
     );
   }

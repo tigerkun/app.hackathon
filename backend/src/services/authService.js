@@ -38,16 +38,24 @@ async function register({
     ? bcrypt.hashSync(String(pin).trim(), saltRounds)
     : null;
 
-  // Format emergency contacts
+  // Format emergency contacts (M1.5: cap at 5 — SOS dispatch fans out per
+  // contact, so the list must stay bounded and manageable in the UI)
   let contactsList = [];
   if (Array.isArray(emergencyContacts)) {
-    contactsList = emergencyContacts;
+    contactsList = emergencyContacts.slice(0, 5).map((c) => ({
+      id: c.id || `cnt_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`,
+      name: c.name || 'Emergency Contact',
+      phone: c.phone || '',
+      email: c.email || undefined,
+      relationship: c.relationship || 'Emergency'
+    }));
   } else if (emergencyContact && typeof emergencyContact === 'object') {
     contactsList = [
       {
         id: `cnt_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`,
         name: emergencyContact.name || 'Emergency Contact',
         phone: emergencyContact.phone || '',
+        email: emergencyContact.email || undefined,
         relationship: emergencyContact.relationship || 'Emergency'
       }
     ];
@@ -367,6 +375,49 @@ async function deleteAccount(userId) {
   return db.deleteUser(userId);
 }
 
+/**
+ * M1.6b: Forgot-PIN recovery — verify the OTP sent to the registered phone,
+ * then reset the account PIN (bcrypt-hashed) and invalidate all sessions so
+ * a locked-out user can regain access without weakening security.
+ */
+async function resetPinWithOtp({ phone, otp, newPin }) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) {
+    const error = new Error('Valid phone number is required.');
+    error.status = 400;
+    error.code = 'INVALID_PHONE';
+    throw error;
+  }
+
+  const user = db.findUserByPhone(normalized);
+  if (!user || !user.isActive) {
+    const error = new Error('No active account found for this phone number.');
+    error.status = 404;
+    error.code = 'ACCOUNT_NOT_FOUND';
+    throw error;
+  }
+
+  const pinStr = String(newPin || '').trim();
+  if (!/^\d{4,6}$/.test(pinStr)) {
+    const error = new Error('New PIN must be 4 to 6 numeric digits.');
+    error.status = 400;
+    error.code = 'INVALID_PIN';
+    throw error;
+  }
+
+  // Verify + consume the OTP bound to this registered phone. Throws
+  // INVALID_OTP / OTP_MAX_ATTEMPTS_EXCEEDED / OTP_EXPIRED on any failure.
+  verifyOtp(normalized, String(otp || ''));
+
+  const pinHash = bcrypt.hashSync(pinStr, config.saltRounds);
+  db.updateUser(user.id, { pin: pinHash, pinHash });
+
+  // Safety: any session minted before the reset is revoked.
+  db.invalidateUserSessions(user.id);
+
+  return { reset: true, phone: normalized };
+}
+
 module.exports = {
   register,
   login,
@@ -376,5 +427,6 @@ module.exports = {
   logout,
   registerBiometrics,
   loginBiometrics,
-  deleteAccount
+  deleteAccount,
+  resetPinWithOtp
 };

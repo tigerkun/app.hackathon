@@ -275,6 +275,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 | `F3-2 (Breadcrumb Stall)` | `backend/src/controllers/locationController.js`, `frontend/lib/pages/track_session_page.dart` | 120s breadcrumb stall detection, 4s polling, amber SIGNAL LOST & Signal restored banners | DONE |
 | `F3-3 (Check-in Timer)` | `backend/src/services/trackingService.js`, `frontend/lib/pages/share_location_page.dart` | Dead-man switch (1-1440m), 60s check-in tick, CHECKIN_MISSED WS broadcast, ping reset | DONE |
 | `F4-1 (SOS Chat)` | `backend/src/server.js`, `alertController.js`, `frontend/lib/pages/emergency_page.dart` | Two-way WS & REST responder chat, 1 msg/2s rate limit, 50 msg FIFO cap, victim vs responder UI | DONE |
+| `M1 Distress-first SOS` | `home_page.dart`, `emergency_page.dart`, `pin_lock_page.dart`, `ai_assistant_page.dart`, `authService.js`, `aiService.js` | SOS-first home (40% viewport hero), elapsed-time countdown ring + huge CANCEL + PopScope guard, plain-language reassurance hero + honest I'm-Safe dialog, forgot-PIN OTP reset (`POST /api/v1/auth/pin/reset`), contacts cap 5 + optional email, connectivity listener + queued-SOS banner, chat quick-replies, AI safety-only guardrails (prompt + client pre-filter) | DONE (home widget deferred — TODO(REAL_HARDWARE)) |
 | `F4-2 (1-Tap SOS)` | `frontend/lib/pages/home_page.dart`, `emergency_page.dart`, `about_page.dart` | Persistent 1-tap SOS action, single countdown gate, lock-screen widget recommendation | DONE |
 | `F4-3 (Onboarding & DPDP)` | `frontend/lib/pages/onboarding_page.dart`, `app_drawer.dart`, `backend/src/controllers/authController.js` | 3-screen onboarding, DPDP consent checkbox, emergency bypass, DELETE /api/v1/auth/me wipe | DONE |
 | `F4-4 (Review Markers)` | `backend/src/controllers/markerController.js`, `frontend/lib/pages/review_markers_page.dart` | GET /pending, POST /verify with audit fields, admin Review Markers UI | DONE |
@@ -324,7 +325,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 # Full gate (recommended)
 npm test
 
-# Backend only — 257 tests across 61 suites (plus 11/11 smoke tests)
+# Backend only — 267 tests across 62 suites (plus 11/11 smoke tests)
 cd backend && npm test
 npm run smoke
 

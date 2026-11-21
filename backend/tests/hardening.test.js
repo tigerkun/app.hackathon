@@ -245,8 +245,93 @@ describe('Hardening Wave', () => {
     });
   });
 
-  describe('6. Env fail-closed for unknown NODE_ENV values', () => {
-    const backendDir = path.resolve(__dirname, '..');
+  describe('M1.6b: Forgot-PIN recovery (phone OTP → PIN reset)', () => {
+    it('resets the PIN with a valid OTP and logs in with the new PIN', async () => {
+      const email = 'pin.reset@safesphere.test';
+      const phone = '+918811223344';
+      const reg = await t.request('/api/v1/auth/register', {
+        method: 'POST',
+        body: { name: 'Pin Reset User', email, phone, password: 'Str0ngPass!23', pin: '1111' }
+      });
+      assert.equal(reg.status, 201);
+
+      // Request OTP for the registered phone (test env returns devOtp)
+      const send = await t.request('/api/v1/auth/otp/send', {
+        method: 'POST',
+        body: { phone, purpose: 'login' }
+      });
+      assert.equal(send.status, 200);
+      const devOtp = send.body.devOtp;
+      assert.ok(devOtp, 'test env must surface devOtp');
+
+      // Reset the PIN via the new endpoint
+      const reset = await t.request('/api/v1/auth/pin/reset', {
+        method: 'POST',
+        body: { phone, otp: devOtp, newPin: '998877' }
+      });
+      assert.equal(reset.status, 200);
+      assert.equal(reset.body.success, true);
+
+      // Old PIN must now fail; new PIN must succeed
+      const oldLogin = await t.request('/api/v1/auth/login-pin', {
+        method: 'POST',
+        body: { emailOrPhone: email, pin: '1111' }
+      });
+      assert.equal(oldLogin.status, 401);
+      const newLogin = await t.request('/api/v1/auth/login-pin', {
+        method: 'POST',
+        body: { emailOrPhone: email, pin: '998877' }
+      });
+      assert.equal(newLogin.status, 200);
+    });
+
+    it('rejects a wrong OTP with 401 INVALID_OTP', async () => {
+      const email = 'pin.reset2@safesphere.test';
+      const phone = '+918811223355';
+      const reg = await t.request('/api/v1/auth/register', {
+        method: 'POST',
+        body: { name: 'Pin Reset Two', email, phone, password: 'Str0ngPass!23' }
+      });
+      assert.equal(reg.status, 201);
+
+      // An OTP must exist first — otherwise verifyOtp 400s on the missing record
+      const send = await t.request('/api/v1/auth/otp/send', {
+        method: 'POST',
+        body: { phone, purpose: 'login' }
+      });
+      assert.equal(send.status, 200);
+
+      const reset = await t.request('/api/v1/auth/pin/reset', {
+        method: 'POST',
+        body: { phone, otp: '000000', newPin: '998877' }
+      });
+      assert.equal(reset.status, 401);
+      assert.equal(reset.body.error.code, 'INVALID_OTP');
+    });
+
+    it('rejects invalid new PIN format with 400', async () => {
+      const email = 'pin.reset3@safesphere.test';
+      const phone = '+918811223366';
+      await t.request('/api/v1/auth/register', {
+        method: 'POST',
+        body: { name: 'Pin Reset Three', email, phone, password: 'Str0ngPass!23' }
+      });
+      const send = await t.request('/api/v1/auth/otp/send', {
+        method: 'POST',
+        body: { phone, purpose: 'login' }
+      });
+      assert.equal(send.status, 200);
+      const devOtp = send.body.devOtp;
+      const reset = await t.request('/api/v1/auth/pin/reset', {
+        method: 'POST',
+        body: { phone, otp: devOtp, newPin: '12' }
+      });
+      assert.equal(reset.status, 400);
+      assert.ok(reset.body.error.details.some(d => d.field === 'newPin'));
+    });
+  });
+
+  describe('6. Env fail-closed for unknown NODE_ENV values', () => {    const backendDir = path.resolve(__dirname, '..');
 
     function bootWith(env) {
       let result;
