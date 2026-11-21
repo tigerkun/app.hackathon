@@ -14,6 +14,7 @@ const VALID_MARKER_CATEGORIES = [
   'Hospital',
   'Verified Safe Zone',
   'Well-lit Transit Hub',
+  '24x7 Store',
   'Caution Area'
 ];
 

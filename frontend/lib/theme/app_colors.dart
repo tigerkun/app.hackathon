@@ -18,6 +18,8 @@ class AppColors {
   static const Color red = Color(0xFFFF4C4C);
   // F5-2: #FFB020 on #0B0F1A provides 10.46:1 contrast ratio (exceeds WCAG AA 4.5:1 requirement for body text).
   static const Color amber = Color(0xFFFFB020);
+  // M4: safe green for 24x7 Store markers (always-open refuge category).
+  static const Color green = Color(0xFF43D17C);
 
   // Glass / cards
   static const Color glass = Color(0x1AFFFFFF);

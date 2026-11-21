@@ -175,6 +175,27 @@ describe('SafeSphere Community Safety & Emergency API Tests', () => {
       assert.ok(res.body.data.length >= 3, 'Expected at least 3 seeded safety markers');
     });
 
+    it('M4: accepts the 24x7 Store category (always-open refuge) verbatim', async () => {
+      const { createMarker } = require('../src/models/markerModel');
+      const marker = createMarker({
+        name: 'Night Owl Mini Mart',
+        category: '24x7 Store',
+        latitude: 28.61,
+        longitude: 77.21,
+        isVerified: true
+      });
+      assert.equal(marker.category, '24x7 Store', '24x7 Store must pass validation verbatim');
+
+      // Unknown categories still fall back to Verified Safe Zone
+      const fallback = createMarker({
+        name: 'Weird Category',
+        category: 'Not A Real Category',
+        latitude: 28.61,
+        longitude: 77.21
+      });
+      assert.equal(fallback.category, 'Verified Safe Zone');
+    });
+
     it('calculates nearby safety markers using Haversine formula and sorts by proximity', async () => {
       // Coordinates at Connaught Place Central (28.6315, 77.2167)
       const res = await serverHarness.request('/api/v1/markers/nearby?lat=28.6315&lon=77.2167&radius=10');

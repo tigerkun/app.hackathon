@@ -150,6 +150,10 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
       } else if (catLower.contains('hospital') || catLower.contains('medical')) {
         icon = Icons.local_hospital;
         color = AppColors.red;
+      } else if (catLower.contains('24x7') || catLower.contains('store')) {
+        // M4: 24x7 Store — always-open refuge (cashier, lighting, CCTV, footfall)
+        icon = Icons.storefront;
+        color = AppColors.green;
       } else if (catLower.contains('safe') || catLower.contains('transit')) {
         icon = Icons.verified_user;
         color = AppColors.teal;
@@ -164,6 +168,8 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
       } else if (_selectedFilter == "Police" && catLower.contains('police')) {
         matchesFilter = true;
       } else if (_selectedFilter == "Hospitals" && (catLower.contains('hospital') || catLower.contains('medical'))) {
+        matchesFilter = true;
+      } else if (_selectedFilter == "Stores" && (catLower.contains('24x7') || catLower.contains('store'))) {
         matchesFilter = true;
       } else if (_selectedFilter == "Safe Zones" && (catLower.contains('safe') || catLower.contains('transit'))) {
         matchesFilter = true;
@@ -317,6 +323,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                       DropdownMenuItem(value: 'Hospital', child: Text('Hospital / Clinic')),
                       DropdownMenuItem(value: 'Verified Safe Zone', child: Text('Safe Zone / Shelter')),
                       DropdownMenuItem(value: 'Well-lit Transit Hub', child: Text('Transit Hub')),
+                      DropdownMenuItem(value: '24x7 Store', child: Text('24x7 Store (always open)')),
                       DropdownMenuItem(value: 'Caution Area', child: Text('Caution Area')),
                     ],
                     onChanged: (val) {
@@ -538,29 +545,36 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
           else
             _buildLiveMap(filteredItems),
 
-          /// ---------------- TOP FILTER CHIPS ----------------
+          /// ---------------- TOP FILTER CHIPS + NEAR-ME SERVICE STRIP (M4) --
           Positioned(
             top: 12,
             left: 12,
             right: 12,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _filterChip("All", count: _markers.length + _reports.length),
-                  _filterChip("Police"),
-                  _filterChip("Hospitals"),
-                  _filterChip("Safe Zones"),
-                  _filterChip("Hazards", count: _reports.length),
-                ],
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _filterChip("All", count: _markers.length + _reports.length),
+                      _filterChip("Police"),
+                      _filterChip("Hospitals"),
+                      _filterChip("Stores"),
+                      _filterChip("Safe Zones"),
+                      _filterChip("Hazards", count: _reports.length),
+                    ],
+                  ),
+                ),
+                if (_hasGpsFix && !_isListView) _buildNearMeStrip(filteredItems),
+              ],
             ),
           ),
 
           /// ---------------- LOADING INDICATOR ----------------
           if (_isLoading)
             Positioned(
-              top: 60,
+              top: _hasGpsFix && !_isListView ? 112 : 60,
               left: 20,
               right: 20,
               child: Center(
@@ -586,7 +600,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
           /// ---------------- ERROR BANNER ----------------
           if (_errorMessage != null)
             Positioned(
-              top: 60,
+              top: _hasGpsFix && !_isListView ? 112 : 60,
               left: 20,
               right: 20,
               child: Container(
@@ -666,6 +680,82 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
     );
   }
 
+  /// M4: "Near me" service strip — the nearest verified refuge per critical
+  /// category, one tap to select it on the map. Only shown with a real GPS
+  /// fix (never against the Delhi default), and honestly shows "none found"
+  /// when a category is missing from the loaded set.
+  Widget _buildNearMeStrip(List<_MapPinItem> items) {
+    final criticalCategories = [
+      ("Police", Icons.local_police, "police"),
+      ("Hospital", Icons.local_hospital, "hospital|medical"),
+      ("24x7", Icons.storefront, "24x7|store"),
+      ("Safe zone", Icons.verified_user, "safe|transit"),
+    ];
+
+    final chips = <Widget>[];
+    for (final (label, icon, patterns) in criticalCategories) {
+      final patternsList = patterns.split('|');
+      _MapPinItem? nearest;
+      for (final item in items) {
+        if (item.isHazardReport) continue;
+        final cat = item.category.toLowerCase();
+        final matches = patternsList.any((p) => cat.contains(p));
+        if (matches) {
+          nearest = item; // items are pre-sorted by distance
+          break;
+        }
+      }
+      chips.add(
+        GestureDetector(
+          onTap: nearest == null ? null : () => setState(() => _selectedItem = nearest),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: nearest != null
+                  ? const Color(0xFF101A33).withValues(alpha: 0.92)
+                  : Colors.black.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: nearest != null
+                    ? AppColors.teal.withValues(alpha: 0.5)
+                    : Colors.white12,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon,
+                    size: 13,
+                    color: nearest != null ? AppColors.teal : Colors.white24),
+                const SizedBox(width: 5),
+                Text(
+                  nearest != null
+                      ? "$label ${nearest.distanceKm < 1 ? "${(nearest.distanceKm * 1000).round()}m" : "${nearest.distanceKm.toStringAsFixed(1)}km"}"
+                      : "$label — none loaded",
+                  style: TextStyle(
+                    color: nearest != null ? Colors.white : Colors.white24,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          for (final chip in chips) ...[chip, const SizedBox(width: 8)],
+        ]),
+      ),
+    );
+  }
+
   /// Real pannable/zoomable map (flutter_map + OpenStreetMap-derived raster
   /// tiles). Free by default: no API key, no card, no billing account.
   Widget _buildLiveMap(List<_MapPinItem> items) {
@@ -713,6 +803,23 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                     color: AppColors.teal.withValues(alpha: 0.14),
                     borderColor: AppColors.teal.withValues(alpha: 0.45),
                     borderStrokeWidth: 2,
+                  ),
+                ],
+              ),
+            // M4: guidance line — straight ("as the crow flies") path from the
+            // user's fix to the selected pin. Honest: it is NOT turn-by-turn
+            // routing; the details card still offers real external directions.
+            if (_hasGpsFix && _selectedItem != null && !_selectedItem!.isHazardReport && _selectedItem!.id != "you")
+              PolylineLayer(
+                polylines: [
+                  Polyline(
+                    points: [
+                      LatLng(_userLat, _userLng),
+                      LatLng(_selectedItem!.latitude, _selectedItem!.longitude),
+                    ],
+                    color: AppColors.teal.withValues(alpha: 0.75),
+                    strokeWidth: 3.5,
+                    pattern: StrokePattern.dashed(segments: const [10, 7]),
                   ),
                 ],
               ),
@@ -1092,11 +1199,18 @@ class _InteractivePin extends StatelessWidget {
             color: color.withValues(alpha: 0.25),
             shape: BoxShape.circle,
             border: Border.all(color: color, width: 2),
+            // M4: category-tinted glow halo — two stacked shadows give the
+            // pins a soft outer aura so refuges pop on dark tiles at night.
             boxShadow: [
               BoxShadow(
-                color: color.withValues(alpha: 0.4),
-                blurRadius: isPulsing ? 12 : 6,
-                spreadRadius: isPulsing ? 2 : 0,
+                color: color.withValues(alpha: 0.55),
+                blurRadius: isPulsing ? 16 : 9,
+                spreadRadius: isPulsing ? 3 : 1,
+              ),
+              BoxShadow(
+                color: color.withValues(alpha: 0.20),
+                blurRadius: 22,
+                spreadRadius: 6,
               ),
             ],
           ),

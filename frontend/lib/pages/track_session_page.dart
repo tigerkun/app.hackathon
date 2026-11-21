@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_drawer.dart';
 import '../theme/app_colors.dart';
 import '../services/auth_service.dart';
+import '../services/movement_analyzer.dart';
 
 /// Guardian-facing live tracking viewer.
 ///
@@ -565,6 +566,9 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
               _infoTile('Accuracy',
                   _accuracy != null ? '±${_accuracy!.toStringAsFixed(0)} m' : '—'),
               _infoTile('Breadcrumbs received', '$_breadcrumbCount'),
+              // M4: movement intel — plain-language state machine over the
+              // breadcrumb trail (moving/stationary/stalled + heading).
+              _infoTile('Movement', _movementSummary()),
               _infoTile('Last update',
                   _lastUpdate != null ? _lastUpdate!.toLocal().toString().substring(0, 19) : '—'),
               _infoTile('Session expires', _expiresAt ?? '—'),
@@ -709,6 +713,14 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
           ),
       ],
     );
+  }
+
+  /// M4: movement intel summary from the breadcrumb state machine.
+  /// Breadcrumbs are stored newest-first, so analyze oldest → newest.
+  String _movementSummary() {
+    if (_breadcrumbs.isEmpty) return 'Awaiting telemetry';
+    final state = MovementAnalyzer.analyze(_breadcrumbs.reversed.toList());
+    return state.summary;
   }
 
   Widget _infoTile(String label, String value) {
