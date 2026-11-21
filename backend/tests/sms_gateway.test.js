@@ -29,6 +29,7 @@ describe('SMS Gateway (Fast2SMS)', () => {
   const SAVED_ENV = { ...process.env };
   let t;
   let fast2smsCalls = [];
+  let textlocalCalls = [];
   let fast2smsFail = false;
 
   before(async () => {
@@ -45,6 +46,10 @@ describe('SMS Gateway (Fast2SMS)', () => {
           return new Response(JSON.stringify({ return: false, status_code: 999, message: 'error' }), { status: 400 });
         }
         return new Response(JSON.stringify({ return: true, request_id: 'req_test_1' }), { status: 200 });
+      }
+      if (url.includes('api.textlocal.in')) {
+        textlocalCalls.push({ url, init: init || {} });
+        return new Response(JSON.stringify({ status: 'success', messages: [{ id: 'msg_tl_1' }] }), { status: 200 });
       }
       return REAL_FETCH(input, init);
     };
@@ -134,6 +139,30 @@ describe('SMS Gateway (Fast2SMS)', () => {
     assert.equal(parsed.length, 3);
     assert.deepEqual(parsed.map(c => c.phone), ['9876543210', '8765432111', '9876543212']);
     assert.equal(parsed[2].name, 'Emergency contact', 'unnamed contacts get a safe fallback');
+  });
+
+  it('textlocal provider: OTP embedded in message via generic send', async () => {
+    process.env.SMS_PROVIDER = 'textlocal';
+    process.env.SMS_API_KEY = 'test-textlocal-hash';
+    try {
+      fast2smsCalls = [];
+      textlocalCalls = [];
+      const res = await smsGateway.sendOtpSms({ to: '+919876543210', otp: '918273' });
+      assert.equal(res.delivered, true);
+      assert.equal(res.requestId, 'msg_tl_1');
+      assert.equal(textlocalCalls.length, 1);
+      const call = textlocalCalls[0];
+      assert.ok(call.url.includes('api.textlocal.in/send/'));
+      assert.ok(call.url.includes('apiKey=test-textlocal-hash'));
+      assert.ok(call.url.includes('numbers=919876543210'));
+      const decodedUrl = decodeURIComponent(call.url.replace(/\+/g, ' '));
+      assert.ok(decodedUrl.includes('SafeSphere OTP: 918273 (valid 15 min)'));
+      assert.equal(call.init.method, 'POST');
+      assert.equal(fast2smsCalls.length, 0, 'textlocal provider must not touch fast2sms');
+    } finally {
+      process.env.SMS_PROVIDER = 'fast2sms';
+      process.env.SMS_API_KEY = 'test-fast2sms-auth-key';
+    }
   });
 
   it('SOS trigger dispatches to emergency contacts in the background and updates the honest count', async () => {
