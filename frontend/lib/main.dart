@@ -15,6 +15,7 @@ import 'pages/about_page.dart';
 import 'pages/onboarding_page.dart';
 import 'pages/review_markers_page.dart';
 import 'pages/my_circle_page.dart';
+import 'pages/privacy_hub_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +42,7 @@ final Map<String, WidgetBuilder> _appRouteMap = {
   '/onboarding': (_) => const OnboardingPage(),
   '/review-markers': (_) => const ReviewMarkersPage(),
   '/circle': (_) => const MyCirclePage(),
+  '/privacy-hub': (_) => const PrivacyHubPage(),
   '/community': (_) => const CommunityAlertsPage(),
   '/chat': (_) => const AiAssistantPage(),
 };

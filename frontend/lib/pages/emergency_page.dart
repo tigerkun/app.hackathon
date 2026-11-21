@@ -451,6 +451,39 @@ class _EmergencyPageState extends State<EmergencyPage> {
                             : "Your emergency contacts can see your location live",
                         style: const TextStyle(color: Colors.white60, fontSize: 12),
                       ),
+                      // M5: WhatsApp-first share — one tap pulls a fresh GPS
+                      // fix and opens WhatsApp with a help message + location
+                      // link (falls back to the system share sheet).
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.chat, size: 20, color: Colors.white),
+                              label: const Text(
+                                "Share via WhatsApp",
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF25D366),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              onPressed: _shareSosViaWhatsApp,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            height: 48,
+                            width: 48,
+                            child: IconButton.filledTonal(
+                              icon: const Icon(Icons.share, size: 20, color: Colors.white),
+                              tooltip: "Share with any app",
+                              onPressed: _shareSosViaWhatsApp,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -1417,6 +1450,50 @@ class _EmergencyPageState extends State<EmergencyPage> {
         ),
       );
     }
+  }
+
+  /// M5: WhatsApp-first SOS share. Pulls a FRESH GPS fix (never reuses a
+  /// stale trigger coordinate silently — on GPS failure it still opens the
+  /// composer without coordinates rather than faking them), builds a help
+  /// message with a maps deep link, and opens WhatsApp via the universal
+  /// wa.me scheme. If WhatsApp is unavailable it falls back to the system
+  /// share sheet so the message always has a way out.
+  Future<void> _shareSosViaWhatsApp() async {
+    double? lat;
+    double? lng;
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 5),
+        ),
+      );
+      lat = position.latitude;
+      lng = position.longitude;
+    } catch (_) {}
+
+    final buffer = StringBuffer();
+    buffer.write("🚨 [SafeSphere EMERGENCY] I need help RIGHT NOW.");
+    if (_ageSeconds > 0) {
+      buffer.write(" SOS active ${(_ageSeconds / 60).floor()} min.");
+    }
+    if (lat != null && lng != null) {
+      buffer.write("\n📍 My live location: https://www.google.com/maps?q=$lat,$lng");
+    } else {
+      buffer.write("\n📍 (Could not get GPS fix — call me, do not assume my location.)");
+    }
+
+    final uri = Uri.parse("https://wa.me/?text=${Uri.encodeComponent(buffer.toString())}");
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        return;
+      }
+    } catch (_) {}
+    // WhatsApp/web unavailable → system share sheet (honest fallback).
+    try {
+      await Share.share(buffer.toString());
+    } catch (_) {}
   }
 
   Future<bool> _launchSmsFallback(AuthService authService, String alertMsg) async {

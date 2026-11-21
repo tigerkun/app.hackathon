@@ -89,14 +89,24 @@ class AppDrawer extends StatelessWidget {
                 route: '/about',
               ),
 
-              ListTile(
-                leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.teal),
-                title: const Text('Privacy & Consent (DPDP)', style: TextStyle(color: Colors.white)),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showPrivacyConsentDialog(context, authState);
-                },
-              ),
+                ListTile(
+                  leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.teal),
+                  title: const Text('Privacy & Consent (DPDP)', style: TextStyle(color: Colors.white)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showPrivacyConsentDialog(context, authState);
+                  },
+                ),
+                if (authState.isAuthenticated)
+                  ListTile(
+                    leading: const Icon(Icons.visibility_outlined, color: AppColors.teal),
+                    title: const Text('Who can see me', style: TextStyle(color: Colors.white)),
+                    subtitle: const Text('Privacy hub — every channel open right now', style: TextStyle(color: Colors.white60, fontSize: 12)),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, AppRoutes.privacyHub);
+                    },
+                  ),
 
               SwitchListTile(
                 secondary: const Icon(Icons.sensors, color: AppColors.teal),

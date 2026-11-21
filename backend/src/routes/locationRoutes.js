@@ -5,9 +5,12 @@
 
 const express = require('express');
 const locationController = require('../controllers/locationController');
-const { optionalAuth } = require('../middleware/authMiddleware');
+const { optionalAuth, requireAuth } = require('../middleware/authMiddleware');
 
 const router = express.Router();
+
+// M5: privacy hub — the owner's own live sessions (token scrubbed).
+router.get('/sessions/mine', requireAuth, locationController.listMine);
 
 router.post('/share-session', optionalAuth, locationController.shareSession);
 router.get('/track/:sessionId', locationController.getTrack);

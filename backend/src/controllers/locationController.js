@@ -206,9 +206,39 @@ function terminate(req, res, next) {
   }
 }
 
+// M5: "Who can see me" — the owner's own live/recent tracking sessions for
+// the privacy hub. The session token is deliberately scrubbed: the owner
+// already holds it and it must not re-appear in list responses.
+function listMine(req, res, next) {
+  try {
+    const { db } = require('../data/store');
+    const sessions = db.getActiveTrackingSessionsByUser(req.user.id).map((s) => ({
+      id: s.id,
+      status: s.status,
+      createdAt: s.createdAt,
+      expiresAt: s.expiresAt,
+      lastPingAt: s.lastPingAt ?? null,
+      checkInIntervalMin: s.checkInIntervalMin,
+      checkInDeadline: s.checkInDeadline,
+      missedCheckIns: s.missedCheckIns,
+      currentLocation: s.currentLocation && s.currentLocation.latitude != null
+        ? { latitude: s.currentLocation.latitude, longitude: s.currentLocation.longitude }
+        : null,
+      breadcrumbCount: Array.isArray(s.breadcrumbs) ? s.breadcrumbs.length : 0
+    }));
+    res.status(200).json({
+      success: true,
+      data: { activeSessions: sessions, count: sessions.length }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   shareSession,
   getTrack,
   ping,
-  terminate
+  terminate,
+  listMine
 };

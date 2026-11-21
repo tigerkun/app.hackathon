@@ -17,6 +17,7 @@ import '../pages/auth/pin_lock_page.dart';
 import '../pages/onboarding_page.dart';
 import '../pages/review_markers_page.dart';
 import '../pages/my_circle_page.dart';
+import '../pages/privacy_hub_page.dart';
 
 class RouteGuard {
   static Route<dynamic> generateRoute(RouteSettings settings, AuthState authState) {
@@ -71,10 +72,11 @@ class RouteGuard {
       );
     }
 
-    // 4. Protected Routes (/profile, /contacts, /circle)
+    // 4. Protected Routes (/profile, /contacts, /circle, /privacy-hub)
     if (routeName == AppRoutes.profile ||
         routeName == AppRoutes.contacts ||
-        routeName == AppRoutes.circle) {
+        routeName == AppRoutes.circle ||
+        routeName == AppRoutes.privacyHub) {
       if (!authState.isAuthenticated) {
         return MaterialPageRoute(
           builder: (_) => LoginPage(redirectRoute: routeName),
@@ -84,6 +86,12 @@ class RouteGuard {
       if (routeName == AppRoutes.circle) {
         return MaterialPageRoute(
           builder: (_) => const MyCirclePage(),
+          settings: settings,
+        );
+      }
+      if (routeName == AppRoutes.privacyHub) {
+        return MaterialPageRoute(
+          builder: (_) => const PrivacyHubPage(),
           settings: settings,
         );
       }

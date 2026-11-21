@@ -175,6 +175,7 @@ const pythonSuites = [
   'frontend/test/challenger_m3_empirical_test.py',
   'frontend/test/challenger_m4_2_empirical_test.py',
   'frontend/test/challenger_m5_map_empirical_test.py',
+  'frontend/test/challenger_m6_ux_empirical_test.py',
   'frontend/test/test_r5_permissions_contrast.py'
 ];
 

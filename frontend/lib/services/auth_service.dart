@@ -1482,6 +1482,12 @@ class AuthService {
     );
   }
 
+  /// M5: lists the user's OWN live tracking sessions for the privacy hub
+  /// ("Who can see me"). Server scrubs the session token — visibility only.
+  Future<Map<String, dynamic>> fetchMyTrackingSessions() {
+    return _connectionCall(method: 'GET', path: '/api/v1/location/sessions/mine');
+  }
+
   // ---------------------------------------------------------------------------
   // M1.6b: Forgot-PIN recovery (POST /api/v1/auth/pin/reset)
   // ---------------------------------------------------------------------------

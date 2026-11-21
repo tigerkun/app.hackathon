@@ -27,4 +27,5 @@ class AppRoutes {
   static const String contacts = '${_p}contacts';
   static const String reviewMarkers = '${_p}review-markers';
   static const String circle = '${_p}circle';
+  static const String privacyHub = '${_p}privacy-hub';
 }
