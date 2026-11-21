@@ -96,9 +96,17 @@ async function sendOtp(req, res, next) {
     const { phone, purpose } = req.body;
     const result = await otpService.sendOtp(phone, purpose);
 
+    // Honest delivery copy (invariant #3): only claim "sent" when the SMS
+    // gateway actually dispatched. Without SMS_API_KEY + an OTP template the
+    // code is merely generated and cannot reach the user.
+    const message = result.smsDispatched
+      ? `OTP sent successfully to ${result.phone}`
+      : `OTP generated for ${result.phone} — SMS delivery is not configured on this deployment, so the code cannot reach you. Use password or PIN login instead.`;
+
     res.status(200).json({
       success: true,
-      message: `OTP sent successfully to ${result.phone}`,
+      message,
+      smsDelivery: result.smsDispatched ? 'dispatched' : 'unavailable',
       data: result,
       phone: result.phone,
       expiresInSeconds: result.expiresInSeconds,
