@@ -34,6 +34,7 @@ describe('SMS Gateway (Fast2SMS)', () => {
   before(async () => {
     process.env.NODE_ENV = 'test';
     process.env.SMS_API_KEY = 'test-fast2sms-auth-key';
+    process.env.SMS_OTP_TEMPLATE_ID = 'test-otp-template-1';
     t = await startTestServer();
 
     global.fetch = async (input, init) => {
@@ -72,12 +73,12 @@ describe('SMS Gateway (Fast2SMS)', () => {
     assert.equal(res.requestId, 'req_test_1');
     assert.equal(fast2smsCalls.length, 1);
     const call = fast2smsCalls[0];
-    assert.equal(call.url, 'https://www.fast2sms.com/dev/otpV3');
+    assert.equal(call.url, 'https://www.fast2sms.com/dev/otp/send');
     assert.equal(call.init.headers.authorization, 'test-fast2sms-auth-key');
     const body = JSON.parse(call.init.body);
-    assert.equal(body.route, 'otp');
-    assert.equal(body.variables_values, '482113');
-    assert.equal(body.numbers, '9876543210');
+    assert.equal(body.otp_id, 'test-otp-template-1');
+    assert.equal(body.otp, '482113');
+    assert.equal(body.mobile, '9876543210');
   });
 
   it('reports honest failure when the upstream rejects', async () => {
@@ -101,7 +102,7 @@ describe('SMS Gateway (Fast2SMS)', () => {
     // never includes it (config.isDev || config.isTest gate in otpService).
     assert.equal(fast2smsCalls.length, 1);
     const body = JSON.parse(fast2smsCalls[0].init.body);
-    assert.match(body.variables_values, /^\d{6}$/, 'upstream must receive the 6-digit code');
+    assert.match(body.otp, /^\d{6}$/, 'upstream must receive the 6-digit code');
   });
 
   it('full OTP flow: upstream failure → honest 502 OTP_DISPATCH_FAILED', async () => {

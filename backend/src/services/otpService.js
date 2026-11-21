@@ -58,12 +58,13 @@ async function sendOtp(rawPhone, purpose = 'login') {
   };
 
   // REAL_SMS_GATEWAY (Fast2SMS, DONE): real SMS delivery when the gateway is
-  // configured. A failed dispatch FAILS the request with OTP_DISPATCH_FAILED
-  // (invariant #3): the user must know the code never went out rather than
-  // waiting for an SMS that will never arrive. Without the gateway the
-  // request succeeds as before (dev mode / honest no-delivery limitation).
+  // fully configured (key + Smart OTP template id). A failed dispatch FAILS
+  // the request with OTP_DISPATCH_FAILED (invariant #3): the user must know
+  // the code never went out rather than waiting for an SMS that will never
+  // arrive. Without the gateway the request succeeds as before (dev mode /
+  // honest no-delivery limitation).
   const smsGateway = require('./smsGatewayService');
-  if (smsGateway.isConfigured()) {
+  if (smsGateway.isOtpConfigured()) {
     const dispatch = await smsGateway.sendOtpSms({ to: phone, otp: code });
     if (!dispatch.delivered) {
       const error = new Error('Failed to dispatch the OTP SMS. Please try again shortly.');

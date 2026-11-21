@@ -5,15 +5,19 @@
  * touching callers (otpService, sosService).
  *
  * Configuration (env only — the key is never committed or returned):
- *   SMS_API_KEY        Fast2SMS authorization key (required to enable)
- *   SMS_PROVIDER       informational ('fast2sms' default)
+ *   SMS_API_KEY            Fast2SMS authorization key (required to enable)
+ *   SMS_OTP_TEMPLATE_ID    Fast2SMS Smart OTP template id (required for OTP
+ *                          delivery — created in Dashboard → Smart OTP after
+ *                          DLT entity/sender/content registration)
  *
- * Routes used:
- *   OTP delivery  → /dev/otpV3 (route: 'otp') — Fast2SMS pre-approved DLT
- *                   template, works without owning a DLT registration.
- *                   Per-SMS rate ≈ ₹0.20-0.35 from the ₹50 starter balance.
- *   Free-text SMS → /dev/bulkV2 (route: 'q') — Quick route, ₹7.0000 per SMS
- *                   (dashboard-verified). Used for SOS emergency-contact
+ * Routes used (per docs.fast2sms.com):
+ *   OTP delivery  → POST /dev/otp/send — Smart OTP with a DLT-registered
+ *                   template; passes OUR locally-generated code via the `otp`
+ *                   field so local verification (attempts/expiry) still rules.
+ *                   Requires DLT registration + SMS_OTP_TEMPLATE_ID.
+ *   Free-text SMS → POST /dev/bulkV2 (route: 'q') — Quick route, ₹7.0000 per
+ *                   SMS, no DLT needed, but requires a one-time transaction of
+ *                   ₹100+ on the account. Used for SOS emergency-contact
  *                   dispatch; callers decide whether the cost is acceptable.
  *
  * Honesty rules (AGENTS.md invariant #3): every dispatch outcome is reported
@@ -27,8 +31,16 @@ function getApiKey() {
   return (process.env.SMS_API_KEY || '').trim();
 }
 
+function getOtpTemplateId() {
+  return (process.env.SMS_OTP_TEMPLATE_ID || '').trim();
+}
+
 function isConfigured() {
   return getApiKey().length > 0;
+}
+
+function isOtpConfigured() {
+  return getApiKey().length > 0 && getOtpTemplateId().length > 0;
 }
 
 /**
@@ -68,19 +80,27 @@ async function sendOtpSms({ to, otp }) {
   if (!isConfigured()) {
     return { delivered: false, error: 'SMS gateway not configured' };
   }
+  if (!isOtpConfigured()) {
+    return {
+      delivered: false,
+      error: 'OTP template not configured (set SMS_OTP_TEMPLATE_ID after DLT registration)'
+    };
+  }
   const mobile = toIndianMobile(to);
   if (!mobile) {
     return { delivered: false, error: 'Invalid mobile number' };
   }
 
-  const { ok, status, decoded } = await post('/dev/otpV3', {
-    route: 'otp',
-    variables_values: String(otp),
-    numbers: mobile,
-    flash: '0'
+  // Our locally-generated code is passed via `otp` so local verification
+  // (attempts/expiry/cooldown) continues to rule the login flow.
+  const { ok, status, decoded } = await post('/dev/otp/send', {
+    mobile,
+    otp_id: getOtpTemplateId(),
+    otp: String(otp),
+    otp_expiry: 15
   });
 
-  const succeeded = ok && decoded && decoded.return === true;
+  const succeeded = ok && decoded && (decoded.return === true || decoded.status_code === 200);
   if (!succeeded) {
     // Fast2SMS error bodies carry { status_code, message } — log status only,
     // message text may echo account metadata.
@@ -89,7 +109,7 @@ async function sendOtpSms({ to, otp }) {
       error: `fast2sms otp dispatch failed (HTTP ${status})`
     };
   }
-  return { delivered: true, requestId: decoded.request_id };
+  return { delivered: true, requestId: decoded && (decoded.request_id || decoded.requestId) };
 }
 
 /**
@@ -165,6 +185,7 @@ async function dispatchSosNotifications({ contacts, userName, latitude, longitud
 
 module.exports = {
   isConfigured,
+  isOtpConfigured,
   sendOtpSms,
   sendQuickSms,
   dispatchSosNotifications,
