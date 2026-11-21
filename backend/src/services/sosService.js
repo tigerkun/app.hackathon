@@ -155,36 +155,52 @@ function triggerSos({
   alert.resolveToken = resolveToken;
   startEscalationWatchdog();
 
-  // REAL_SMS_GATEWAY (Fast2SMS, DONE): background dispatch to the owner's
-  // emergency contacts. The WS broadcast and HTTP response never wait on SMS
-  // — an emergency must not be delayed by network latency. Dispatch failures
-  // are logged and the honest delivered count is persisted + re-broadcast so
-  // polling monitors see reality, never a fabricated number.
+  // REAL_SMS_GATEWAY (Fast2SMS) + email gateway (Brevo), both DONE: dispatch
+  // to the owner's emergency contacts in the background. The WS broadcast and
+  // HTTP response never wait on network delivery — an emergency must not be
+  // delayed. Failures are logged and the honest delivered count is persisted
+  // + re-broadcast so polling monitors see reality, never a fabricated number.
   if (userId) {
     const smsGateway = require('./smsGatewayService');
-    if (smsGateway.isConfigured()) {
-      const owner = db.findUserById(userId);
-      smsGateway
-        .dispatchSosNotifications({
-          contacts: owner ? owner.emergencyContacts : null,
+    const emailGateway = require('./emailGatewayService');
+    const owner = db.findUserById(userId);
+    const contacts = owner ? owner.emergencyContacts : null;
+
+    const smsPromise = smsGateway.isConfigured()
+      ? smsGateway.dispatchSosNotifications({
+          contacts,
           userName: finalUserName,
           latitude: alert.latitude,
           longitude: alert.longitude,
           alertId: alert.id
         })
-        .then(({ notified, total }) => {
-          if (total === 0) return;
-          db.updateAlert(alert.id, { emergencyContactsNotified: notified });
-          console.log(`[smsGateway] SOS ${alert.id}: ${notified}/${total} emergency contacts notified`);
+      : Promise.resolve({ notified: 0, total: 0 });
+
+    const emailPromise = emailGateway.isConfigured()
+      ? emailGateway.dispatchSosEmailNotifications({
+          contacts,
+          userName: finalUserName,
+          latitude: alert.latitude,
+          longitude: alert.longitude,
+          alertId: alert.id
+        })
+      : Promise.resolve({ notified: 0, total: 0 });
+
+    Promise.all([smsPromise, emailPromise])
+      .then(([sms, email]) => {
+        const delivered = sms.notified + email.notified;
+        if (delivered > 0) {
+          db.updateAlert(alert.id, { emergencyContactsNotified: delivered });
+          console.log(`[gateway] SOS ${alert.id}: ${delivered} contact notifications delivered (sms: ${sms.notified}, email: ${email.notified})`);
           const helpers = getBroadcastHelpers();
           const { toSafeAlert } = require('../models/alertModel');
           const fresh = db.findAlertById(alert.id);
           if (helpers.broadcastSosAlert && fresh) {
             helpers.broadcastSosAlert(toSafeAlert(fresh, false));
           }
-        })
-        .catch((err) => console.warn(`[smsGateway] SOS dispatch failed for ${alert.id}:`, err.message));
-    }
+        }
+      })
+      .catch((err) => console.warn(`[gateway] SOS dispatch failed for ${alert.id}:`, err.message));
   }
   return alert;
 }

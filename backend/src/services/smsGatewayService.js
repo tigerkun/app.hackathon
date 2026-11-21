@@ -38,10 +38,26 @@ function isConfigured() {
 }
 
 // OTP delivery needs a DLT template on fast2sms; textlocal sends generic
-// text with its trial sender, so the key alone is enough there.
-function isOtpConfigured() {
-  if (!isConfigured()) return false;
-  return getProvider() === 'textlocal' ? true : getOtpTemplateId().length > 0;
+// text with its trial sender, so the key alone is enough there. 2factor sends
+// via its pre-approved DLT OTP template, so its key alone suffices too.
+function isOtpConfigured(provider = getProvider()) {
+  if (provider === 'textlocal') return Boolean(process.env.SMS_API_KEY);
+  if (provider === '2factor') return Boolean(process.env.SMS_2FACTOR_KEY);
+  return isConfigured() && getOtpTemplateId().length > 0;
+}
+
+/**
+ * Optional automatic fallback (just-in-case reliability): when the primary
+ * provider fails to deliver, retry once through the fallback provider.
+ *   SMS_FALLBACK_PROVIDER   e.g. '2factor'
+ *   SMS_FALLBACK_API_KEY    fallback provider key
+ * The result reports which provider actually delivered (deliveredVia).
+ */
+function getFallback() {
+  const provider = (process.env.SMS_FALLBACK_PROVIDER || '').toLowerCase();
+  const key = (process.env.SMS_FALLBACK_API_KEY || '').trim();
+  if (!provider || !key || provider === getProvider()) return null;
+  return { provider, key };
 }
 
 /**
