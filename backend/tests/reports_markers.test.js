@@ -196,6 +196,33 @@ describe('SafeSphere Community Safety & Emergency API Tests', () => {
       assert.equal(fallback.category, 'Verified Safe Zone');
     });
 
+    it('M6: rejects oversized marker name (>80 chars) instead of truncating', async () => {
+      const res = await serverHarness.request('/api/v1/markers', {
+        method: 'POST',
+        body: { name: 'x'.repeat(81), latitude: 28.61, longitude: 77.21 }
+      });
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error.code, 'VALIDATION_ERROR');
+    });
+
+    it('M6: rejects oversized marker address (>200 chars)', async () => {
+      const res = await serverHarness.request('/api/v1/markers', {
+        method: 'POST',
+        body: { name: 'Legit Name', latitude: 28.61, longitude: 77.21, address: 'y'.repeat(201) }
+      });
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error.code, 'VALIDATION_ERROR');
+    });
+
+    it('M6: rejects oversized moderator note (>500 chars)', async () => {
+      const res = await serverHarness.request('/api/v1/markers', {
+        method: 'POST',
+        body: { name: 'Legit Name', latitude: 28.61, longitude: 77.21, note: 'z'.repeat(501) }
+      });
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error.code, 'VALIDATION_ERROR');
+    });
+
     it('calculates nearby safety markers using Haversine formula and sorts by proximity', async () => {
       // Coordinates at Connaught Place Central (28.6315, 77.2167)
       const res = await serverHarness.request('/api/v1/markers/nearby?lat=28.6315&lon=77.2167&radius=10');

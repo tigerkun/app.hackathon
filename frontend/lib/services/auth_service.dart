@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 import '../models/user_model.dart';
@@ -70,6 +71,11 @@ class AuthService {
   static const Duration offlineSosQueueTtl = Duration(hours: 24);
   static const String keyActiveSosId = 'safesphere_active_sos_id';
   static const String keyActiveSosResolveToken = 'safesphere_active_sos_resolve_token';
+  /// M6: resolve tokens keyed by alert ID — a victim with MULTIPLE alerts
+  /// (e.g. an offline-queued replay followed by a live trigger) must be able
+  /// to self-resolve ALL of them, not just the most recent. Capped at 10.
+  static const String keySosResolveTokenMap = 'safesphere_sos_resolve_tokens';
+  static const int maxResolveTokenMapSize = 10;
   static const String keyOnboarded = 'safesphere_onboarded';
   static const String keyPrivacyConsent = 'safesphere_privacy_consent';
   static const String keyEmergencyGestures = 'safesphere_emergency_gestures';
@@ -552,6 +558,40 @@ class AuthService {
   // ---------------------------------------------------------------------------
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
+  // M6: file-fallback PIN hashing. The file-backed storage fallback runs on
+  // platforms without OS secure storage (desktop/headless); the PIN must
+  // never sit there in plaintext. Format: `sp1$<saltHex>$<hashHex>` where
+  // hash = sha256(saltHex + pin). Salt lives beside the hash — this defeats
+  // casual inspection / rainbow precomputation, not a determined local
+  // attacker (that is what the OS secure storage path is for).
+  static const String _pinHashPrefix = 'sp1\$';
+  String? _pinFileSalt; // per-install salt, generated on first hashed write
+
+  String _hashPinForFile(String pin) {
+    try {
+      _pinFileSalt ??= DateTime.now().microsecondsSinceEpoch.toRadixString(16) +
+          pin.hashCode.toRadixString(16);
+      final digest = sha256.convert(utf8.encode('$_pinFileSalt$pin'));
+      return '$_pinHashPrefix$_pinFileSalt\$${digest.toString()}';
+    } catch (_) {
+      // Hashing itself failed — last resort keeps legacy behaviour so the
+      // user is never locked out (invariant: emergency access first).
+      return pin;
+    }
+  }
+
+  bool _isHashedPin(String stored) => stored.startsWith(_pinHashPrefix);
+
+  bool _matchesStoredPin(String stored, String candidate) {
+    if (_isHashedPin(stored)) {
+      final parts = stored.substring(_pinHashPrefix.length).split('\$');
+      if (parts.length != 2) return false;
+      final digest = sha256.convert(utf8.encode('${parts[0]}$candidate')).toString();
+      return digest == parts[1];
+    }
+    return stored == candidate;
+  }
+
   /// Reads PIN securely from FlutterSecureStorage with automatic migration from
   /// legacy unencrypted storage and graceful fallback if secure storage is unavailable.
   Future<String?> _getSecureOrMigratedPin() async {
@@ -580,7 +620,18 @@ class AuthService {
         try {
           await _secureStorage.write(key: keyPin, value: legacyPin);
           await storage.remove(keyPin);
+          return legacyPin;
         } catch (_) {}
+        // M6: secure storage unavailable — upgrade any LEGACY PLAINTEXT
+        // file value to the salted-hash form in place (same lock behaviour).
+        if (!_isHashedPin(legacyPin)) {
+          try {
+            final hashed = _hashPinForFile(legacyPin);
+            if (_isHashedPin(hashed)) {
+              await storage.setString(keyPin, hashed);
+            }
+          } catch (_) {}
+        }
         return legacyPin;
       }
     } catch (_) {}
@@ -599,7 +650,8 @@ class AuthService {
       } catch (_) {}
 
       if (!wroteSecure) {
-        await storage.setString(keyPin, cleanPin);
+        // M6: file fallback stores a salted HASH, never the raw PIN.
+        await storage.setString(keyPin, _hashPinForFile(cleanPin));
       }
       return true;
     }
@@ -613,7 +665,7 @@ class AuthService {
       // NOTE: Verify PIN against POST /api/v1/auth/login-pin when connected (endpoints verified live).
       return false;
     }
-    if (storedPin == pin.trim()) {
+    if (_matchesStoredPin(storedPin, pin.trim())) {
       _isPinLocked = false;
       return true;
     }
@@ -703,7 +755,7 @@ class AuthService {
         final resolveToken = res.data!['resolveToken'] as String? ??
             (res.data!['data']?['resolveToken'] as String?);
         if (resolveToken != null) {
-          await storage.setString(keyActiveSosResolveToken, resolveToken);
+          await _storeResolveToken(alertId, resolveToken);
         }
       }
       unawaited(processQueuedSosAlerts());
@@ -713,6 +765,60 @@ class AuthService {
     // Network unreachable or dispatch failure: queue offline for automatic replay
     await queueOfflineSos(body);
     return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // M6: per-alert resolve-token map (multi-active-SOS support)
+  // ---------------------------------------------------------------------------
+  /// Persists a resolve token under its alert ID (JSON map, capped, newest
+  /// evicted). The legacy single-token key stays untouched for backward
+  /// compatibility with already-persisted sessions.
+  Future<void> _storeResolveToken(String alertId, String token) async {
+    try {
+      // Legacy key always mirrors the newest token (older app versions and
+      // the "last alert" flow still read it).
+      await storage.setString(keyActiveSosResolveToken, token);
+      final raw = await storage.getString(keySosResolveTokenMap);
+      final Map<String, dynamic> map = {};
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) map.addAll(decoded);
+      }
+      map[alertId] = token;
+      while (map.length > maxResolveTokenMapSize) {
+        map.remove(map.keys.first);
+      }
+      await storage.setString(keySosResolveTokenMap, jsonEncode(map));
+    } catch (_) {}
+  }
+
+  /// Reads the resolve token for a specific alert: per-alert map first,
+  /// legacy single-token key as fallback (covers pre-M6 sessions).
+  Future<String?> _readResolveToken(String alertId) async {
+    try {
+      final raw = await storage.getString(keySosResolveTokenMap);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic> && decoded[alertId] is String) {
+          return decoded[alertId] as String;
+        }
+      }
+    } catch (_) {}
+    return await storage.getString(keyActiveSosResolveToken);
+  }
+
+  Future<void> _pruneResolveToken(String alertId) async {
+    try {
+      final raw = await storage.getString(keySosResolveTokenMap);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic> && decoded.containsKey(alertId)) {
+          decoded.remove(alertId);
+          await storage.setString(keySosResolveTokenMap, jsonEncode(decoded));
+        }
+      }
+    } catch (_) {}
+    await storage.remove(keyActiveSosResolveToken);
   }
 
   // ---------------------------------------------------------------------------
@@ -731,6 +837,29 @@ class AuthService {
     }
   }
 
+  /// M6: stable content signature of a queued SOS body (sorted keys) used
+  /// for idempotency — a rapid double-enqueue of the SAME emergency must not
+  /// become two dispatched alerts on replay.
+  String _sosQueueSignature(Map<String, dynamic> payload) {
+    final keys = payload.keys.toList()..sort();
+    final buf = StringBuffer();
+    for (final k in keys) {
+      buf.write('$k=');
+      final v = payload[k];
+      // Round floats so two GPS fixes a metre apart within the same trigger
+      // dedupe, while genuinely different locations stay distinct.
+      if (v is double) {
+        buf.write(v.toStringAsFixed(4));
+      } else if (v is num) {
+        buf.write(v.toStringAsFixed(4));
+      } else {
+        buf.write(v.toString());
+      }
+      buf.write('|');
+    }
+    return buf.toString();
+  }
+
   Future<void> queueOfflineSos(Map<String, dynamic> payload) async {
     try {
       final raw = await storage.getString(keyOfflineSosQueue);
@@ -747,6 +876,13 @@ class AuthService {
       }
       // TTL: drop entries that are already past their replay window.
       queue.removeWhere(_isQueueEntryExpired);
+      // M6 idempotency: skip enqueue when an identical (non-expired) entry
+      // already exists — duplicate trigger calls must not double-dispatch.
+      final signature = _sosQueueSignature(payload);
+      final isDuplicate = queue.any(
+        (entry) => _sosQueueSignature(Map<String, dynamic>.from(entry)..remove('_queuedAt')) == signature,
+      );
+      if (isDuplicate) return;
       while (queue.length >= maxOfflineSosQueueSize) {
         queue.removeAt(0); // Drop oldest entries to enforce capacity cap
       }
@@ -813,7 +949,7 @@ class AuthService {
               final resolveToken = res.data!['resolveToken'] as String? ??
                   (res.data!['data']?['resolveToken'] as String?);
               if (resolveToken != null) {
-                await storage.setString(keyActiveSosResolveToken, resolveToken);
+                await _storeResolveToken(alertId, resolveToken);
               }
             }
           } else {
@@ -840,7 +976,8 @@ class AuthService {
     final targetId = alertId ?? await storage.getString(keyActiveSosId);
     if (targetId == null || targetId.isEmpty) return false;
 
-    final resolveToken = await storage.getString(keyActiveSosResolveToken);
+    // M6: per-alert token first, legacy single-token key as fallback.
+    final resolveToken = await _readResolveToken(targetId);
     final body = <String, dynamic>{
       'id': targetId,
       'notes': notes ?? 'Citizen marked safe',
@@ -856,7 +993,7 @@ class AuthService {
 
     if (res.isSuccess && res.data != null && res.data!['success'] == true) {
       await storage.remove(keyActiveSosId);
-      await storage.remove(keyActiveSosResolveToken);
+      await _pruneResolveToken(targetId);
       return true;
     }
     return false;

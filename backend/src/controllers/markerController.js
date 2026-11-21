@@ -113,6 +113,40 @@ function create(req, res, next) {
       });
     }
 
+    // M6 hardening: input caps — reject oversized payloads instead of
+    // silently truncating (marker names 80, address 200, note 500).
+    const nameStr = String(name).trim();
+    if (nameStr.length === 0 || nameStr.length > 80) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'name must be 1-80 characters',
+          details: []
+        }
+      });
+    }
+    if (address !== undefined && address !== null && String(address).trim().length > 200) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'address must be at most 200 characters',
+          details: []
+        }
+      });
+    }
+    if (note !== undefined && note !== null && String(note).trim().length > 500) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'note must be at most 500 characters',
+          details: []
+        }
+      });
+    }
+
     const latNum = Number(latitude);
     const lonNum = Number(longitude);
     if (isNaN(latNum) || isNaN(lonNum) || latNum < -90 || latNum > 90 || lonNum < -180 || lonNum > 180) {
@@ -131,7 +165,7 @@ function create(req, res, next) {
     );
 
     const marker = createMarker({
-      name,
+      name: nameStr,
       category,
       latitude: latNum,
       longitude: lonNum,
