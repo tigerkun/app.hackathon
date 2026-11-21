@@ -7,6 +7,10 @@ const { db } = require('../data/store');
 const { createReport, toSafeReport, VALID_REPORT_STATUSES } = require('../models/reportModel');
 const { findNearby } = require('../services/geoService');
 
+// M2.4: unverified reports expire 24h after creation — stale incidents
+// auto-archive off the live feed instead of lingering for a day.
+const REPORT_FRESHNESS_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 function list(req, res, next) {
   try {
     const { type, status, limit, reportedBy } = req.query;
@@ -18,9 +22,40 @@ function list(req, res, next) {
       ? Math.min(Math.max(1, parseInt(limit, 10) || 100), 100)
       : 100;
 
+    // M2.4: is the caller privileged (moderator/admin/responder) or the
+    // report owner? Privileged/owner views include expired unverified
+    // reports; the default public feed hides them.
+    const isPrivileged = Boolean(
+      req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
+    );
+    const myId = req.user ? req.user.id : null;
+
     const latParam = req.query.latitude ?? req.query.lat;
     const lngParam = req.query.longitude ?? req.query.lng ?? req.query.lon;
     const radiusParam = req.query.radiusKm ?? req.query.radius;
+
+    const decorate = (reports) => reports.map((r) => {
+      const safe = toSafeReport(r);
+      const tally = db.getReportVoteTally(r.id);
+      safe.upvotes = tally.upvotes;
+      safe.downvotes = tally.downvotes;
+      safe.expired = Boolean(
+        r.status === 'pending' &&
+        r.createdAt &&
+        (Date.now() - new Date(r.createdAt).getTime()) > REPORT_FRESHNESS_WINDOW_MS
+      );
+      safe.isMine = Boolean(myId && r.reportedBy === myId);
+      const myVote = myId ? db.getUserReportVote(r.id, myId) : null;
+      safe.myVote = myVote ? myVote.vote : null;
+      return safe;
+    });
+
+    // M2.4 freshness: expired unverified reports drop out of the default feed
+    const isFreshEnough = (r) => !(
+      r.status === 'pending' &&
+      r.createdAt &&
+      (Date.now() - new Date(r.createdAt).getTime()) > REPORT_FRESHNESS_WINDOW_MS
+    );
 
     if (latParam !== undefined && lngParam !== undefined && latParam !== '' && lngParam !== '') {
       const targetLat = Number(latParam);
@@ -39,23 +74,27 @@ function list(req, res, next) {
           status: filter.status,
           reportedBy: filter.reportedBy
         });
-        const nearbyReports = findNearby(allMatching, targetLat, targetLng, radiusKm);
+        const nearbyReports = findNearby(
+          allMatching.filter((r) => isPrivileged || r.reportedBy === myId || isFreshEnough(r)),
+          targetLat, targetLng, radiusKm
+        );
         const sliced = nearbyReports.slice(0, parsedLimit);
         return res.status(200).json({
           success: true,
           count: sliced.length,
-          data: sliced.map(r => toSafeReport(r))
+          data: decorate(sliced)
         });
       }
     }
 
     filter.limit = parsedLimit;
-    const reports = db.getAllReports(filter);
+    const reports = db.getAllReports(filter)
+      .filter((r) => isPrivileged || r.reportedBy === myId || isFreshEnough(r));
 
     res.status(200).json({
       success: true,
       count: reports.length,
-      data: reports.map(r => toSafeReport(r))
+      data: decorate(reports)
     });
   } catch (err) {
     next(err);
@@ -64,8 +103,34 @@ function list(req, res, next) {
 
 function create(req, res, next) {
   try {
+    // M2.1: community reports require an OTP-verified authenticated account —
+    // guests can view but not submit (anti-fake-report gating).
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'SIGN_IN_REQUIRED',
+          message: 'Sign in with a verified account to submit community reports.',
+          details: []
+        }
+      });
+    }
+
+    // M2.5: banned users cannot create reports (SOS/tracking/chat/dialer are
+    // NEVER gated — safety invariants are absolute).
+    if (req.user.banned) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'INSUFFICIENT_REPUTATION',
+          message: 'This account is banned from community submissions after repeated false reports.',
+          details: []
+        }
+      });
+    }
+
     const { type, description, location, latitude, longitude, attachments, photoUrl } = req.body;
-    const reportedBy = req.user ? req.user.id : null;
+    const reportedBy = req.user.id;
 
     const report = createReport({
       type,
@@ -78,6 +143,13 @@ function create(req, res, next) {
       photoUrl: photoUrl || null
     });
 
+    // M2.4: unverified reports expire 24h after creation — stale unverified
+    // reports auto-archive so old incidents don't linger on the live feed.
+    const FRESHNESS_WINDOW_MS = 24 * 60 * 60 * 1000;
+    report.expiresAt = new Date(
+      new Date(report.createdAt).getTime() + FRESHNESS_WINDOW_MS
+    ).toISOString();
+
     const saved = db.saveReport(report);
     const safeReport = toSafeReport(saved);
 
@@ -86,6 +158,91 @@ function create(req, res, next) {
       message: 'Incident report submitted successfully',
       data: safeReport,
       report: safeReport
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * M2.3: Community voting — one vote per verified user per report
+ * ('confirm' | 'decline'). Banned users cannot vote.
+ */
+function vote(req, res, next) {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Sign in to vote on community reports.',
+          details: []
+        }
+      });
+    }
+
+    if (req.user.banned) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'INSUFFICIENT_REPUTATION',
+          message: 'This account is banned from community voting after repeated false reports.',
+          details: []
+        }
+      });
+    }
+
+    const { id } = req.params;
+    const { vote } = req.body || {};
+
+    if (vote !== 'confirm' && vote !== 'decline') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'vote must be "confirm" or "decline".',
+          details: []
+        }
+      });
+    }
+
+    const report = db.findReportById(id);
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'REPORT_NOT_FOUND',
+          message: `Report with ID ${id} not found`,
+          details: []
+        }
+      });
+    }
+
+    const crypto = require('crypto');
+    const voteRecord = {
+      id: `vte_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      reportId: id,
+      userId: req.user.id,
+      vote,
+      createdAt: new Date().toISOString()
+    };
+    db.saveReportVote(voteRecord);
+
+    const tally = db.getReportVoteTally(id);
+    db.updateReport(id, {
+      upvotes: tally.upvotes,
+      downvotes: tally.downvotes
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Vote recorded: ${vote}`,
+      data: {
+        reportId: id,
+        myVote: vote,
+        upvotes: tally.upvotes,
+        downvotes: tally.downvotes
+      }
     });
   } catch (err) {
     next(err);
@@ -162,8 +319,43 @@ function updateStatus(req, res, next) {
       });
     }
 
-    const updated = db.updateReport(id, { status });
+    // M2.5: verified reports persist — clear the freshness expiry on verdicts
+    const updates = { status };
+    if (status === 'verified' || status === 'resolved') updates.expiresAt = null;
+    const updated = db.updateReport(id, updates);
     const safeReport = toSafeReport(updated);
+
+    // M2.5/M2.6: moderator verdicts drive reporter reputation, strikes, and
+    // bans. 'verified' = accurate report (+10, expiry cleared — verified
+    // reports persist); 'rejected' = false report (-20, +1 strike, 3 strikes
+    // = banned from community submissions). SOS/tracking/chat/dialer are
+    // NEVER gated by any of this (safety invariants are absolute).
+    if (updated.reportedBy) {
+      const reporter = db.findUserById(updated.reportedBy);
+      if (reporter) {
+        let reputation = Number(reporter.reputationScore || 0);
+        let strikes = Number(reporter.strikes || 0);
+        let banned = Boolean(reporter.banned);
+
+        if (status === 'verified') {
+          reputation += 10;
+        } else if (status === 'rejected') {
+          reputation -= 20;
+          strikes += 1;
+          if (strikes >= 3) banned = true;
+        }
+
+        if (reputation !== Number(reporter.reputationScore || 0) ||
+            strikes !== Number(reporter.strikes || 0) ||
+            banned !== Boolean(reporter.banned)) {
+          db.updateUser(reporter.id, {
+            reputationScore: reputation,
+            strikes,
+            banned
+          });
+        }
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -180,5 +372,6 @@ module.exports = {
   list,
   create,
   getById,
-  updateStatus
+  updateStatus,
+  vote
 };

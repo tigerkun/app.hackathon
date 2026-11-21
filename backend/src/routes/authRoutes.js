@@ -35,6 +35,9 @@ router.post('/otp/verify', otpLimiter, validateOtpVerify, authController.verifyO
 // M1.6b: Forgot-PIN recovery — phone OTP + new PIN
 router.post('/pin/reset', authLimiter, validatePinReset, authController.resetPin);
 
+// M2.2: Aadhaar-lite abuse-prevention link (salted hash of last 4 digits)
+router.post('/aadhaar/link', requireAuth, authController.linkAadhaarLast4);
+
 // Session token refresh
 router.post('/refresh', validateRefresh, authController.refresh);
 

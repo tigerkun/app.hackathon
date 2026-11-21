@@ -170,6 +170,17 @@ class DataStore {
         createdAt TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_sos_messages_alertId ON sos_messages(alertId, createdAt);
+
+      -- M2 Community trust: one vote per verified user per report
+      CREATE TABLE IF NOT EXISTS report_votes (
+        id TEXT PRIMARY KEY,
+        reportId TEXT NOT NULL,
+        userId TEXT NOT NULL,
+        vote TEXT NOT NULL CHECK (vote IN ('confirm', 'decline')),
+        createdAt TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_report_votes_report ON report_votes(reportId, vote);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_report_votes_unique ON report_votes(reportId, userId);
     `);
 
     try {
@@ -210,6 +221,31 @@ class DataStore {
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE tracking_sessions ADD COLUMN missedCheckIns INTEGER NOT NULL DEFAULT 0");
+    } catch (_) {}
+    // M2 Community trust: reputation, strikes, bans, Aadhaar-lite hash
+    try {
+      this.db.exec("ALTER TABLE users ADD COLUMN reputationScore INTEGER NOT NULL DEFAULT 0");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE users ADD COLUMN strikes INTEGER NOT NULL DEFAULT 0");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE users ADD COLUMN aadhaarLast4Salt TEXT");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE users ADD COLUMN aadhaarLast4Hash TEXT");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE reports ADD COLUMN expiresAt TEXT");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE reports ADD COLUMN upvotes INTEGER NOT NULL DEFAULT 0");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE reports ADD COLUMN downvotes INTEGER NOT NULL DEFAULT 0");
     } catch (_) {}
   }
 
@@ -339,6 +375,53 @@ class DataStore {
     }
   }
 
+  // ==========================================
+  // M2 Community Trust Repository
+  // ==========================================
+
+  /**
+   * Records or replaces a user's vote on a report (one vote per user per
+   * report — changing the vote overwrites the previous one).
+   */
+  saveReportVote({ id, reportId, userId, vote, createdAt }) {
+    this.db.prepare(`
+      INSERT INTO report_votes (id, reportId, userId, vote, createdAt)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(reportId, userId) DO UPDATE SET
+        vote = excluded.vote,
+        createdAt = excluded.createdAt
+    `).run(id, reportId, userId, vote, createdAt);
+  }
+
+  getReportVotes(reportId) {
+    return this.db
+      .prepare('SELECT * FROM report_votes WHERE reportId = ?')
+      .all(reportId);
+  }
+
+  getUserReportVote(reportId, userId) {
+    if (!reportId || !userId) return null;
+    return this.db
+      .prepare('SELECT * FROM report_votes WHERE reportId = ? AND userId = ? LIMIT 1')
+      .get(reportId, userId);
+  }
+
+  /**
+   * Vote tally for a report: { upvotes, downvotes }.
+   */
+  getReportVoteTally(reportId) {
+    const row = this.db.prepare(`
+      SELECT
+        SUM(CASE WHEN vote = 'confirm' THEN 1 ELSE 0 END) AS upvotes,
+        SUM(CASE WHEN vote = 'decline' THEN 1 ELSE 0 END) AS downvotes
+      FROM report_votes WHERE reportId = ?
+    `).get(reportId);
+    return {
+      upvotes: Number(row?.upvotes || 0),
+      downvotes: Number(row?.downvotes || 0)
+    };
+  }
+
   close() {
     if (this.db) {
       try {
@@ -417,6 +500,11 @@ class DataStore {
       biometricsEnabled: Boolean(row.biometricsEnabled),
       emergencyContacts: Array.isArray(emergencyContacts) ? emergencyContacts.map((c) => ({ ...c })) : [],
       isActive: Boolean(row.isActive),
+      reputationScore: Number(row.reputationScore || 0),
+      strikes: Number(row.strikes || 0),
+      banned: Boolean(row.banned),
+      aadhaarLast4Salt: row.aadhaarLast4Salt ?? null,
+      aadhaarLast4Hash: row.aadhaarLast4Hash ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt
     };
@@ -466,8 +554,9 @@ class DataStore {
     this.db.prepare(`
       INSERT INTO users (
         id, name, email, phone, role, passwordHash, pin, pinHash, biometricToken,
-        biometricsEnabled, emergencyContacts, isActive, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        biometricsEnabled, emergencyContacts, isActive, createdAt, updatedAt,
+        reputationScore, strikes, banned, aadhaarLast4Salt, aadhaarLast4Hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         email = excluded.email,
@@ -481,7 +570,12 @@ class DataStore {
         emergencyContacts = excluded.emergencyContacts,
         isActive = excluded.isActive,
         createdAt = excluded.createdAt,
-        updatedAt = excluded.updatedAt
+        updatedAt = excluded.updatedAt,
+        reputationScore = excluded.reputationScore,
+        strikes = excluded.strikes,
+        banned = excluded.banned,
+        aadhaarLast4Salt = excluded.aadhaarLast4Salt,
+        aadhaarLast4Hash = excluded.aadhaarLast4Hash
     `).run(
       user.id,
       user.name ?? '',
@@ -496,7 +590,12 @@ class DataStore {
       emergencyContactsStr,
       user.isActive !== undefined ? (user.isActive ? 1 : 0) : 1,
       user.createdAt || new Date().toISOString(),
-      updatedAt
+      updatedAt,
+      user.reputationScore !== undefined && user.reputationScore !== null ? Number(user.reputationScore) : 0,
+      user.strikes !== undefined && user.strikes !== null ? Number(user.strikes) : 0,
+      user.banned !== undefined && user.banned !== null ? (user.banned ? 1 : 0) : 0,
+      user.aadhaarLast4Salt ?? null,
+      user.aadhaarLast4Hash ?? null
     );
 
     return this.findUserById(user.id);
@@ -663,6 +762,9 @@ class DataStore {
       reportedBy: row.reportedBy ?? null,
       attachments: Array.isArray(attachments) ? attachments.map((a) => (typeof a === 'object' && a !== null ? { ...a } : a)) : [],
       photoUrl: row.photoUrl ?? null,
+      expiresAt: row.expiresAt ?? null,
+      upvotes: Number(row.upvotes || 0),
+      downvotes: Number(row.downvotes || 0),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt
     };
@@ -715,8 +817,9 @@ class DataStore {
     this.db.prepare(`
       INSERT INTO reports (
         id, type, description, location, latitude, longitude,
-        status, reportedBy, attachments, photoUrl, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        status, reportedBy, attachments, photoUrl, createdAt, updatedAt,
+        expiresAt, upvotes, downvotes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         type = excluded.type,
         description = excluded.description,
@@ -728,7 +831,10 @@ class DataStore {
         attachments = excluded.attachments,
         photoUrl = excluded.photoUrl,
         createdAt = excluded.createdAt,
-        updatedAt = excluded.updatedAt
+        updatedAt = excluded.updatedAt,
+        expiresAt = excluded.expiresAt,
+        upvotes = excluded.upvotes,
+        downvotes = excluded.downvotes
     `).run(
       report.id,
       report.type ?? '',
@@ -741,7 +847,10 @@ class DataStore {
       attachmentsStr,
       report.photoUrl ?? null,
       report.createdAt || new Date().toISOString(),
-      updatedAt
+      updatedAt,
+      report.expiresAt ?? null,
+      report.upvotes !== undefined && report.upvotes !== null ? Number(report.upvotes) : 0,
+      report.downvotes !== undefined && report.downvotes !== null ? Number(report.downvotes) : 0
     );
 
     return this.findReportById(report.id);

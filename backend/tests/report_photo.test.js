@@ -6,11 +6,15 @@
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { startTestServer } = require('./helpers/testApp');
+const bcrypt = require('bcryptjs');
 const { db } = require('../src/data/store');
+const { createUser } = require('../src/models/userModel');
+const { signAccessToken } = require('../src/services/tokenService');
+const { startTestServer } = require('./helpers/testApp');
 
 describe('F5-4: Incident Report Photo Attachments', () => {
   let serverHarness;
+  let m2AuthHeaders;
 
   before(async () => {
     serverHarness = await startTestServer();
@@ -24,6 +28,14 @@ describe('F5-4: Incident Report Photo Attachments', () => {
 
   beforeEach(() => {
     db.reset();
+    // M2.1: reports require an authenticated account — mint one per test
+    const user = db.saveUser(createUser({
+      name: 'Photo Test User',
+      email: 'photo.test@safesphere.test',
+      phone: '+918800200001',
+      passwordHash: bcrypt.hashSync('Str0ngPass!23', 8)
+    }));
+    m2AuthHeaders = { Authorization: `Bearer ${signAccessToken(user, null)}` };
   });
 
   // Minimal 1x1 valid JPEG image buffer
@@ -46,6 +58,7 @@ describe('F5-4: Incident Report Photo Attachments', () => {
   it('successfully creates report with JPEG data URL photo attachment', async () => {
     const res = await serverHarness.request('/api/v1/reports', {
       method: 'POST',
+      headers: m2AuthHeaders,
       body: {
         type: 'Harassment',
         description: 'Streetlight outage near metro gate 2',
@@ -68,6 +81,7 @@ describe('F5-4: Incident Report Photo Attachments', () => {
   it('successfully creates report with PNG data URL photo attachment', async () => {
     const res = await serverHarness.request('/api/v1/reports', {
       method: 'POST',
+      headers: m2AuthHeaders,
       body: {
         type: 'Accident',
         description: 'Pothole obstruction',
@@ -85,6 +99,7 @@ describe('F5-4: Incident Report Photo Attachments', () => {
   it('normalizes raw base64 without data: prefix into valid data URL', async () => {
     const res = await serverHarness.request('/api/v1/reports', {
       method: 'POST',
+      headers: m2AuthHeaders,
       body: {
         type: 'Theft',
         description: 'Bicycle stolen near library',
@@ -108,6 +123,7 @@ describe('F5-4: Incident Report Photo Attachments', () => {
 
     const res = await serverHarness.request('/api/v1/reports', {
       method: 'POST',
+      headers: m2AuthHeaders,
       body: {
         type: 'Theft',
         description: 'Test oversize photo',
@@ -128,6 +144,7 @@ describe('F5-4: Incident Report Photo Attachments', () => {
     const textBase64 = Buffer.from('This is not an image file. Plain text.').toString('base64');
     const res = await serverHarness.request('/api/v1/reports', {
       method: 'POST',
+      headers: m2AuthHeaders,
       body: {
         type: 'Suspicious',
         description: 'Test invalid mime',
@@ -147,6 +164,7 @@ describe('F5-4: Incident Report Photo Attachments', () => {
   it('accepts report without photoBase64, setting photoUrl to null', async () => {
     const res = await serverHarness.request('/api/v1/reports', {
       method: 'POST',
+      headers: m2AuthHeaders,
       body: {
         type: 'Other',
         description: 'Report without any photo',

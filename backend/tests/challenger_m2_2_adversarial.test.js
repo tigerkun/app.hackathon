@@ -63,6 +63,7 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
       ...(options.headers || {})
     };
 
+    console.log('[dbg] fetching', url);
     const response = await fetch(url, {
       method: options.method || 'GET',
       headers,
@@ -76,6 +77,7 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
       jsonBody = null;
     }
 
+    console.log('[dbg] done', url, response.status);
     return {
       status: response.status,
       headers: response.headers,
@@ -353,7 +355,7 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
       assert.equal(res.body.error.code, 'REPORT_NOT_FOUND');
     });
 
-    it('creates a report anonymously when unauthenticated', async () => {
+    it('rejects anonymous report submission with 401 (M2.1 auth gate)', async () => {
       const payload = {
         type: 'Suspicious',
         description: 'Broken street lamp creating a blind corner',
@@ -367,11 +369,8 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
         body: payload
       });
 
-      assert.equal(res.status, 201);
-      assert.equal(res.body.success, true);
-      assert.equal(res.body.data.type, 'Suspicious');
-      assert.equal(res.body.data.reportedBy, null);
-      assert.ok(res.body.data.id);
+      assert.equal(res.status, 401);
+      assert.equal(res.body.success, false);
     });
 
     it('associates report with user ID when valid Bearer token is provided', async () => {
@@ -398,9 +397,12 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
     });
 
     it('rejects report when description or location is missing or empty whitespace', async () => {
+      const demoUser = db.findUserByEmail('demo@safesphere.org');
+      const demoToken = signAccessToken(demoUser);
       // Missing description
       const res1 = await apiRequest('/api/v1/reports', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${demoToken}` },
         body: { type: 'Theft', location: 'Market' }
       });
       assert.equal(res1.status, 400);
@@ -409,6 +411,7 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
       // Empty whitespace description
       const res2 = await apiRequest('/api/v1/reports', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${demoToken}` },
         body: { description: '   ', location: 'Market' }
       });
       assert.equal(res2.status, 400);
@@ -416,12 +419,15 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
       // Missing location
       const res3 = await apiRequest('/api/v1/reports', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${demoToken}` },
         body: { description: 'Someone running away' }
       });
       assert.equal(res3.status, 400);
     });
 
     it('handles adversarial strings: XSS vectors, SQL injections, and multi-byte Unicode', async () => {
+      const demoUser2 = db.findUserByEmail('demo@safesphere.org');
+      const demoToken2 = signAccessToken(demoUser2);
       const payload = {
         type: 'Other',
         description: "<script>alert('xss')</script> -- \"; DROP TABLE reports; -- 🚨⚠️ सुरक्षित क्षेत्र",
@@ -432,6 +438,7 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
 
       const res = await apiRequest('/api/v1/reports', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${demoToken2}` },
         body: payload
       });
 
@@ -442,6 +449,8 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
     });
 
     it('normalizes unrecognized report type to "Other"', async () => {
+      const demoUser3 = db.findUserByEmail('demo@safesphere.org');
+      const demoToken3 = signAccessToken(demoUser3);
       const payload = {
         type: 'UNRECOGNIZED_WEIRD_CATEGORY_123',
         description: 'Odd sound reported near alleyway',
@@ -450,6 +459,7 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
 
       const res = await apiRequest('/api/v1/reports', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${demoToken3}` },
         body: payload
       });
 

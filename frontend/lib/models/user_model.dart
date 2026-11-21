@@ -45,6 +45,9 @@ class UserModel {
   final bool isGuest;
   final bool hasPin;
   final bool biometricsEnabled;
+  final int reputationScore;
+  final bool trustedReporter;
+  final bool aadhaarLinked;
   final DateTime createdAt;
 
   const UserModel({
@@ -59,6 +62,9 @@ class UserModel {
     this.isGuest = false,
     this.hasPin = false,
     this.biometricsEnabled = false,
+    this.reputationScore = 0,
+    this.trustedReporter = false,
+    this.aadhaarLinked = false,
     required this.createdAt,
   });
 
@@ -108,6 +114,9 @@ class UserModel {
       isGuest: json['isGuest'] as bool? ?? false,
       hasPin: json['hasPin'] as bool? ?? (json['pin'] != null),
       biometricsEnabled: json['biometricsEnabled'] as bool? ?? false,
+      reputationScore: json['reputationScore'] as int? ?? 0,
+      trustedReporter: json['trustedReporter'] as bool? ?? false,
+      aadhaarLinked: json['aadhaarLinked'] as bool? ?? false,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
           : DateTime.now(),

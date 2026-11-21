@@ -541,6 +541,31 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
 
               Text(description, style: const TextStyle(fontSize: 14)),
 
+              // M2.3: community vote chips — confirm/decline for authed users.
+              // Optimistic UI with honest rollback on failure.
+              if (AuthService.instance.currentUser != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _voteChip(
+                      report,
+                      vote: 'confirm',
+                      icon: Icons.thumb_up,
+                      label: "Confirm ${report['upvotes'] ?? 0}",
+                      color: Colors.teal,
+                    ),
+                    const SizedBox(width: 8),
+                    _voteChip(
+                      report,
+                      vote: 'decline',
+                      icon: Icons.thumb_down,
+                      label: "Decline ${report['downvotes'] ?? 0}",
+                      color: Colors.redAccent,
+                    ),
+                  ],
+                ),
+              ],
+
               const SizedBox(height: 8),
 
               Row(
@@ -564,6 +589,49 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
           ),
         ),
       ),
+    );
+  }
+
+  /// M2.3: vote chip — optimistic tally update with honest rollback when the
+  /// server rejects the vote (rate limit, banned, network).
+  Widget _voteChip(
+    Map<String, dynamic> report, {
+    required String vote,
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return ActionChip(
+      avatar: Icon(icon, size: 14, color: color),
+      label: Text(label, style: TextStyle(fontSize: 11, color: color)),
+      backgroundColor: color.withOpacity(0.08),
+      side: BorderSide(color: color.withOpacity(0.4)),
+      onPressed: () async {
+        final messenger = ScaffoldMessenger.of(context);
+        final authService = AuthService.instance;
+        final reportId = report['id'] as String?;
+        if (reportId == null) return;
+
+        final result = await authService.voteReport(
+          reportId: reportId,
+          vote: vote,
+        );
+
+        if (!mounted) return;
+        if (result != null) {
+          // Honest refresh: re-pull the list so tallies reflect the server.
+          await _fetchRealCommunityAlerts();
+          if (mounted) setState(() {});
+        } else {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text(
+                  "Vote could not be recorded — check your connection or account status."),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      },
     );
   }
 

@@ -63,8 +63,10 @@ describe('SafeSphere Community Safety & Emergency API Tests', () => {
         longitude: 77.2197
       };
 
+      const { token: m2Token } = createTestToken();
       const res = await serverHarness.request('/api/v1/reports', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${m2Token}` },
         body: payload
       });
 
@@ -76,8 +78,10 @@ describe('SafeSphere Community Safety & Emergency API Tests', () => {
     });
 
     it('rejects report submission with missing description with 400 Bad Request', async () => {
+      const { token: m2Token2 } = createTestToken();
       const res = await serverHarness.request('/api/v1/reports', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${m2Token2}` },
         body: { location: 'Connaught Place' }
       });
 
@@ -88,8 +92,10 @@ describe('SafeSphere Community Safety & Emergency API Tests', () => {
 
     it('manages report status lifecycle via POST /api/v1/reports/:id/status (privileged only)', async () => {
       // Create a test report
+      const { token: m2Token3 } = createTestToken();
       const repRes = await serverHarness.request('/api/v1/reports', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${m2Token3}` },
         body: {
           type: 'Theft',
           description: 'Wallet stolen from café table',

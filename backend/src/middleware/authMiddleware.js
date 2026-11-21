@@ -129,7 +129,24 @@ function optionalAuth(req, res, next) {
   next();
 }
 
+// M2.5: banned users are locked out of community *contributions* only —
+// SOS, tracking, chat, and the dialer are NEVER gated (safety invariants).
+function rejectBanned(req, res, next) {
+  if (req.user && req.user.banned) {
+    return res.status(403).json({
+      success: false,
+      error: {
+        code: 'INSUFFICIENT_REPUTATION',
+        message: 'This account is banned from community contributions after repeated false reports.',
+        details: []
+      }
+    });
+  }
+  next();
+}
+
 module.exports = {
   requireAuth,
-  optionalAuth
+  optionalAuth,
+  rejectBanned
 };

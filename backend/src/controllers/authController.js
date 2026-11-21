@@ -146,6 +146,49 @@ async function verifyOtp(req, res, next) {
 }
 
 /**
+ * M2.2: Aadhaar-lite abuse-prevention link — stores ONLY a salted SHA-256
+ * hash of the last 4 digits. Never the full Aadhaar, never plaintext.
+ * Consent copy lives in the client dialog that calls this endpoint.
+ */
+async function linkAadhaarLast4(req, res, next) {
+  try {
+    const { aadhaarLast4 } = req.body || {};
+    if (!aadhaarLast4 || !/^\d{4}$/.test(String(aadhaarLast4).trim())) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'aadhaarLast4 must be exactly 4 digits.',
+          details: []
+        }
+      });
+    }
+
+    const crypto = require('crypto');
+    const { db } = require('../data/store');
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto
+      .createHash('sha256')
+      .update(salt + String(aadhaarLast4).trim())
+      .digest('hex');
+
+    db.updateUser(req.userId, {
+      aadhaarLast4Salt: salt,
+      aadhaarLast4Hash: hash
+    });
+
+    res.status(200).json({
+      success: true,
+      message:
+        'Linked. Stored only as a salted SHA-256 hash — used solely to prevent ban evasion.',
+      data: { aadhaarLinked: true }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
  * M1.6b: Forgot-PIN recovery — phone + OTP + new PIN resets the account PIN
  * (bcrypt-hashed) and revokes all pre-reset sessions.
  */
@@ -339,6 +382,7 @@ module.exports = {
   sendOtp,
   verifyOtp,
   resetPin,
+  linkAadhaarLast4,
   refresh,
   me,
   logout,

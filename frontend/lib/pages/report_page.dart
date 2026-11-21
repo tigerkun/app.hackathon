@@ -25,6 +25,7 @@ class _ReportPageState extends State<ReportPage> {
   double? _latitude;
   double? _longitude;
   bool _isSubmitting = false;
+  bool _aadhaarPrompted = false;
   String? _photoBase64;
 
   final incidents = const [
@@ -102,11 +103,43 @@ class _ReportPageState extends State<ReportPage> {
       return;
     }
 
+    // M2.1: community reports require an authenticated account — guests get
+    // an honest sign-in gate instead of a fabricated submission.
+    final authService = AuthService.instance;
+    if (authService.currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              "Sign in with a verified account to submit community reports. "
+              "Guests can view alerts but not report them."),
+          backgroundColor: Colors.amber,
+        ),
+      );
+      return;
+    }
+
+    // M2.2: optional Aadhaar-lite abuse-prevention prompt on first report —
+    // skipped when already linked. Only a salted hash is stored server-side.
+    if (authService.currentUser!.aadhaarLinked == false && !_aadhaarPrompted) {
+      _aadhaarPrompted = true;
+      final linked = await _showAadhaarConsentDialog();
+      if (linked == null) return; // user cancelled — abort submission
+      if (linked && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                "Abuse-prevention link saved (salted hash only — never readable)."),
+            backgroundColor: Colors.teal,
+          ),
+        );
+      }
+      // linked == false → user skipped; continue without blocking the report
+    }
+
     setState(() => _isSubmitting = true);
     final messenger = ScaffoldMessenger.of(context);
 
     // 1. Submit to real backend via AuthService
-    final authService = AuthService.instance;
     // Send clean "lat,lng" without the "(GPS Verified)" UI tag in backend payload
     final cleanPayloadLocation = (_latitude != null && _longitude != null)
         ? "${_latitude!.toStringAsFixed(5)}, ${_longitude!.toStringAsFixed(5)}"
@@ -445,4 +478,76 @@ class _ReportPageState extends State<ReportPage> {
       ),
     );
   }
+
+  /// M2.2: consent dialog — returns true (linked), false (skipped), or
+  /// null (cancelled/aborted the report). Plaintext digits never persisted;
+  /// only a salted SHA-256 hash goes to the server.
+  Future<bool?> _showAadhaarConsentDialog() {
+    final last4Controller = TextEditingController();
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          "Prevent fake reports",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "Help us keep SafeSphere trustworthy. Provide the last 4 digits "
+              "of your Aadhaar number — stored ONLY as a salted hash that "
+              "cannot be read back. Used solely to prevent ban evasion.",
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: last4Controller,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: "Aadhaar last 4 digits",
+                counterText: "",
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "Optional — you can skip this and still file your report.",
+              style: TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text("Skip"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text("Cancel report"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final last4 = last4Controller.text.trim();
+              if (last4.length != 4 || int.tryParse(last4) == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Enter exactly 4 digits.")),
+                );
+                return;
+              }
+              final ok = await AuthService.instance.linkAadhaarLast4(last4);
+              if (!ctx.mounted) return;
+              Navigator.of(ctx).pop(ok);
+            },
+            child: const Text("Link & continue"),
+          ),
+        ],
+      ),
+    );
+  }
+
 }

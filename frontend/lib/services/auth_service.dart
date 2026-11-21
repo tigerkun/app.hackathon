@@ -1305,6 +1305,47 @@ class AuthService {
   }
 
   // ---------------------------------------------------------------------------
+  // M2.3: Community voting (POST /api/v1/reports/:id/vote)
+  // ---------------------------------------------------------------------------
+  /// Casts or switches the user's vote ('confirm' | 'decline') on a report.
+  /// Returns the updated tally { upvotes, downvotes, myVote } on success,
+  /// null on failure (callers roll back optimistic UI honestly).
+  Future<Map<String, dynamic>?> voteReport({
+    required String reportId,
+    required String vote,
+  }) async {
+    final token = await storage.getString(keyToken);
+    final res = await _requestDetailed(
+      method: 'POST',
+      path: '/api/v1/reports/$reportId/vote',
+      body: { 'vote': vote },
+      token: token,
+    );
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      return res.data!['data'] is Map<String, dynamic>
+          ? res.data!['data'] as Map<String, dynamic>
+          : null;
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // M2.2: Aadhaar-lite abuse-prevention link (POST /api/v1/auth/aadhaar/link)
+  // ---------------------------------------------------------------------------
+  /// Links the last 4 digits of Aadhaar as a salted SHA-256 hash (server-side).
+  /// The plaintext digits are never stored. Returns true when linked.
+  Future<bool> linkAadhaarLast4(String last4) async {
+    final token = await storage.getString(keyToken);
+    final res = await _requestDetailed(
+      method: 'POST',
+      path: '/api/v1/auth/aadhaar/link',
+      body: { 'aadhaarLast4': last4 },
+      token: token,
+    );
+    return res.isSuccess && res.data != null && res.data!['success'] == true;
+  }
+
+  // ---------------------------------------------------------------------------
   // M1.6b: Forgot-PIN recovery (POST /api/v1/auth/pin/reset)
   // ---------------------------------------------------------------------------
   /// Resets the account PIN using the OTP sent to the registered phone.

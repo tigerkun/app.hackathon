@@ -150,6 +150,23 @@ describe('Hardening Wave', () => {
   });
 
   describe('4. Input length limits', () => {
+    let reportToken;
+
+    before(async () => {
+      db.saveUser(createUser({
+        id: 'usr_m2_caps',
+        name: 'Caps User',
+        email: 'caps@safesphere.test',
+        phone: '+918800200009',
+        passwordHash: bcrypt.hashSync('Str0ngPass!23', 8)
+      }));
+      const login = await t.request('/api/v1/auth/login', {
+        method: 'POST',
+        body: { emailOrPhone: 'caps@safesphere.test', password: 'Str0ngPass!23' }
+      });
+      reportToken = login.body.data.accessToken;
+    });
+
     it('rejects SOS notes longer than 500 characters', async () => {
       const res = await t.request('/api/v1/sos/trigger', {
         method: 'POST',
@@ -172,6 +189,7 @@ describe('Hardening Wave', () => {
     it('rejects direct photoUrl submission on reports (validation bypass)', async () => {
       const res = await t.request('/api/v1/reports', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${reportToken}` },
         body: {
           type: 'hazard',
           description: 'bypass attempt',
@@ -186,6 +204,7 @@ describe('Hardening Wave', () => {
     it('rejects report descriptions over 2000 characters', async () => {
       const res = await t.request('/api/v1/reports', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${reportToken}` },
         body: { type: 'hazard', description: 'z'.repeat(2001), location: 'test' }
       });
       assert.equal(res.status, 400);
@@ -195,6 +214,7 @@ describe('Hardening Wave', () => {
     it('rejects report locations over 200 characters', async () => {
       const res = await t.request('/api/v1/reports', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${reportToken}` },
         body: { type: 'hazard', description: 'fine', location: 'l'.repeat(201) }
       });
       assert.equal(res.status, 400);
@@ -205,6 +225,7 @@ describe('Hardening Wave', () => {
       for (const coords of [{ latitude: 'abc', longitude: 77.2 }, { latitude: 28.6, longitude: 'xyz' }]) {
         const res = await t.request('/api/v1/reports', {
           method: 'POST',
+          headers: { Authorization: `Bearer ${reportToken}` },
           body: { type: 'hazard', description: 'coord check', location: 'test', ...coords }
         });
         assert.equal(res.status, 400, `expected 400 for ${JSON.stringify(coords)}`);
@@ -214,6 +235,7 @@ describe('Hardening Wave', () => {
     it('accepts valid report coordinates and photoBase64 flow', async () => {
       const res = await t.request('/api/v1/reports', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${reportToken}` },
         body: { type: 'hazard', description: 'coord ok', location: 'test', latitude: 28.61, longitude: 77.21 }
       });
       assert.equal(res.status, 201);

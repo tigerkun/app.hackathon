@@ -30,6 +30,11 @@ function createUser({
   biometricsEnabled = false,
   emergencyContacts = [],
   isActive = true,
+  reputationScore = 0,
+  strikes = 0,
+  banned = false,
+  aadhaarLast4Salt = null,
+  aadhaarLast4Hash = null,
   createdAt = new Date().toISOString(),
   updatedAt = new Date().toISOString()
 }) {
@@ -39,7 +44,7 @@ function createUser({
     name: (name || '').trim(),
     email: normalizeEmail(email),
     phone: normalizePhone(phone),
-    role: (role || 'citizen').trim(),
+    role: (role || '').trim(),
     passwordHash,
     pin: resolvedPin ? String(resolvedPin).trim() : null,
     pinHash: resolvedPin ? String(resolvedPin).trim() : null,
@@ -47,6 +52,11 @@ function createUser({
     biometricsEnabled: Boolean(biometricsEnabled),
     emergencyContacts: Array.isArray(emergencyContacts) ? emergencyContacts : [],
     isActive: Boolean(isActive),
+    reputationScore: Number(reputationScore || 0),
+    strikes: Number(strikes || 0),
+    banned: Boolean(banned),
+    aadhaarLast4Salt,
+    aadhaarLast4Hash,
     createdAt,
     updatedAt
   };
@@ -54,6 +64,7 @@ function createUser({
 
 function toSafeUser(user) {
   if (!user) return null;
+  const reputationScore = Number(user.reputationScore || 0);
   return {
     id: user.id,
     name: user.name,
@@ -64,6 +75,11 @@ function toSafeUser(user) {
     biometricsEnabled: Boolean(user.biometricsEnabled),
     emergencyContacts: user.emergencyContacts || [],
     isActive: user.isActive,
+    reputationScore,
+    trustedReporter: reputationScore >= 50,
+    strikes: Number(user.strikes || 0),
+    banned: Boolean(user.banned),
+    aadhaarLinked: Boolean(user.aadhaarLast4Hash),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt
   };
