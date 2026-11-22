@@ -99,6 +99,33 @@ describe('Audit fixes — SOS idempotency, guest identity, peer projection', () 
     assert.ok(res.body.data.id || res.body.id);
   });
 
+  it('SOS idempotency key cannot replay another user’s alert', async () => {
+    const ownerToken = await loginAs(t, 'audit.owner@safesphere.test');
+    const peerToken = await loginAs(t, 'audit.peer@safesphere.test');
+    const payload = {
+      latitude: 12.9716,
+      longitude: 77.5946,
+      clientRequestId: `audit_scoped_${Date.now()}`
+    };
+    const original = await t.request('/api/v1/sos/trigger', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ownerToken}` },
+      body: payload
+    });
+    assert.equal(original.status, 201, JSON.stringify(original.body));
+    const originalId = original.body.data.id;
+    const originalHash = db.findAlertById(originalId).resolveTokenHash;
+
+    const otherUser = await t.request('/api/v1/sos/trigger', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${peerToken}` },
+      body: payload
+    });
+    assert.equal(otherUser.status, 201, JSON.stringify(otherUser.body));
+    assert.notEqual(otherUser.body.data.id, originalId);
+    assert.equal(db.findAlertById(originalId).resolveTokenHash, originalHash);
+  });
+
   it('guest share-session ignores a forged body.userId', async () => {
     const res = await t.request('/api/v1/location/share-session', {
       method: 'POST',

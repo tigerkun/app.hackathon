@@ -11,12 +11,26 @@ const { globalLimiter } = require('./middleware/rateLimiter');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
+const configuredCorsOrigins = config.corsOrigin
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+function isAllowedCorsOrigin(
+  origin,
+  allowedOrigins = configuredCorsOrigins,
+  isProduction = config.isProduction
+) {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  return !isProduction && allowedOrigins.includes('*');
+}
 
 // Security & Parsing Middleware
 app.use(cors({
-  origin: config.corsOrigin,
+  origin: (origin, callback) => callback(null, isAllowedCorsOrigin(origin)),
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
@@ -121,5 +135,6 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 module.exports = {
-  app
+  app,
+  isAllowedCorsOrigin
 };

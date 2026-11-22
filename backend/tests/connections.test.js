@@ -240,6 +240,28 @@ describe('Connections — Trusted Circle (M3)', () => {
       });
       assert.equal(res.status, 401);
     });
+
+    it('expires stale pending requests before scoped access is checked', async () => {
+      const expiredId = 'conn_expired_pending';
+      db.saveConnection({
+        id: expiredId,
+        ownerId: 'usr_m3_owner',
+        granteeId: 'usr_m3_third',
+        scopes: ['sos_status'],
+        mode: 'always',
+        status: 'pending',
+        createdAt: new Date(Date.now() - 31 * 86400000).toISOString(),
+        expiresAt: new Date(Date.now() - 86400000).toISOString()
+      });
+
+      const expired = db.findConnectionById(expiredId);
+      assert.equal(expired.status, 'expired');
+      const read = await t.request(`/api/v1/connections/${expiredId}/status`, {
+        headers: { Authorization: `Bearer ${thirdToken}` }
+      });
+      assert.equal(read.status, 403);
+      assert.equal(read.body.error.code, 'CONNECTION_REVOKED');
+    });
   });
 
   describe('Respond / accept flow', () => {
@@ -270,6 +292,7 @@ describe('Connections — Trusted Circle (M3)', () => {
       assert.equal(res.status, 200);
       assert.equal(res.body.data.connection.status, 'active');
       assert.ok(res.body.data.connection.acceptedAt);
+      assert.equal(res.body.data.connection.expiresAt, null);
     });
 
     it('double-respond → 409 CONNECTION_ALREADY_RESOLVED', async () => {

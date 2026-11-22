@@ -651,7 +651,7 @@ class TestMilestone4EmpiricalChallenger(unittest.TestCase):
         # 4. Success SnackBar & safe pop (honest offline degradation included)
         self.assertIn("Incident report submitted to SafeSphere network successfully.", self.report_code)
         # Honest offline copy: no false "will sync" promise (ReportStore is write-only)
-        self.assertIn("could not be submitted", self.report_code)
+        self.assertIn("Report was NOT submitted:", self.report_code)
         self.assertIn("Colors.green", self.report_code)
         self.assertIn("if (Navigator.canPop(context))", self.report_code)
 

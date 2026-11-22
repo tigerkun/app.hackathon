@@ -44,6 +44,7 @@ class FakeUrlLauncherPlatform extends Fake
     required bool enableDomStorage,
     required bool universalLinksOnly,
     required Map<String, String> headers,
+    String? webOnlyWindowName,
   }) async {
     launchedUrls.add(url);
     return launchResult;

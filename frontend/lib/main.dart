@@ -66,12 +66,6 @@ class _MyAppState extends State<MyApp> {
   }
 
   @override
-  void dispose() {
-    _authState.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: _authState,

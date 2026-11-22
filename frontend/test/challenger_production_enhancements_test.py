@@ -47,8 +47,8 @@ class TestProductionEnhancementsAST(unittest.TestCase):
         self.assertIn("class SosCountdownDialog extends StatefulWidget", self.emergency_code)
         self.assertIn("final int durationSeconds;", self.emergency_code)
         self.assertIn("Timer? _timer;", self.emergency_code)
-        self.assertIn("Timer.periodic(const Duration(seconds: 1)", self.emergency_code)
-        self.assertIn("Cancel SOS", self.emergency_code)
+        self.assertIn("Timer.periodic(const Duration(milliseconds: 200)", self.emergency_code)
+        self.assertIn("CANCEL SOS", self.emergency_code)
         self.assertIn("_timer?.cancel()", self.emergency_code)
 
     def test_r1_sos_grace_window_wiring(self):
@@ -134,9 +134,10 @@ class TestProductionEnhancementsAST(unittest.TestCase):
         self.assertIn("_secureStorage.write(key: keyPin, value: legacyPin)", self.auth_code)
         self.assertIn("storage.remove(keyPin)", self.auth_code)
 
-        # 3. setPin fallback: writes _secureStorage.write and falls back to storage.setString(keyPin, cleanPin)
+        # 3. File fallback stores a salted hash rather than the plaintext PIN.
         self.assertIn("_secureStorage.write(key: keyPin, value: cleanPin)", self.auth_code)
-        self.assertIn("storage.setString(keyPin, cleanPin)", self.auth_code)
+        self.assertIn("storage.setString(keyPin, _hashPinForFile(cleanPin))", self.auth_code)
+        self.assertIn("_pinHashPrefix = 'sp1\\$'", self.auth_code)
 
         # 4. removePin dual cleanup: deletes from _secureStorage and storage.remove
         self.assertIn("_secureStorage.delete(key: keyPin)", self.auth_code)

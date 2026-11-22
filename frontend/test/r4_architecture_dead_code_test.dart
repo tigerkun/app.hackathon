@@ -29,12 +29,12 @@ void main() {
       final darkTheme = AppTheme.dark();
       expect(darkTheme.brightness, Brightness.dark);
       expect(darkTheme.scaffoldBackgroundColor, AppColors.bgDark);
-      expect(darkTheme.fontFamily, 'Inter');
+      expect(darkTheme.textTheme.bodyMedium?.fontFamily, 'Inter');
 
       final lightTheme = AppTheme.light();
       expect(lightTheme.brightness, Brightness.light);
       expect(lightTheme.scaffoldBackgroundColor, AppColors.bgLight);
-      expect(lightTheme.fontFamily, 'Inter');
+      expect(lightTheme.textTheme.bodyMedium?.fontFamily, 'Inter');
     });
 
     test('ReportStore and Report model support full lifecycle operations and status counting', () {

@@ -5,6 +5,11 @@ import '../lib/pages/ai_assistant_page.dart';
 import '../lib/pages/community_alerts_page.dart';
 import '../lib/pages/report_page.dart';
 
+Future<void> _pumpUi(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(seconds: 1));
+}
+
 void main() {
   group('R2 - Tier 1: Feature Coverage (Mounted Guards & Keyboard Layout)', () {
     testWidgets('CommunityAlertsPage unmounting within 600ms does not throw unmounted setState',
@@ -26,18 +31,18 @@ void main() {
       );
 
       await tester.tap(find.text('Open Alerts'));
-      await tester.pump();
+      await _pumpUi(tester);
       expect(find.byType(CommunityAlertsPage), findsOneWidget);
 
       // Immediately pop page before the 600ms timer completes
       final navigator = Navigator.of(tester.element(find.byType(CommunityAlertsPage)));
       navigator.pop();
-      await tester.pump();
+      await _pumpUi(tester);
       expect(find.byType(CommunityAlertsPage), findsNothing);
 
       // Advance clock past 600ms timer expiration
       await tester.pump(const Duration(milliseconds: 700));
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       final exception = tester.takeException();
       expect(exception, isNull,
@@ -59,12 +64,12 @@ void main() {
           home: ReportPage(),
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
       expect(find.byType(ReportPage), findsOneWidget);
 
       // Simulate soft keyboard opening with 300px bottom view inset
       tester.view.viewInsets = const FakeViewPadding(bottom: 300);
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       final exception = tester.takeException();
       expect(exception, isNull,
@@ -100,7 +105,7 @@ void main() {
       );
 
       await tester.tap(find.text('Open Assistant'));
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       // Submit message to schedule async delayed response
       await tester.enterText(find.byType(TextField), 'Is it safe here?');
@@ -112,12 +117,12 @@ void main() {
       // Pop page immediately
       final navigator = Navigator.of(tester.element(find.byType(AiAssistantPage)));
       navigator.pop();
-      await tester.pump();
+      await _pumpUi(tester);
       expect(find.byType(AiAssistantPage), findsNothing);
 
       // Advance clock past the async reply delay
       await tester.pump(const Duration(milliseconds: 1500));
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       final exception = tester.takeException();
       expect(exception, isNull,
@@ -131,7 +136,7 @@ void main() {
           home: AiAssistantPage(),
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       final inputFinder = find.byType(TextField);
       final sendButton = find.widgetWithIcon(IconButton, Icons.arrow_upward);
@@ -151,7 +156,7 @@ void main() {
 
       // Advance clock to allow all pending AI replies to resolve completely
       await tester.pump(const Duration(seconds: 4));
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       final exception = tester.takeException();
       expect(exception, isNull,
@@ -183,11 +188,11 @@ void main() {
           home: ReportPage(),
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       // Deploy heavy keyboard inset leaving only 120px screen height
       tester.view.viewInsets = const FakeViewPadding(bottom: 360);
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       expect(tester.takeException(), isNull,
           reason: 'ReportPage must withstand extreme view constraints without layout crash');
@@ -212,7 +217,7 @@ void main() {
       );
 
       await tester.tap(find.text('Open'));
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       await tester.enterText(find.byType(TextField), 'Test query');
       expect(find.text('Test query'), findsOneWidget);
@@ -225,7 +230,7 @@ void main() {
 
       final navigator = Navigator.of(tester.element(find.byType(AiAssistantPage)));
       navigator.pop();
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
       expect(find.byType(AiAssistantPage), findsNothing);
     });
   });
@@ -241,7 +246,7 @@ void main() {
           },
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       // User types urgent query
       await tester.enterText(find.byType(TextField), 'Help, someone is following me');
@@ -252,13 +257,13 @@ void main() {
       final NavigatorState nav =
           Navigator.of(tester.element(find.byType(AiAssistantPage)));
       nav.pushNamed('/report');
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
       expect(find.byType(ReportPage), findsOneWidget);
 
       // Return back to Assistant
       nav.pop();
       await tester.pump(const Duration(seconds: 2));
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       expect(tester.takeException(), isNull);
       expect(find.byType(AiAssistantPage), findsOneWidget);

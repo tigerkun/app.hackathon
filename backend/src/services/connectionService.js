@@ -20,6 +20,7 @@ const VALID_MODES = ['always', 'sos_only'];
 const MAX_PENDING_REQUESTS_PER_USER = 20;
 const MAX_CONNECTIONS_PER_USER = 25;
 const CHECKIN_RATE_LIMIT_MS = 5 * 60 * 1000;
+const PENDING_REQUEST_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function generateConnectionId() {
   return `conn_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
@@ -132,7 +133,8 @@ function requestConnection({ requester, ownerSafeId, scopes, mode }) {
     scopes: uniqueScopes,
     mode,
     status: 'pending',
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + PENDING_REQUEST_TTL_MS).toISOString()
   });
 
   return {
@@ -182,7 +184,8 @@ function respondToConnection({ connectionId, responder, accept }) {
     ...conn,
     status: accept ? 'active' : 'revoked',
     acceptedAt: accept ? new Date().toISOString() : conn.acceptedAt,
-    revokedAt: accept ? null : new Date().toISOString()
+    revokedAt: accept ? null : new Date().toISOString(),
+    expiresAt: null
   });
 }
 

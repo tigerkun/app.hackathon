@@ -69,7 +69,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
   void dispose() {
     GestureService.instance.stopListening();
     _sosPollTimer?.cancel();
-    _teardownChat();
+    _teardownChat(updateUi: false);
     _chatController.dispose();
     _chatScrollController.dispose();
     super.dispose();
@@ -118,12 +118,12 @@ class _EmergencyPageState extends State<EmergencyPage> {
   }
 
   Future<void> _initChat(String alertId) async {
-    _resolveToken = await AuthService.instance.storage.getString(AuthService.keyActiveSosResolveToken);
+    _resolveToken = await AuthService.instance.getSosResolveToken(alertId);
     await _loadChatMessages(alertId);
     unawaited(_connectChatWs(alertId));
   }
 
-  void _teardownChat() {
+  void _teardownChat({bool updateUi = true}) {
     _chatWsGeneration++;
     _chatPollTimer?.cancel();
     _chatPollTimer = null;
@@ -131,7 +131,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
       _chatWs?.close();
     } catch (_) {}
     _chatWs = null;
-    if (mounted) {
+    if (updateUi && mounted) {
       setState(() {
         _isWsConnected = false;
         _chatMessages = [];

@@ -114,6 +114,20 @@ const markerLimiter = createRateLimiter({
   skipInTest: true
 });
 
+const sosLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: 'Too many SOS requests. Please wait before trying again.',
+  skipInTest: true
+});
+
+const locationLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 120,
+  message: 'Too many location updates. Please wait before retrying.',
+  skipInTest: true
+});
+
 module.exports = {
   createRateLimiter,
   globalLimiter,
@@ -121,5 +135,7 @@ module.exports = {
   reportLimiter,
   aiLimiter,
   otpLimiter,
-  markerLimiter
+  markerLimiter,
+  sosLimiter,
+  locationLimiter
 };

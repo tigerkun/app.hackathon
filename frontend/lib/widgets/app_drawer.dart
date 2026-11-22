@@ -270,25 +270,25 @@ class AppDrawer extends StatelessWidget {
               const Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Icon(Icons.shield_outlined, color: AppColors.amber, size: 36),
-                  Icon(Icons.account_circle, color: Colors.white70, size: 28),
+                  Icon(Icons.shield_outlined, color: AppColors.amber, size: 28),
+                  Icon(Icons.account_circle, color: Colors.white70, size: 24),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 2),
               const Text(
                 "SafeSphere",
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 22,
+                  fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               const Text(
                 "Guest Mode - Limited protection active",
-                style: TextStyle(color: Colors.white60, fontSize: 12),
+                style: TextStyle(color: Colors.white60, fontSize: 10),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 2),
               ElevatedButton.icon(
                 onPressed: () {
                   Navigator.pop(context);
@@ -300,7 +300,8 @@ class AppDrawer extends StatelessWidget {
                   backgroundColor: AppColors.teal,
                   foregroundColor: Colors.black87,
                   visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  minimumSize: const Size(0, 32),
                 ),
               ),
             ],

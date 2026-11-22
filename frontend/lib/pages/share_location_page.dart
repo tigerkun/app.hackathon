@@ -126,6 +126,8 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
     }
 
     setState(() => _isStartingSession = true);
+    String? createdSessionId;
+    String? createdSessionToken;
 
     try {
       // 1. Create backend tracking session via AuthService
@@ -143,6 +145,8 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
 
       final sessionId = sessionData['sessionId'] as String;
       final sessionToken = sessionData['token'] as String;
+      createdSessionId = sessionId;
+      createdSessionToken = sessionToken;
 
       // M6 orphan guard: if the page was disposed while the session was being
       // created, the backend now holds a LIVE tracking session nobody is
@@ -167,6 +171,11 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
       // block below is skipped when unmounted, so _ws is never assigned).
       if (!mounted) {
         await ws.close().catchError((_) {});
+        await AuthService.instance.terminateTrackingSession(
+          sessionId: sessionId,
+          trackingToken: sessionToken,
+          reason: 'Share page closed during session setup',
+        );
         return;
       }
 
@@ -203,6 +212,8 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
       _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
         _sendLocationPing();
       });
+      createdSessionId = null;
+      createdSessionToken = null;
 
       // 5. Share the tracking URL immediately via SMS/messaging. The URL carries
       //    the session token (the credential) — the guardian pastes it into
@@ -212,11 +223,22 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
         'Track me: open SafeSphere → "Watch Live Trip" and paste this link:\n$shareUrl',
       );
     } catch (e) {
+      var cleanupFailed = false;
+      if (createdSessionId != null && createdSessionToken != null) {
+        cleanupFailed = !await AuthService.instance.terminateTrackingSession(
+          sessionId: createdSessionId,
+          trackingToken: createdSessionToken,
+          reason: 'Live tracking setup failed',
+        );
+      }
       if (mounted) {
         setState(() => _isStartingSession = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not start live tracking session: $e'),
+            content: Text(
+              'Could not start live tracking session: $e'
+              '${cleanupFailed ? '. The session may still be active.' : ''}',
+            ),
             backgroundColor: Colors.redAccent,
           ),
         );

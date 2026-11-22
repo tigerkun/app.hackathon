@@ -58,7 +58,7 @@ class FakeGeolocatorPlatform extends Fake
   }
 
   @override
-  Future<Position?> getLastKnownPosition({bool forceAndroidLocationManager = false}) async {
+  Future<Position?> getLastKnownPosition({bool forceLocationManager = false}) async {
     if (shouldThrowError) {
       throw Exception(errorMessage);
     }

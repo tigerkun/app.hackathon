@@ -5,12 +5,16 @@ import 'package:geolocator_platform_interface/geolocator_platform_interface.dart
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 
 import '../lib/data/report_store.dart';
-import '../lib/models/report_model.dart';
 import '../lib/pages/emergency_page.dart';
 import '../lib/pages/report_page.dart';
 import '../lib/pages/share_location_page.dart';
 import 'mocks/fake_geolocator.dart';
 import 'mocks/fake_url_launcher.dart';
+
+Future<void> _pumpUi(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(seconds: 1));
+}
 
 void main() {
   final fakeLauncher = FakeUrlLauncherPlatform();
@@ -27,11 +31,11 @@ void main() {
     lastSharedText = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('dev.fluttercommunity.plus/share/share'),
+      const MethodChannel('dev.fluttercommunity.plus/share'),
       (MethodCall methodCall) async {
         if (methodCall.method == 'share' || methodCall.method == 'shareUri') {
           lastSharedText = methodCall.arguments['text'] as String?;
-          return true;
+          return 'success';
         }
         return null;
       },
@@ -42,17 +46,17 @@ void main() {
       (MethodCall methodCall) async {
         if (methodCall.method == 'share') {
           lastSharedText = methodCall.arguments['text'] as String?;
-          return true;
+          return 'success';
         }
         return null;
       },
     );
 
-    ReportStore.reports.clear();
+    ReportStore.clear();
   });
 
   tearDown(() {
-    ReportStore.reports.clear();
+    ReportStore.clear();
   });
 
   group('R3 - Tier 1: Feature Coverage (Emergency Actions & Dynamic GPS)', () {
@@ -63,14 +67,14 @@ void main() {
           home: EmergencyPage(),
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       // Find and tap the Call Emergency card (title: "Call Emergency", subtitle: "Dial 112 for immediate help")
       final emergencyCardFinder = find.text("Call Emergency");
       expect(emergencyCardFinder, findsOneWidget);
 
       await tester.tap(emergencyCardFinder);
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       expect(fakeLauncher.launchedUrls.contains('tel:112'), isTrue,
           reason: 'Tapping Call Emergency must trigger url_launcher with "tel:112"');
@@ -83,7 +87,7 @@ void main() {
           home: EmergencyPage(),
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       final helplineExpectations = {
         'Women Helpline': 'tel:181',
@@ -99,14 +103,14 @@ void main() {
         expect(cardFinder, findsOneWidget, reason: 'Helpline card "$title" must exist');
 
         await tester.tap(cardFinder);
-        await tester.pumpAndSettle();
+        await _pumpUi(tester);
 
         expect(fakeLauncher.launchedUrls.contains(expectedTel), isTrue,
             reason: 'Tapping "$title" must launch "$expectedTel" via url_launcher');
       }
     });
 
-    testWidgets('ShareLocationPage fetches dynamic GPS coordinates from geolocator mock',
+    testWidgets('ShareLocationPage shares current GPS coordinates from geolocator mock',
         (WidgetTester tester) async {
       // Configure dynamic non-Delhi coordinates (e.g. Bangalore: 12.9716, 77.5946)
       fakeGeolocator.mockPosition = Position(
@@ -127,21 +131,23 @@ void main() {
           home: ShareLocationPage(),
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
-      final shareButton = find.text("Share My Live Location");
+      final shareButton = find.text("Share Current Location (One-shot)");
       expect(shareButton, findsOneWidget);
 
+      await tester.ensureVisible(shareButton);
+      await _pumpUi(tester);
       await tester.tap(shareButton);
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       expect(lastSharedText, isNotNull,
-          reason: 'Tapping Share My Live Location must invoke platform Share');
+          reason: 'Tapping the one-shot location action must invoke platform Share');
       expect(lastSharedText!.contains('12.9716') && lastSharedText!.contains('77.5946'), isTrue,
           reason: 'Shared location must dynamically include device GPS coordinates from geolocator rather than hardcoded 28.6139, 77.2090');
     });
 
-    testWidgets('ReportPage form input persists to ReportStore on submit button tap',
+    testWidgets('ReportPage does not cache a guest submission as successful',
         (WidgetTester tester) async {
       expect(ReportStore.total, 0);
 
@@ -150,33 +156,28 @@ void main() {
           home: ReportPage(),
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
-      // Select incident type
-      final incidentTypeFinder = find.text("Harassment");
-      if (incidentTypeFinder.evaluate().isNotEmpty) {
-        await tester.tap(incidentTypeFinder);
-        await tester.pumpAndSettle();
-      }
-
-      // Enter description text
-      final descField = find.byType(TextField);
+      final descField = find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText == "Describe what happened...",
+      );
       expect(descField, findsOneWidget);
       await tester.enterText(descField, "Streetlights broken near terminal");
-      await tester.pumpAndSettle();
 
       // Tap Submit Report button
       final submitButton = find.text("Submit Report");
       expect(submitButton, findsOneWidget);
       await tester.tap(submitButton);
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
-      // Assert persistence into ReportStore
-      expect(ReportStore.total, 1,
-          reason: 'Submitting ReportPage must add a new Report to ReportStore');
-      final report = ReportStore.reports.first;
-      expect(report.description, "Streetlights broken near terminal");
-      expect(report.status, ReportStatus.pending);
+      expect(ReportStore.total, 0,
+          reason: 'A guest/offline submission must not be represented as successfully sent');
+      expect(
+        find.textContaining("Sign in with a verified account"),
+        findsOneWidget,
+      );
     });
   });
 
@@ -191,37 +192,44 @@ void main() {
           home: ShareLocationPage(),
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
-      // Tap share button
-      await tester.tap(find.text("Share My Live Location"));
-      await tester.pumpAndSettle();
+      // Tap the one-shot share button; denied GPS must remain safe and honest.
+      final shareButton = find.text("Share Current Location (One-shot)");
+      await tester.ensureVisible(shareButton);
+      await _pumpUi(tester);
+      await tester.tap(shareButton);
+      await _pumpUi(tester);
 
       expect(tester.takeException(), isNull,
           reason: 'Denied location permissions must not cause unhandled crashes in ShareLocationPage');
     });
 
-    testWidgets('ReportStore persists multiline description with special symbols and emojis',
+    testWidgets('Guest multiline reports are preserved but never falsely cached',
         (WidgetTester tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: ReportPage(),
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       const complexInput =
           "Emergency alert! \nSpecial chars: <>&\"'\\/\nUnicode emojis: 🚨⚠️📍\nCoordinates: 28.6139° N, 77.2090° E";
 
-      await tester.enterText(find.byType(TextField), complexInput);
-      await tester.pumpAndSettle();
+      final descField = find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText == "Describe what happened...",
+      );
+      await tester.enterText(descField, complexInput);
+      expect(tester.widget<TextField>(descField).controller!.text, complexInput);
 
       await tester.tap(find.text("Submit Report"));
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
-      expect(ReportStore.total, 1);
-      expect(ReportStore.reports.first.description, complexInput,
-          reason: 'ReportStore must preserve emojis, special characters, and newlines without string corruption');
+      expect(ReportStore.total, 0,
+          reason: 'Unconfirmed reports must not be cached as submitted');
     });
 
     testWidgets('Consecutive rapid dials are recorded cleanly in url_launcher history',
@@ -231,13 +239,13 @@ void main() {
           home: EmergencyPage(),
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       for (int i = 0; i < 3; i++) {
         await tester.tap(find.text("Call Emergency"));
         await tester.pump(const Duration(milliseconds: 50));
       }
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       final dialed112Count =
           fakeLauncher.launchedUrls.where((u) => u == 'tel:112').length;
@@ -272,35 +280,43 @@ void main() {
           initialRoute: '/emergency',
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       // Step 1: Emergency Dial
       await tester.tap(find.text("Call Emergency"));
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
       expect(fakeLauncher.launchedUrls.contains('tel:112'), isTrue);
 
       // Step 2: Share location
       final NavigatorState nav =
           Navigator.of(tester.element(find.byType(EmergencyPage)));
       nav.pushNamed('/share');
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
       expect(find.byType(ShareLocationPage), findsOneWidget);
 
-      await tester.tap(find.text("Share My Live Location"));
-      await tester.pumpAndSettle();
+      final shareButton = find.text("Share Current Location (One-shot)");
+      await tester.ensureVisible(shareButton);
+      await _pumpUi(tester);
+      await tester.tap(shareButton);
+      await _pumpUi(tester);
       expect(lastSharedText?.contains('19.076'), isTrue);
 
       // Step 3: File incident report
       nav.pushNamed('/report');
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
       expect(find.byType(ReportPage), findsOneWidget);
 
-      await tester.enterText(find.byType(TextField), "Crisis reported and authority dialed");
+      final descField = find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText == "Describe what happened...",
+      );
+      await tester.enterText(descField, "Crisis reported and authority dialed");
       await tester.tap(find.text("Submit Report"));
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
-      expect(ReportStore.total, 1);
-      expect(ReportStore.reports.first.description, "Crisis reported and authority dialed");
+      expect(ReportStore.total, 0,
+          reason: 'A guest report attempt must not appear as a successful submission');
     });
   });
 
@@ -312,21 +328,21 @@ void main() {
           home: EmergencyPage(),
         ),
       );
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
 
       // 1. Dial Emergency 112
       await tester.tap(find.text("Call Emergency"));
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
       expect(fakeLauncher.lastLaunchedUrl, 'tel:112');
 
       // 2. Dial Women Helpline 181
       await tester.tap(find.text("Women Helpline"));
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
       expect(fakeLauncher.lastLaunchedUrl, 'tel:181');
 
       // 3. Dial Ambulance 108
       await tester.tap(find.text("Ambulance"));
-      await tester.pumpAndSettle();
+      await _pumpUi(tester);
       expect(fakeLauncher.lastLaunchedUrl, 'tel:108');
     });
   });

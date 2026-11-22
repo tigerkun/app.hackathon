@@ -64,12 +64,14 @@ function trigger(req, res, next) {
     const batteryLevel = body.batteryLevel !== undefined ? body.batteryLevel : body.battery_level;
     const alertType = body.alertType || body.alert_type || 'CRITICAL_SOS';
     const notes = body.notes;
+    // Identity comes exclusively from the verified token.
+    const userId = req.user ? req.user.id : null;
     // Stable client-generated idempotency key: an offline-queue replay after a
     // lost response must return the original alert, not create a duplicate.
     const clientRequestId = body.clientRequestId || body.client_request_id || null;
 
     if (clientRequestId) {
-      const existing = db.findAlertByClientRequestId(clientRequestId);
+      const existing = db.findAlertByClientRequestId(clientRequestId, userId);
       if (existing) {
         // Rotate the resolve credential: the original plaintext was only ever
         // in the lost response, so nobody else can hold it.
@@ -94,7 +96,6 @@ function trigger(req, res, next) {
     // userPhone in the body is STRIPPED: an unauthenticated caller must never
     // be able to impersonate a citizen or attach someone else's emergency
     // contacts to their alert.
-    const userId = req.user ? req.user.id : null;
     const userName = req.user ? req.user.name : 'SafeSphere Citizen';
     const userPhone = req.user ? req.user.phone : '';
 

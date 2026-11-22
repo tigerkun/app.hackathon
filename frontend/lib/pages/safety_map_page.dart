@@ -872,7 +872,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                 Marker(
                   point: LatLng(_userLat, _userLng),
                   width: 48,
-                  height: 48,
+                  height: 60,
                   alignment: Alignment.topCenter,
                   child: GestureDetector(
                     onTap: () {
@@ -906,7 +906,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                   Marker(
                     point: LatLng(item.latitude, item.longitude),
                     width: 48,
-                    height: 52,
+                    height: 64,
                     alignment: Alignment.topCenter,
                     child: GestureDetector(
                       onTap: () => setState(() => _selectedItem = item),

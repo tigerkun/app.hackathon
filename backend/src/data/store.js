@@ -476,6 +476,16 @@ class DataStore {
   // M3 Connections Repository (consent-based trusted circle)
   // ==========================================
 
+  _expirePendingConnections() {
+    this.db.prepare(`
+      UPDATE connections
+      SET status = 'expired'
+      WHERE status = 'pending'
+        AND expiresAt IS NOT NULL
+        AND julianday(expiresAt) <= julianday(?)
+    `).run(new Date().toISOString());
+  }
+
   _formatConnection(row) {
     if (!row) return null;
     let scopes = [];
@@ -530,12 +540,14 @@ class DataStore {
 
   findConnectionById(id) {
     if (!id) return null;
+    this._expirePendingConnections();
     return this._formatConnection(
       this.db.prepare('SELECT * FROM connections WHERE id = ? LIMIT 1').get(id)
     );
   }
 
   listConnectionsByOwner(ownerId) {
+    this._expirePendingConnections();
     return this.db
       .prepare("SELECT * FROM connections WHERE ownerId = ? ORDER BY createdAt DESC")
       .all(ownerId)
@@ -543,6 +555,7 @@ class DataStore {
   }
 
   listConnectionsByGrantee(granteeId) {
+    this._expirePendingConnections();
     return this.db
       .prepare("SELECT * FROM connections WHERE granteeId = ? ORDER BY createdAt DESC")
       .all(granteeId)
@@ -550,6 +563,7 @@ class DataStore {
   }
 
   countPendingConnectionRequests(ownerId) {
+    this._expirePendingConnections();
     const row = this.db.prepare(
       "SELECT COUNT(*) AS c FROM connections WHERE ownerId = ? AND status = 'pending'"
     ).get(ownerId);
@@ -1309,11 +1323,11 @@ class DataStore {
 
   // Idempotency lookup for offline-queue replays: the same clientRequestId
   // must never produce a second alert row.
-  findAlertByClientRequestId(clientRequestId) {
+  findAlertByClientRequestId(clientRequestId, userId) {
     if (!clientRequestId) return null;
     const row = this.db
-      .prepare('SELECT * FROM alerts WHERE clientRequestId = ? LIMIT 1')
-      .get(String(clientRequestId));
+      .prepare('SELECT * FROM alerts WHERE clientRequestId = ? AND userId = ? LIMIT 1')
+      .get(String(clientRequestId), String(userId || 'anonymous'));
     return this._formatAlert(row);
   }
 

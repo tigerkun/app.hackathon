@@ -57,10 +57,11 @@ Run everything from the repo root unless noted.
 | `cd backend && node --test tests/location_tracking.test.js` | Single backend suite |
 | `npm run clean` | Remove build caches/artifacts |
 
-There is **no Flutter SDK installed** in the standard dev/CI environment. Verify
-Dart changes by inspection and via `npm test` (which audits relative imports and
-runs the Python AST challengers). `npm run test:frontend` (`flutter test`) only
-works where the SDK exists.
+The standard dev/CI image may not include Flutter. On the Android build machine,
+Flutter 3.50.1 is installed at `C:\src\flutter`; run Dart checks from
+`frontend\` with `flutter analyze lib` and `flutter test`. The repository gate
+`npm test` remains useful in environments without Flutter because it audits
+relative imports and runs the Python AST challengers.
 
 ### Production Android Build (Mobile Client)
 
@@ -71,6 +72,10 @@ flutter build apk --release --dart-define=SAFESPHERE_API_URL=https://<render-app
 ```
 
 If `--dart-define=SAFESPHERE_API_URL` is omitted, the mobile app defaults to `http://127.0.0.1:3000` for local development.
+The Android wrapper requires Gradle 9.5.0, Android Gradle Plugin 9.3.1, and
+Kotlin Gradle Plugin 2.4.20. The current release build still uses the debug
+signing key; it is not suitable for Play Store distribution until a private
+release keystore is configured.
 
 ## Architecture
 
@@ -80,6 +85,7 @@ If `--dart-define=SAFESPHERE_API_URL` is omitted, the mobile app defaults to `ht
 repositories via built-in `node:sqlite` with instant `reset()` for tests).
 
 - Responses use the envelope `{ success: boolean, data?, error?: { code, message, details } }`.
+- Production CORS accepts comma-separated exact origins from `CORS_ORIGIN`; `*` is ignored in production and missing Origin headers remain valid for native clients. Public SOS and location mutations have dedicated per-IP limits in addition to the global limiter.
 - Storage: SQLite database driven by Node.js built-in `node:sqlite`
   (`DatabaseSync`). Synchronous execution model matches repository API.
   - Location: `backend/data/safesphere.db` by default in development/production,
@@ -230,6 +236,7 @@ repositories via built-in `node:sqlite` with instant `reset()` for tests).
 - **Trusted Circle Connections & SafeSphere IDs (M3)**:
   - Every user gets a public **Safe ID** (`SF-XXXX-XX`, unambiguous alphabet — no `O/0/I/1`) generated at registration (`users.safeId`, unique index). It is the ONLY address other users need — never an email or phone.
   - `POST /api/v1/connections`: grantee requests by `ownerSafeId` with scopes ⊆ `['location','nearby_alerts','sos_status']` and mode `always | sos_only`. Self-connection 400, unknown Safe ID 404, invalid scope/mode 400, duplicate live pair 409 (`CONNECTION_EXISTS` — one live connection per pair; revoked pairs may re-request), pending cap 20/owner, 25 live connections/grantee.
+  - Pending requests expire after 30 days; expiration is applied on reads and expired requests grant no access. Accepted connections do not expire automatically.
   - Respond/revoke: `POST /:id/respond` (owner-only accept; grantee may withdraw own pending), `POST /:id/revoke` (either party, immediate). `PATCH /:id/scopes` owner-only on active connections.
   - **Scoped reads re-verify per request**: `GET /:id/live|alerts|status` each re-check grantee identity, `status === 'active'`, and the specific scope → `403 SCOPE_NOT_GRANTED` (grantee without scope) or `403 CONNECTION_REVOKED` (revoked/pending, immediate). `sos_only` mode gates `location` to active SOS/tracking windows → `403 SOS_ONLY_NO_ACTIVE_WINDOW`.
   - Beacon: `POST /:id/ping` (owner-only) stores into `connection_locations` with a 200-point rolling cap; `GET /:id/live` returns the latest point. Check-in: `POST /:id/checkin` (grantee-only, 1 per 5 min → `429 CHECKIN_RATE_LIMITED`).
@@ -351,7 +358,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 # Full gate (recommended)
 npm test
 
-# Backend only — 267 tests across 62 suites (plus 11/11 smoke tests)
+# Backend only — 334 tests across 82 suites
 cd backend && npm test
 npm run smoke
 

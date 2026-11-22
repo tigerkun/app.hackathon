@@ -741,6 +741,11 @@ class AuthService {
     String? notes,
   }) async {
     final token = await storage.getString(keyToken);
+    final random = math.Random.secure();
+    final requestNonce = List.generate(
+      4,
+      (_) => random.nextInt(1 << 32).toRadixString(16).padLeft(8, '0'),
+    ).join();
     final body = <String, dynamic>{
       'latitude': latitude,
       'longitude': longitude,
@@ -751,8 +756,7 @@ class AuthService {
       // Stable per-trigger idempotency key: if this request lands but the
       // response is lost, the offline-queue replay reuses the SAME key and the
       // backend returns the original alert instead of duplicating it.
-      'clientRequestId':
-          'sos_${DateTime.now().microsecondsSinceEpoch}_${math.Random.secure().nextInt(1 << 32)}',
+      'clientRequestId': 'sos_$requestNonce',
     };
 
     final res = await _requestDetailed(
@@ -808,6 +812,9 @@ class AuthService {
 
   /// Reads the resolve token for a specific alert: per-alert map first,
   /// legacy single-token key as fallback (covers pre-M6 sessions).
+  Future<String?> getSosResolveToken(String alertId) =>
+      _readResolveToken(alertId);
+
   Future<String?> _readResolveToken(String alertId) async {
     try {
       final raw = await storage.getString(keySosResolveTokenMap);

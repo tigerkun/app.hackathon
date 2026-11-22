@@ -125,7 +125,10 @@ if (isProduction) {
   }
 
   if (!process.env.CORS_ORIGIN) {
-    console.warn('[WARNING] CORS_ORIGIN is not set in production. Defaulting to "*". For security, set CORS_ORIGIN to your frontend domain.');
+    console.warn('[WARNING] CORS_ORIGIN is not set in production. Cross-origin browser access is disabled until an allowed origin is configured.');
+  }
+  if (process.env.CORS_ORIGIN?.split(',').some((origin) => origin.trim() === '*')) {
+    console.warn('[WARNING] CORS_ORIGIN contains "*"; wildcard origins are ignored in production.');
   }
 }
 
@@ -142,7 +145,7 @@ const config = {
   otpMaxAttempts: 3,
   escalateAfterMs: parseInt(process.env.ESCALATE_AFTER_MS || '600000', 10),
   escalationTickMs: parseInt(process.env.ESCALATION_TICK_MS || '60000', 10),
-  corsOrigin: process.env.CORS_ORIGIN || '*',
+  corsOrigin: process.env.CORS_ORIGIN || (isProduction ? '' : '*'),
   dbPath,
   isTest,
   isDev,

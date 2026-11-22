@@ -179,6 +179,13 @@ class _PrivacyHubPageState extends State<PrivacyHubPage> {
                     body: 'Community reports you post are visible with your display name, '
                         'like any other citizen report. They carry your reputation score.',
                   ),
+                  _publicItem(
+                    icon: Icons.info_outline,
+                    title: 'Aadhaar last-4 is not identity verification',
+                    body: 'If you choose to link it, SafeSphere stores a keyed hash of the '
+                        'last four digits as a weak abuse-review signal. It is not proof of '
+                        'identity, and SafeSphere does not verify Aadhaar or perform KYC.',
+                  ),
 
                   const SizedBox(height: 18),
                   _plainBanner(

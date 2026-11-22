@@ -91,6 +91,7 @@ class AiAssistantPage extends StatefulWidget {
 
 class _AiAssistantPageState extends State<AiAssistantPage> {
   final TextEditingController _controller = TextEditingController();
+  final ScrollController _chatScrollController = ScrollController();
   final List<Timer> _pendingTimers = [];
   int _messageSeq = 0;
   bool _showOfflineGuides = false;
@@ -115,6 +116,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
   @override
   void dispose() {
     _controller.dispose();
+    _chatScrollController.dispose();
     for (final timer in _pendingTimers) {
       timer.cancel();
     }
@@ -154,6 +156,14 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
         _ChatMessage(id: typingMsgId, text: '', isUser: false, isTyping: true),
       );
       _controller.clear();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_chatScrollController.hasClients) return;
+      _chatScrollController.animateTo(
+        _chatScrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
     });
 
     // M1.9: instant local refusal for obvious off-topic prompts — no API call.
@@ -226,7 +236,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
           final typingIndex = messages.indexWhere((m) => m.id == typingMsgId);
           final replyMsg = _ChatMessage(
             id: 'ai_${timestamp}_$seq',
-            text: data!['reply'] as String,
+            text: data['reply'] as String,
             isUser: false,
           );
           if (typingIndex != -1) {
@@ -284,6 +294,7 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
           /// CHAT AREA
           Expanded(
             child: ListView.builder(
+              controller: _chatScrollController,
               padding: const EdgeInsets.all(16),
               itemCount: messages.length,
               itemBuilder: (context, index) {
