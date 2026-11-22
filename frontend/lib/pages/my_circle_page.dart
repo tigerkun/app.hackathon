@@ -140,14 +140,17 @@ class _MyCirclePageState extends State<MyCirclePage> {
     );
   }
 
-  void _showRequestDialog() {
+  Future<void> _showRequestDialog() async {
     final controller = TextEditingController();
-    showModalBottomSheet(
+    // Dispose the controller once the sheet is fully dismissed — otherwise
+    // every open of the sheet leaks one controller (M6 dispose sweep).
+    await showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1E293B),
       isScrollControlled: true,
       builder: (ctx) => _SendRequestSheet(controller: controller, onSent: _loadCircle),
     );
+    controller.dispose();
   }
 
   @override

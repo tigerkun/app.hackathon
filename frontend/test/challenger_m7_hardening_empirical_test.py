@@ -154,5 +154,41 @@ class MarkerCapsChallenges(unittest.TestCase):
         self.assertIn("M6: rejects oversized marker address", tests)
 
 
+class DisposeRaceSweepChallenges(unittest.TestCase):
+    """Every awaited WebSocket.connect must guard against dispose-in-flight."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.pages = [
+            ("emergency_page.dart", os.path.join(FRONTEND_DIR, "lib", "pages", "emergency_page.dart")),
+            ("share_location_page.dart", os.path.join(FRONTEND_DIR, "lib", "pages", "share_location_page.dart")),
+            ("track_session_page.dart", os.path.join(FRONTEND_DIR, "lib", "pages", "track_session_page.dart")),
+        ]
+
+    def test_01_ws_connect_guarded_against_dispose(self):
+        """Each WebSocket.connect await must close the socket if !mounted."""
+        for name, path in self.pages:
+            src = _read(path)
+            self.assertIn("WebSocket.connect", src, f"{name} must connect a socket")
+            # A guard must appear between the connect await and _ws assignment
+            self.assertRegex(
+                src,
+                r"WebSocket\.connect[\s\S]{0,600}!mounted[\s\S]{0,600}ws\.close",
+                f"{name}: WebSocket.connect must be followed by an !mounted ws.close() guard "
+                "before _ws is assigned (otherwise dispose-in-flight leaks a listener)",
+            )
+
+    def test_02_my_circle_sheet_controller_disposed(self):
+        """The Send-request sheet's TextEditingController must be disposed
+        after the modal closes — otherwise every open leaks a controller."""
+        page = _read(os.path.join(FRONTEND_DIR, "lib", "pages", "my_circle_page.dart"))
+        # _showRequestDialog must be async and await+dispose the controller
+        self.assertRegex(
+            page,
+            r"Future<void> _showRequestDialog[\s\S]*?await showModalBottomSheet[\s\S]*?controller\.dispose\(\)",
+            "the sheet controller must be awaited-then-disposed in _showRequestDialog",
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

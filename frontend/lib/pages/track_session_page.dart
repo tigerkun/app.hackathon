@@ -119,6 +119,13 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
   Future<void> _connectWs() async {
     try {
       final ws = await WebSocket.connect(_wsUrl).timeout(const Duration(seconds: 5));
+      // M6 dispose-race guard: if the page was disposed while the connect
+      // was in flight, close the socket immediately instead of leaving it
+      // listening (leak) — never resurrect a dead page's WS reference.
+      if (!mounted) {
+        await ws.close().catchError((_) {});
+        return;
+      }
       _ws = ws;
       ws.listen(
         (event) {

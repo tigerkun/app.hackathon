@@ -150,6 +150,14 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
       final ws = await WebSocket.connect(_wsUrl)
           .timeout(const Duration(seconds: 5));
 
+      // M6 dispose-race guard: if the page was disposed while connecting,
+      // close the socket immediately instead of leaking it (the setState
+      // block below is skipped when unmounted, so _ws is never assigned).
+      if (!mounted) {
+        await ws.close().catchError((_) {});
+        return;
+      }
+
       // 3. Every tracking WebSocket frame and REST call is authenticated with the
       //    session token issued above (the token IS the credential — see below).
 

@@ -145,6 +145,12 @@ class _EmergencyPageState extends State<EmergencyPage> {
       final wsUrl = '$wsBase/ws/sos';
 
       final ws = await WebSocket.connect(wsUrl).timeout(const Duration(seconds: 4));
+      // M6 dispose-race guard: if the emergency page was disposed while the
+      // socket connected, close it immediately rather than leak a listener.
+      if (!mounted) {
+        await ws.close().catchError((_) {});
+        return;
+      }
       _chatWs = ws;
       if (mounted) setState(() => _isWsConnected = true);
 
