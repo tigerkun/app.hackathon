@@ -235,10 +235,37 @@ function listMine(req, res, next) {
   }
 }
 
+// M6-adjacent: owner-powered termination for the privacy hub. The owner is
+// authenticated with their account (the token was scrubbed from the list),
+// so ownership — not the tracking credential — authorizes the stop.
+function terminateMine(req, res, next) {
+  try {
+    const session = trackingService.terminateOwnSession(
+      req.params.sessionId,
+      req.user.id,
+      (req.body && req.body.reason) || null
+    );
+    try {
+      const { broadcastStreamTerminate } = require('../server');
+      if (typeof broadcastStreamTerminate === 'function') {
+        broadcastStreamTerminate(session.id, 'Stopped by owner from privacy hub');
+      }
+    } catch (_) {}
+    res.status(200).json({
+      success: true,
+      message: 'Your live trip has been stopped — no one can see your location.',
+      data: { id: session.id, status: session.status, endedAt: session.endedAt }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   shareSession,
   getTrack,
   ping,
   terminate,
-  listMine
+  listMine,
+  terminateMine
 };

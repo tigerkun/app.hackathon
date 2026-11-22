@@ -297,6 +297,47 @@ function terminateTrackingSession(sessionId, reason = null, token) {
   return updated;
 }
 
+/**
+ * M6-adjacent: owner-powered termination via the authenticated account rather
+ * than the tracking token. Needed by the privacy hub ("Who can see me"), whose
+ * sessions/mine response deliberately scrubs the token — the owner must still
+ * be able to stop their own stream instantly. Ownership is enforced strictly:
+ * only the account that created the session may end it.
+ */
+function terminateOwnSession(sessionId, userId, reason = null) {
+  if (!sessionId) {
+    const error = new Error('sessionId is required to terminate tracking session');
+    error.status = 400;
+    error.code = 'MISSING_SESSION_ID';
+    throw error;
+  }
+
+  const session = db.findTrackingSessionById(sessionId);
+  if (!session) {
+    const error = new Error(`Tracking session '${sessionId}' not found`);
+    error.status = 404;
+    error.code = 'SESSION_NOT_FOUND';
+    throw error;
+  }
+
+  if (!userId || session.userId !== userId) {
+    const error = new Error('You can only stop tracking sessions you created.');
+    error.status = 403;
+    error.code = 'NOT_SESSION_OWNER';
+    throw error;
+  }
+
+  if (session.status !== 'active') {
+    return session; // already ended/expired — idempotent, nothing to do
+  }
+
+  return db.updateTrackingSession(sessionId, {
+    status: 'ended',
+    endedAt: new Date().toISOString(),
+    endReason: reason || 'Stopped from privacy hub'
+  });
+}
+
 function processCheckInDeadlines(now = new Date(), broadcastFn = null) {
   const nowDate = now instanceof Date ? now : new Date(now);
   const activeSessions = db.getActiveCheckInSessions();
@@ -353,6 +394,7 @@ module.exports = {
   getTrackingSession,
   recordPing,
   terminateTrackingSession,
+  terminateOwnSession,
   processCheckInDeadlines,
   isValidCoordinate,
   isValidTrackingToken,

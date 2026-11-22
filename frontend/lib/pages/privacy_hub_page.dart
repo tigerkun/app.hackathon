@@ -236,12 +236,19 @@ class _PrivacyHubPageState extends State<PrivacyHubPage> {
         border: Border.all(color: Colors.redAccent.withOpacity(0.4)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Row(children: [
-          Icon(Icons.broadcast, color: Colors.redAccent, size: 18),
-          SizedBox(width: 8),
+        Row(children: [
+          const Icon(Icons.broadcast, color: Colors.redAccent, size: 18),
+          const SizedBox(width: 8),
           Expanded(
             child: Text('Your live trip is streaming',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+          ),
+          // The privacy hub promise is "close them the moment you want" —
+          // an owner-authenticated stop takes effect immediately.
+          TextButton.icon(
+            icon: const Icon(Icons.stop_circle_outlined, color: Colors.redAccent, size: 18),
+            label: const Text('Stop', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w700)),
+            onPressed: () => _stopSession(s),
           ),
         ]),
         const SizedBox(height: 4),
@@ -255,6 +262,38 @@ class _PrivacyHubPageState extends State<PrivacyHubPage> {
             style: const TextStyle(color: Colors.white38, fontSize: 11)),
       ]),
     );
+  }
+
+  /// Stops one of the user's own live trips (account-authenticated).
+  Future<void> _stopSession(Map<String, dynamic> s) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        title: const Text('Stop sharing your location?'),
+        content: const Text(
+          'Everyone watching this trip loses your location immediately. '
+          'You can always start a new trip later.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep sharing')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Stop now', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final res = await _authService.terminateMyTrackingSession(s['id'].toString());
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(res['ok'] == true
+          ? 'Trip stopped — no one can see your location now.'
+          : res['message']?.toString() ?? 'Could not stop the trip.'),
+      backgroundColor: res['ok'] == true ? AppColors.teal : Colors.redAccent,
+    ));
+    _load();
   }
 
   Widget _watcherTile(Map<String, dynamic> conn) {

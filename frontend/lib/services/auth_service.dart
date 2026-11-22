@@ -1625,6 +1625,15 @@ class AuthService {
     return _connectionCall(method: 'GET', path: '/api/v1/location/sessions/mine');
   }
 
+  /// Stops one of the user's OWN live trips from the privacy hub — account
+  /// auth replaces the tracking token here (the list endpoint scrubs it).
+  Future<Map<String, dynamic>> terminateMyTrackingSession(String sessionId) {
+    return _connectionCall(
+      method: 'POST',
+      path: '/api/v1/location/sessions/$sessionId/terminate',
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // M1.6b: Forgot-PIN recovery (POST /api/v1/auth/pin/reset)
   // ---------------------------------------------------------------------------

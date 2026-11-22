@@ -11,6 +11,8 @@ const router = express.Router();
 
 // M5: privacy hub — the owner's own live sessions (token scrubbed).
 router.get('/sessions/mine', requireAuth, locationController.listMine);
+// Owner stops their own live trip from the privacy hub (account-authed).
+router.post('/sessions/:sessionId/terminate', requireAuth, locationController.terminateMine);
 
 router.post('/share-session', optionalAuth, locationController.shareSession);
 router.get('/track/:sessionId', locationController.getTrack);

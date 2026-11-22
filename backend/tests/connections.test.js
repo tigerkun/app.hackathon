@@ -135,6 +135,26 @@ describe('Connections — Trusted Circle (M3)', () => {
         assert.ok(!/[O0I1]/.test(id.replace(/^SF-/, '')), `no ambiguous chars: ${id}`);
       }
     });
+
+    it('backfills Safe IDs for pre-M3 user rows (live DB upgrade path)', () => {
+      // Simulate a legacy row written before the safeId column had values.
+      db.db.prepare(`
+        INSERT INTO users (id, name, email, phone, role, passwordHash, isActive, createdAt, updatedAt)
+        VALUES ('usr_legacy_no_safeid', 'Legacy User', 'legacy@safesphere.test', '+918800399999',
+                'citizen', 'x', 1, ?, ?)
+      `).run(new Date().toISOString(), new Date().toISOString());
+      assert.equal(db.findUserById('usr_legacy_no_safeid').safeId, null);
+
+      // Boot/snapshot-hydrate path re-runs initSchema → backfill runs.
+      db.initSchema();
+
+      const backed = db.findUserById('usr_legacy_no_safeid');
+      assert.ok(SAFE_ID_RE.test(backed.safeId), `backfilled safeId format: ${backed.safeId}`);
+
+      // Idempotent: a second pass must not change an existing ID.
+      db.initSchema();
+      assert.equal(db.findUserById('usr_legacy_no_safeid').safeId, backed.safeId);
+    });
   });
 
   describe('Connection requests', () => {

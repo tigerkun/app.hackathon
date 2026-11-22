@@ -277,6 +277,33 @@ class DataStore {
     try {
       this.db.exec("ALTER TABLE reports ADD COLUMN downvotes INTEGER NOT NULL DEFAULT 0");
     } catch (_) {}
+    // M3 backfill: users created before Safe IDs existed get one now so that
+    // connection requests work for every account (unique index prevents dupes).
+    try {
+      this._backfillSafeIds();
+    } catch (_) {}
+  }
+
+  /// Assigns a SafeSphere ID to every user row still lacking one. Runs on
+  /// every initSchema (boot / test reset / snapshot hydrate) and is a no-op
+  /// when everyone already has an ID.
+  _backfillSafeIds() {
+    const rows = this.db
+      .prepare("SELECT id FROM users WHERE safeId IS NULL OR safeId = ''")
+      .all();
+    if (rows.length === 0) return;
+    const { generateSafeId } = require('../models/userModel');
+    const update = this.db.prepare('UPDATE users SET safeId = ? WHERE id = ?');
+    for (const row of rows) {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          update.run(generateSafeId(), row.id);
+          break;
+        } catch (_) {
+          // unique-index collision on the random ID → try again
+        }
+      }
+    }
   }
 
   // Backward compatibility getters for tests asserting collection.size

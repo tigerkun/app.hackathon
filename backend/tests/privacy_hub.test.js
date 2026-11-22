@@ -122,4 +122,70 @@ describe('Privacy Hub — sessions/mine (M5)', () => {
     });
     assert.equal(list.body.data.count, 0, 'terminated session must not appear in active list');
   });
+
+  describe('Owner-terminate from privacy hub (POST /sessions/:id/terminate)', () => {
+    let aliceSessionId;
+
+    before(async () => {
+      const share = await t.request('/api/v1/location/share-session', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        body: { latitude: 28.64, longitude: 77.23, durationMinutes: 45 }
+      });
+      assert.equal(share.status, 201);
+      aliceSessionId = share.body.data.sessionId;
+    });
+
+    it('requires auth → 401 without token', async () => {
+      const res = await t.request(`/api/v1/location/sessions/${aliceSessionId}/terminate`, {
+        method: 'POST'
+      });
+      assert.equal(res.status, 401);
+    });
+
+    it('non-owner cannot stop someone else\'s trip → 403 NOT_SESSION_OWNER', async () => {
+      const res = await t.request(`/api/v1/location/sessions/${aliceSessionId}/terminate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${bobToken}` }
+      });
+      assert.equal(res.status, 403);
+      assert.equal(res.body.error.code, 'NOT_SESSION_OWNER');
+    });
+
+    it('unknown session → 404 SESSION_NOT_FOUND', async () => {
+      const res = await t.request('/api/v1/location/sessions/track_nope/terminate', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${aliceToken}` }
+      });
+      assert.equal(res.status, 404);
+      assert.equal(res.body.error.code, 'SESSION_NOT_FOUND');
+    });
+
+    it('owner stops their trip WITHOUT the tracking token → ended + gone from list', async () => {
+      const res = await t.request(`/api/v1/location/sessions/${aliceSessionId}/terminate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${aliceToken}` }
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.data.status, 'ended');
+
+      const list = await t.request('/api/v1/location/sessions/mine', {
+        headers: { Authorization: `Bearer ${aliceToken}` }
+      });
+      assert.equal(
+        list.body.data.activeSessions.some((s) => s.id === aliceSessionId),
+        false,
+        'stopped session must disappear from the privacy hub list'
+      );
+    });
+
+    it('repeat terminate is idempotent → 200 with ended status', async () => {
+      const res = await t.request(`/api/v1/location/sessions/${aliceSessionId}/terminate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${aliceToken}` }
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.data.status, 'ended');
+    });
+  });
 });
