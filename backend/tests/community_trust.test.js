@@ -38,6 +38,7 @@ describe('Community Trust System (M2)', () => {
       name: 'M2 Admin',
       email: 'm2.admin@safesphere.test',
       phone: '+918800100001',
+      phoneVerified: true,
       passwordHash: bcrypt.hashSync('Str0ngPass!23', 8),
       role: 'admin'
     }));
@@ -53,6 +54,7 @@ describe('Community Trust System (M2)', () => {
       name: 'M2 Citizen One',
       email: 'm2.citizen1@safesphere.test',
       phone: '+918800100002',
+      phoneVerified: true,
       passwordHash: bcrypt.hashSync('Str0ngPass!23', 8),
       role: 'citizen'
     }));
@@ -69,6 +71,7 @@ describe('Community Trust System (M2)', () => {
       name: 'M2 Citizen Two',
       email: 'm2.citizen2@safesphere.test',
       phone: '+918800100003',
+      phoneVerified: true,
       passwordHash: bcrypt.hashSync('Str0ngPass!23', 8),
       role: 'citizen'
     }));
@@ -202,6 +205,7 @@ describe('Community Trust System (M2)', () => {
       name: 'M2 Reporter',
       email: 'm2.reporter@safesphere.test',
       phone: '+918800100004',
+      phoneVerified: true,
       passwordHash: bcrypt.hashSync('Str0ngPass!23', 8),
       role: 'citizen'
     }));
@@ -260,6 +264,7 @@ describe('Community Trust System (M2)', () => {
       name: 'M2 Reporter Two',
       email: 'm2.reporter2@safesphere.test',
       phone: '+918800100005',
+      phoneVerified: true,
       passwordHash: bcrypt.hashSync('Str0ngPass!23', 8),
       role: 'citizen'
     }));

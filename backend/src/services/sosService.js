@@ -108,7 +108,8 @@ function triggerSos({
   accuracy,
   batteryLevel,
   alertType = 'CRITICAL_SOS',
-  notes
+  notes,
+  clientRequestId = null
 }) {
   if (latitude === undefined || longitude === undefined || latitude === null || longitude === null) {
     const error = new Error('GPS latitude and longitude are required to trigger SOS');
@@ -148,7 +149,8 @@ function triggerSos({
     status: 'active',
     emergencyContactsNotified: contactsNotified,
     notes: notes || null,
-    resolveTokenHash: hashToken(resolveToken)
+    resolveTokenHash: hashToken(resolveToken),
+    clientRequestId: clientRequestId || null
   });
 
   db.saveAlert(alert);

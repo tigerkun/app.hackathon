@@ -27,7 +27,8 @@ function createAlert({
   resolvedAt = null,
   emergencyContactsNotified = 0,
   notes = null,
-  resolveTokenHash = null
+  resolveTokenHash = null,
+  clientRequestId = null
 }) {
   return {
     id,
@@ -45,7 +46,8 @@ function createAlert({
     resolvedAt: resolvedAt ? String(resolvedAt) : null,
     emergencyContactsNotified: Number(emergencyContactsNotified || 0),
     notes: notes ? String(notes).trim() : null,
-    resolveTokenHash: resolveTokenHash || null
+    resolveTokenHash: resolveTokenHash || null,
+    clientRequestId: clientRequestId ? String(clientRequestId).slice(0, 128) : null
   };
 }
 

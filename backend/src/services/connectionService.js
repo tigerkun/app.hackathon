@@ -13,7 +13,7 @@
 
 const crypto = require('crypto');
 const { db } = require('../data/store');
-const { toSafeUser } = require('../models/userModel');
+const { toConnectionPeer } = require('../models/userModel');
 
 const VALID_SCOPES = ['location', 'nearby_alerts', 'sos_status'];
 const VALID_MODES = ['always', 'sos_only'];
@@ -81,6 +81,14 @@ function requestConnection({ requester, ownerSafeId, scopes, mode }) {
     error.code = 'OWNER_BANNED';
     throw error;
   }
+  // Banned users cannot send connection requests or retain scoped access —
+  // documented invariant, previously unenforced on the requester side.
+  if (requester.banned) {
+    const error = new Error('Banned accounts cannot send connection requests.');
+    error.status = 403;
+    error.code = 'REQUESTER_BANNED';
+    throw error;
+  }
 
   // Existing live connection between the same pair? Report it rather than
   // duplicating. A REVOKED connection does not block re-requesting.
@@ -129,7 +137,7 @@ function requestConnection({ requester, ownerSafeId, scopes, mode }) {
 
   return {
     connection: conn,
-    owner: toSafeUser(db.findUserById(owner.id))
+    owner: toConnectionPeer(db.findUserById(owner.id))
   };
 }
 
@@ -276,6 +284,14 @@ function verifyScopedAccess({ connectionId, viewerId, requiredScope }) {
     error.code = 'CONNECTION_REVOKED';
     throw error;
   }
+  // Banned grantees lose scoped access even on still-active connections.
+  const viewer = db.findUserById(viewerId);
+  if (viewer && viewer.banned) {
+    const error = new Error('Banned accounts cannot access connection data.');
+    error.status = 403;
+    error.code = 'REQUESTER_BANNED';
+    throw error;
+  }
   if (!conn.scopes.includes(requiredScope)) {
     const error = new Error(`This connection does not include the '${requiredScope}' scope.`);
     error.status = 403;
@@ -327,10 +343,42 @@ function recordBeaconPing({ connectionId, owner, latitude, longitude, accuracy }
     error.code = 'CONNECTION_NOT_ACTIVE';
     throw error;
   }
+  // sos_only mode: beacons are only meaningful while an SOS/tracking window
+  // is open — otherwise this would silently become always-on sharing.
+  if (conn.mode === 'sos_only') {
+    const hasActiveSos = db.getActiveAlerts().some((a) => a.userId === conn.ownerId && a.status === 'active');
+    const activeTracking = db.getActiveTrackingSessionsByUser(conn.ownerId).some((s) => s.status === 'active');
+    if (!hasActiveSos && !activeTracking) {
+      const error = new Error('sos_only mode: beacons are only accepted during an active SOS or tracking session.');
+      error.status = 403;
+      error.code = 'SOS_ONLY_NO_ACTIVE_WINDOW';
+      throw error;
+    }
+  }
+  // Coordinate sanity — beacon points feed guardian maps.
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    const error = new Error('Valid latitude/longitude is required.');
+    error.status = 400;
+    error.code = 'INVALID_COORDINATES';
+    throw error;
+  }
+  // Flood floor: beacons are meant every ~5min; sub-30s spam just churns rows.
+  const lastPing = lastBeaconPingTimes.get(connectionId) || 0;
+  if (Date.now() - lastPing < 30 * 1000) {
+    const error = new Error('Beacon pings are limited to one every 30 seconds.');
+    error.status = 429;
+    error.code = 'BEACON_RATE_LIMITED';
+    throw error;
+  }
+  lastBeaconPingTimes.set(connectionId, Date.now());
 
-  db.saveConnectionLocation({ connectionId, latitude, longitude, accuracy });
+  db.saveConnectionLocation({ connectionId, latitude: lat, longitude: lng, accuracy });
   return db.getLatestConnectionLocation(connectionId);
 }
+
+const lastBeaconPingTimes = new Map(); // connectionId → lastPingMs
 
 /** Check-in: grantee pings the owner — rate-limited to 1 per 5 minutes. */
 const lastCheckInTimes = new Map(); // connectionId → lastCheckInMs (in-process)
@@ -351,6 +399,14 @@ function recordCheckIn({ connectionId, viewer, message }) {
   }
 
   const key = `checkin:${connectionId}`;
+  // Bound the in-process limiter: drop entries idle >1h so revoked/deleted
+  // connections don't accumulate forever.
+  if (lastCheckInTimes.size > 1000) {
+    const cutoff = Date.now() - 60 * 60 * 1000;
+    for (const [k, ts] of lastCheckInTimes) {
+      if (ts < cutoff) lastCheckInTimes.delete(k);
+    }
+  }
   const last = lastCheckInTimes.get(key) || 0;
   const elapsed = Date.now() - last;
   if (elapsed < CHECKIN_RATE_LIMIT_MS) {
@@ -363,11 +419,25 @@ function recordCheckIn({ connectionId, viewer, message }) {
   }
   lastCheckInTimes.set(key, Date.now());
 
+  const cleanMessage = String(message || 'Checking on you').slice(0, 200);
+  const checkedInAt = new Date().toISOString();
+  // Persist so the owner actually sees the ping in their circle view — the
+  // grantee UI claims "they'll see you asked", which was previously false.
+  db.saveConnectionCheckin({
+    connectionId,
+    fromUserId: viewer.id,
+    message: cleanMessage,
+    createdAt: checkedInAt
+  });
+  const viewerUser = db.findUserById(viewer.id);
+  const ownerUser = db.findUserById(conn.ownerId);
+
   return {
     connectionId,
-    ownerName: conn.ownerId,
-    message: String(message || 'Checking on you').slice(0, 200),
-    checkedInAt: new Date().toISOString()
+    ownerName: ownerUser ? ownerUser.name : 'SafeSphere user',
+    fromName: viewerUser ? viewerUser.name : 'SafeSphere user',
+    message: cleanMessage,
+    checkedInAt
   };
 }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -133,14 +134,22 @@ class AuthService {
 
   UserModel? _currentUser;
   bool _isPinLocked = false;
-  bool _lastFetchFailed = false;
+  // Per-endpoint fetch flags: a shared bool let one successful fetch mask a
+  // concurrent failure on a different endpoint (e.g. reports OK, markers down).
+  bool _reportsFetchFailed = false;
+  bool _markersFetchFailed = false;
+  String? _lastReportError;
   Future<String?>? _refreshFuture;
   bool _isProcessingSosQueue = false;
+  Future<void> _sosQueueChain = Future.value();
 
   UserModel? get currentUser => _currentUser;
   bool get isAuthenticated => _currentUser != null && !_currentUser!.isGuest;
   bool get isPinLocked => _isPinLocked;
-  bool get lastFetchFailed => _lastFetchFailed;
+  bool get lastFetchFailed => _reportsFetchFailed || _markersFetchFailed;
+  bool get reportsFetchFailed => _reportsFetchFailed;
+  bool get markersFetchFailed => _markersFetchFailed;
+  String? get lastReportError => _lastReportError;
 
   // ---------------------------------------------------------------------------
   // Networking HTTP Helpers
@@ -739,6 +748,11 @@ class AuthService {
       'batteryLevel': batteryLevel,
       'alertType': alertType ?? 'CRITICAL_SOS',
       'notes': notes,
+      // Stable per-trigger idempotency key: if this request lands but the
+      // response is lost, the offline-queue replay reuses the SAME key and the
+      // backend returns the original alert instead of duplicating it.
+      'clientRequestId':
+          'sos_${DateTime.now().microsecondsSinceEpoch}_${math.Random.secure().nextInt(1 << 32)}',
     };
 
     final res = await _requestDetailed(
@@ -808,17 +822,38 @@ class AuthService {
   }
 
   Future<void> _pruneResolveToken(String alertId) async {
+    String? removedToken;
     try {
       final raw = await storage.getString(keySosResolveTokenMap);
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw);
         if (decoded is Map<String, dynamic> && decoded.containsKey(alertId)) {
+          removedToken = decoded[alertId] as String?;
           decoded.remove(alertId);
           await storage.setString(keySosResolveTokenMap, jsonEncode(decoded));
         }
       }
     } catch (_) {}
-    await storage.remove(keyActiveSosResolveToken);
+    // The legacy key mirrors the NEWEST token — it may belong to a DIFFERENT
+    // still-active alert. Only touch it when it actually held THIS alert's
+    // token; otherwise resolving an old alert would kill a live credential.
+    final legacy = await storage.getString(keyActiveSosResolveToken);
+    if (legacy == null) return;
+    if (removedToken != null && legacy == removedToken) {
+      // Re-mirror to the newest remaining map entry, or clear if none left.
+      try {
+        final raw = await storage.getString(keySosResolveTokenMap);
+        if (raw != null && raw.isNotEmpty) {
+          final decoded = jsonDecode(raw);
+          if (decoded is Map<String, dynamic> && decoded.isNotEmpty) {
+            await storage.setString(
+                keyActiveSosResolveToken, decoded.values.last as String);
+            return;
+          }
+        }
+      } catch (_) {}
+      await storage.remove(keyActiveSosResolveToken);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -844,6 +879,10 @@ class AuthService {
     final keys = payload.keys.toList()..sort();
     final buf = StringBuffer();
     for (final k in keys) {
+      // clientRequestId/_queuedAt are transport metadata, not emergency
+      // content — two rapid triggers of the SAME emergency must still dedupe
+      // even though each carries a unique idempotency key.
+      if (k == 'clientRequestId' || k == '_queuedAt') continue;
       buf.write('$k=');
       final v = payload[k];
       // Round floats so two GPS fixes a metre apart within the same trigger
@@ -860,7 +899,16 @@ class AuthService {
     return buf.toString();
   }
 
-  Future<void> queueOfflineSos(Map<String, dynamic> payload) async {
+  // Serialized through _sosQueueChain: concurrent enqueue calls (double-tap,
+  // connectivity flap) must not interleave their read-modify-write and drop
+  // or duplicate queue entries.
+  Future<void> queueOfflineSos(Map<String, dynamic> payload) {
+    final run = _sosQueueChain.then((_) => _queueOfflineSosImpl(payload));
+    _sosQueueChain = run.catchError((_) {});
+    return run;
+  }
+
+  Future<void> _queueOfflineSosImpl(Map<String, dynamic> payload) async {
     try {
       final raw = await storage.getString(keyOfflineSosQueue);
       final List<Map<String, dynamic>> queue = [];
@@ -1115,7 +1163,7 @@ class AuthService {
     double? longitude,
     double? radiusKm,
   }) async {
-    _lastFetchFailed = false;
+    _reportsFetchFailed = false;
     final token = await storage.getString(keyToken);
     final queryParams = <String, String>{};
     if (type != null) queryParams['type'] = type;
@@ -1142,7 +1190,7 @@ class AuthService {
       }
       return [];
     }
-    _lastFetchFailed = !res.isSuccess;
+    _reportsFetchFailed = !res.isSuccess;
     return [];
   }
 
@@ -1165,6 +1213,7 @@ class AuthService {
       if (photoBase64 != null && photoBase64.isNotEmpty) 'photoBase64': photoBase64,
     };
 
+    _lastReportError = null;
     final res = await _requestDetailed(
       method: 'POST',
       path: '/api/v1/reports',
@@ -1175,6 +1224,7 @@ class AuthService {
     if (res.isSuccess && res.data != null && res.data!['success'] == true) {
       return res.data!['data'] as Map<String, dynamic>?;
     }
+    _lastReportError = res.error ?? 'Request failed (HTTP ${res.statusCode}).';
     return null;
   }
 
@@ -1191,7 +1241,7 @@ class AuthService {
     String? type,
     int? limit,
   }) async {
-    _lastFetchFailed = false;
+    _markersFetchFailed = false;
     final token = await storage.getString(keyToken);
     // Backend markerController accepts lat + (lon | longitude); 'lng' is NOT a recognized alias.
     final queryParams = <String, String>{
@@ -1216,7 +1266,7 @@ class AuthService {
       }
       return [];
     }
-    _lastFetchFailed = !res.isSuccess;
+    _markersFetchFailed = !res.isSuccess;
     return [];
   }
 
@@ -1640,6 +1690,18 @@ class AuthService {
   /// Resets the account PIN using the OTP sent to the registered phone.
   /// Returns true when the reset succeeded (the user can then log in with
   /// the new PIN). Honest failures return false — never a fabricated reset.
+  /// Post-reset synchronization: the backend invalidated every session during
+  /// PIN reset, so stored tokens are dead. Install the new PIN locally and
+  /// clear the stale session so the user re-authenticates honestly.
+  Future<void> applyPinReset(String newPin) async {
+    await setPin(newPin);
+    await storage.remove(keyToken);
+    await storage.remove(keyRefreshToken);
+    await storage.remove(keyUser);
+    _currentUser = null;
+    _isPinLocked = false;
+  }
+
   Future<bool> resetPin({
     required String phone,
     required String otp,

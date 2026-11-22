@@ -41,6 +41,9 @@ class _EmergencyPageState extends State<EmergencyPage> {
   bool _isWsConnected = false;
   Timer? _chatPollTimer;
   String? _resolveToken;
+  // Incremented on every connect attempt/teardown — stale sockets from a
+  // previous generation must never overwrite _chatWs or drive UI state.
+  int _chatWsGeneration = 0;
 
   @override
   void initState() {
@@ -121,6 +124,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
   }
 
   void _teardownChat() {
+    _chatWsGeneration++;
     _chatPollTimer?.cancel();
     _chatPollTimer = null;
     try {
@@ -136,6 +140,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
   }
 
   Future<void> _connectChatWs(String alertId) async {
+    final generation = ++_chatWsGeneration;
     try {
       _chatWs?.close();
       final base = AuthService.instance.baseUrl;
@@ -147,7 +152,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
       final ws = await WebSocket.connect(wsUrl).timeout(const Duration(seconds: 4));
       // M6 dispose-race guard: if the emergency page was disposed while the
       // socket connected, close it immediately rather than leak a listener.
-      if (!mounted) {
+      if (!mounted || generation != _chatWsGeneration) {
         await ws.close().catchError((_) {});
         return;
       }
@@ -184,10 +189,12 @@ class _EmergencyPageState extends State<EmergencyPage> {
           } catch (_) {}
         },
         onDone: () {
+          if (generation != _chatWsGeneration) return;
           if (mounted) setState(() => _isWsConnected = false);
           _startChatFallbackPolling(alertId);
         },
         onError: (_) {
+          if (generation != _chatWsGeneration) return;
           if (mounted) setState(() => _isWsConnected = false);
           _startChatFallbackPolling(alertId);
         },
@@ -1727,12 +1734,15 @@ class _FakeCallOverlayState extends State<FakeCallOverlay> {
   }
 
   void _answer() {
+    // Double-tap guard: a second tap must not stack another periodic timer.
+    if (_isAnswered) return;
     try {
       HapticFeedback.lightImpact();
     } catch (_) {}
     setState(() {
       _isAnswered = true;
     });
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
         setState(() => _seconds++);
@@ -1770,7 +1780,7 @@ class _FakeCallOverlayState extends State<FakeCallOverlay> {
           ),
         ],
       ),
-    );
+    ).whenComplete(() => controller.dispose());
     if (newName != null && newName.isNotEmpty && mounted) {
       setState(() => _callerName = newName);
     }

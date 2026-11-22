@@ -45,9 +45,10 @@ function assertTrackingToken(session, token) {
 function isValidTrackingToken(sessionId, token) {
   const session = db.findTrackingSessionById(sessionId);
   if (!session) return false;
-  // Ended/terminated sessions must not remain subscribable — the token is a
-  // live credential, not a historical key.
+  // Ended/terminated/expired sessions must not remain subscribable — the
+  // token is a live credential, not a historical key.
   if (session.status && session.status !== 'active') return false;
+  if (session.expiresAt && new Date(session.expiresAt) < new Date()) return false;
   return safeTokenEquals(session.token, token);
 }
 
@@ -168,6 +169,18 @@ function getTrackingSession(sessionId, token) {
   }
 
   assertTrackingToken(session, token);
+
+  // A session past its expiresAt is dead even if no sweeper flipped its
+  // status yet — the token must stop working at the promised boundary.
+  // ('ended' sessions stay readable: guardians reviewing a finished trip is
+  // the product feature; live pings/subscribes are already blocked.)
+  const expiredByTime = session.expiresAt && new Date(session.expiresAt) < new Date();
+  if (session.status === 'expired' || (session.status === 'active' && expiredByTime)) {
+    const error = new Error('This tracking session has expired.');
+    error.status = 410;
+    error.code = 'SESSION_EXPIRED';
+    throw error;
+  }
 
   if (Array.isArray(session.breadcrumbs) && session.breadcrumbs.length > MAX_BREADCRUMBS_PER_SESSION) {
     session.breadcrumbs = session.breadcrumbs.slice(-MAX_BREADCRUMBS_PER_SESSION);

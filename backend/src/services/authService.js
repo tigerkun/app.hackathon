@@ -216,6 +216,13 @@ async function verifyOtpAndLogin({ phone, otp, userAgent, ipAddress }) {
     throw error;
   }
 
+  // Successful OTP verification proves control of the registered number —
+  // community features (report/vote) gate on this flag.
+  if (!user.phoneVerified) {
+    db.updateUser(user.id, { phoneVerified: true });
+    user.phoneVerified = true;
+  }
+
   const session = createSession({
     userId: user.id,
     refreshToken: '',

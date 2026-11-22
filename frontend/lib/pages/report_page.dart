@@ -21,6 +21,7 @@ class _ReportPageState extends State<ReportPage> {
 
   String selectedType = "Theft";
   final TextEditingController _descriptionController = TextEditingController();
+  final TextEditingController _manualLocationController = TextEditingController();
   String _locationTag = "Acquiring GPS location...";
   double? _latitude;
   double? _longitude;
@@ -88,6 +89,7 @@ class _ReportPageState extends State<ReportPage> {
   @override
   void dispose() {
     _descriptionController.dispose();
+    _manualLocationController.dispose();
     super.dispose();
   }
 
@@ -139,52 +141,69 @@ class _ReportPageState extends State<ReportPage> {
     setState(() => _isSubmitting = true);
     final messenger = ScaffoldMessenger.of(context);
 
-    // 1. Submit to real backend via AuthService
-    // Send clean "lat,lng" without the "(GPS Verified)" UI tag in backend payload
-    final cleanPayloadLocation = (_latitude != null && _longitude != null)
+    // Backend requires a non-empty location. With no GPS fix the user must
+    // type a landmark/area — previously an empty string was sent, the API
+    // returned 400, and the UI still claimed "backend unreachable".
+    final hasGpsFix = _latitude != null && _longitude != null;
+    final manualLocation = _manualLocationController.text.trim();
+    final locationPayload = hasGpsFix
         ? "${_latitude!.toStringAsFixed(5)}, ${_longitude!.toStringAsFixed(5)}"
-        : '';
+        : manualLocation;
+    if (locationPayload.isEmpty) {
+      setState(() => _isSubmitting = false);
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+              "Add a landmark or area name — GPS is unavailable and the report needs a location."),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // 1. Submit to real backend via AuthService
     final backendReport = await authService.submitReport(
       type: selectedType,
       description: description,
-      location: cleanPayloadLocation,
+      location: locationPayload,
       latitude: _latitude,
       longitude: _longitude,
       photoBase64: _photoBase64,
     );
 
-    // 2. Add to local cache for immediate in-app visibility
-    final localReport = Report(
-      id: backendReport?['id'] as String? ??
-          "rep_${DateTime.now().millisecondsSinceEpoch}_${_localReportSeq++}",
-      type: selectedType,
-      location: _locationTag,
-      description: description,
-      time: DateTime.now(),
-      photoUrl: _photoBase64,
-      status: ReportStatus.pending,
-    );
-    ReportStore.addReport(localReport);
-
     if (mounted) {
       setState(() => _isSubmitting = false);
       if (backendReport != null) {
+        // 2. Add to local cache only on CONFIRMED backend acceptance — a
+        // failed submit must never look like a queued/sent report.
+        final localReport = Report(
+          id: backendReport['id'] as String? ??
+              "rep_${DateTime.now().millisecondsSinceEpoch}_${_localReportSeq++}",
+          type: selectedType,
+          location: _locationTag,
+          description: description,
+          time: DateTime.now(),
+          photoUrl: _photoBase64,
+          status: ReportStatus.pending,
+        );
+        ReportStore.addReport(localReport);
         messenger.showSnackBar(
           const SnackBar(
             content: Text("Incident report submitted to SafeSphere network successfully."),
             backgroundColor: Colors.green,
           ),
         );
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
       } else {
         messenger.showSnackBar(
-          const SnackBar(
-            content: Text("Report could not be submitted — backend unreachable. Please retry when connected."),
-            backgroundColor: Colors.orange,
+          SnackBar(
+            content: Text(
+                "Report was NOT submitted: ${authService.lastReportError ?? 'backend unreachable — retry when connected.'}"),
+            backgroundColor: Colors.redAccent,
           ),
         );
-      }
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context);
       }
     }
   }
@@ -376,6 +395,27 @@ class _ReportPageState extends State<ReportPage> {
                           ],
                         ),
 
+                        // GPS unavailable → manual landmark is REQUIRED by the
+                        // backend (location field is mandatory).
+                        if (_latitude == null) ...[
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: _manualLocationController,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: const InputDecoration(
+                              labelText: "Landmark / area name *",
+                              hintText: "e.g. MG Road, near City Mall",
+                              labelStyle: TextStyle(color: Colors.white60),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: BorderSide(color: Colors.white24),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: BorderSide(color: AppColors.teal),
+                              ),
+                            ),
+                          ),
+                        ],
+
                         const SizedBox(height: 14),
 
                         /// F5-4: PHOTO ATTACHMENT SECTION
@@ -484,6 +524,8 @@ class _ReportPageState extends State<ReportPage> {
   /// only a salted SHA-256 hash goes to the server.
   Future<bool?> _showAadhaarConsentDialog() {
     final last4Controller = TextEditingController();
+    // Dispose the dialog-local controller when the dialog closes — leaking it
+    // keeps the text field's listeners alive after the route is gone.
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -498,8 +540,9 @@ class _ReportPageState extends State<ReportPage> {
           children: [
             const Text(
               "Help us keep SafeSphere trustworthy. Provide the last 4 digits "
-              "of your Aadhaar number — stored ONLY as a salted hash that "
-              "cannot be read back. Used solely to prevent ban evasion.",
+              "of your Aadhaar number — stored ONLY as a keyed hash that "
+              "cannot be read back. A weak signal moderators use for abuse "
+              "review — not verified identity.",
               style: TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 14),
@@ -547,7 +590,7 @@ class _ReportPageState extends State<ReportPage> {
           ),
         ],
       ),
-    );
+    ).whenComplete(() => last4Controller.dispose());
   }
 
 }

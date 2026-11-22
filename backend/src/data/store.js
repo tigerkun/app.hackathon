@@ -122,9 +122,11 @@ class DataStore {
         resolvedAt TEXT,
         emergencyContactsNotified INTEGER NOT NULL DEFAULT 0,
         notes TEXT,
-        resolveTokenHash TEXT
+        resolveTokenHash TEXT,
+        clientRequestId TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_alerts_status_triggeredAt ON alerts(status, triggeredAt);
+      CREATE INDEX IF NOT EXISTS idx_alerts_clientRequestId ON alerts(clientRequestId);
       CREATE INDEX IF NOT EXISTS idx_alerts_userId ON alerts(userId);
 
       CREATE TABLE IF NOT EXISTS otps (
@@ -207,6 +209,15 @@ class DataStore {
         timestamp TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_connection_locations_conn ON connection_locations(connectionId, timestamp);
+
+      CREATE TABLE IF NOT EXISTS connection_checkins (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        connectionId TEXT NOT NULL,
+        fromUserId TEXT NOT NULL,
+        message TEXT NOT NULL,
+        createdAt TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_connection_checkins_conn ON connection_checkins(connectionId, createdAt);
     `);
 
     try {
@@ -232,6 +243,12 @@ class DataStore {
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE alerts ADD COLUMN escalationLevel INTEGER DEFAULT 0");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE alerts ADD COLUMN clientRequestId TEXT");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE users ADD COLUMN phoneVerified INTEGER NOT NULL DEFAULT 0");
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE tracking_sessions ADD COLUMN lastActivityAt TEXT");
@@ -282,6 +299,29 @@ class DataStore {
     try {
       this._backfillSafeIds();
     } catch (_) {}
+    // Phone canonicalization backfill: rows stored before normalizePhone
+    // became canonical may hold '+91 …'/spaced forms; rewrite them so
+    // login/OTP/PIN-reset lookups resolve regardless of input formatting.
+    try {
+      this._backfillPhoneCanonical();
+    } catch (_) {}
+  }
+
+  _backfillPhoneCanonical() {
+    const { normalizePhone } = require('../models/userModel');
+    const rows = this.db.prepare('SELECT id, phone FROM users').all();
+    const update = this.db.prepare('UPDATE users SET phone = ? WHERE id = ?');
+    for (const row of rows) {
+      const canonical = normalizePhone(row.phone);
+      if (canonical && canonical !== row.phone) {
+        // Skip if another account already owns the canonical form — merging
+        // duplicates silently would be worse than leaving the row as-is.
+        const clash = this.db
+          .prepare('SELECT id FROM users WHERE phone = ? AND id != ? LIMIT 1')
+          .get(canonical, row.id);
+        if (!clash) update.run(canonical, row.id);
+      }
+    }
   }
 
   /// Assigns a SafeSphere ID to every user row still lacking one. Runs on
@@ -552,6 +592,41 @@ class DataStore {
     } : null;
   }
 
+  // "Check on them" pings — persisted so the OWNER actually sees them; the
+  // grantee UI previously implied delivery that never happened.
+  saveConnectionCheckin({ connectionId, fromUserId, message, createdAt }) {
+    this.db.prepare(`
+      INSERT INTO connection_checkins (connectionId, fromUserId, message, createdAt)
+      VALUES (?, ?, ?, ?)
+    `).run(connectionId, fromUserId, String(message || '').slice(0, 500), createdAt || new Date().toISOString());
+  }
+
+  getConnectionCheckins(connectionId, limit = 20) {
+    const rows = this.db.prepare(`
+      SELECT * FROM connection_checkins WHERE connectionId = ?
+      ORDER BY createdAt DESC, id DESC LIMIT ?
+    `).all(connectionId, Math.min(Math.max(1, limit), 100));
+    return rows.map((r) => ({
+      id: r.id,
+      connectionId: r.connectionId,
+      fromUserId: r.fromUserId,
+      message: r.message,
+      createdAt: r.createdAt
+    }));
+  }
+
+  getLatestConnectionCheckin(connectionId) {
+    const row = this.db.prepare(`
+      SELECT * FROM connection_checkins WHERE connectionId = ?
+      ORDER BY createdAt DESC, id DESC LIMIT 1
+    `).get(connectionId);
+    return row ? {
+      fromUserId: row.fromUserId,
+      message: row.message,
+      createdAt: row.createdAt
+    } : null;
+  }
+
   // ==========================================
   // M2 Community Trust Repository
   // ==========================================
@@ -683,6 +758,7 @@ class DataStore {
       banned: Boolean(row.banned),
       aadhaarLast4Salt: row.aadhaarLast4Salt ?? null,
       aadhaarLast4Hash: row.aadhaarLast4Hash ?? null,
+      phoneVerified: Boolean(row.phoneVerified),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt
     };
@@ -716,6 +792,17 @@ class DataStore {
     return this.findUserByPhone(trimmed);
   }
 
+  // Count OTHER accounts sharing the same Aadhaar-lite hash — the ban-evasion
+  // signal. Last-4 collisions are common (10k space), so this informs review,
+  // it does not prove anything.
+  countUsersWithAadhaarHash(hash, excludeUserId = null) {
+    if (!hash) return 0;
+    const row = this.db.prepare(
+      'SELECT COUNT(*) AS c FROM users WHERE aadhaarLast4Hash = ? AND id != ?'
+    ).get(hash, excludeUserId || '');
+    return Number(row ? row.c : 0);
+  }
+
   findUserByBiometricToken(token) {
     if (!token) return null;
     const row = this.db.prepare('SELECT * FROM users WHERE biometricsEnabled = 1 AND biometricToken = ? LIMIT 1').get(token);
@@ -733,8 +820,9 @@ class DataStore {
       INSERT INTO users (
         id, name, email, phone, role, passwordHash, pin, pinHash, biometricToken,
         biometricsEnabled, emergencyContacts, isActive, createdAt, updatedAt,
-        reputationScore, strikes, banned, aadhaarLast4Salt, aadhaarLast4Hash, safeId
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        reputationScore, strikes, banned, aadhaarLast4Salt, aadhaarLast4Hash, safeId,
+        phoneVerified
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         email = excluded.email,
@@ -754,12 +842,13 @@ class DataStore {
         banned = excluded.banned,
         aadhaarLast4Salt = excluded.aadhaarLast4Salt,
         aadhaarLast4Hash = excluded.aadhaarLast4Hash,
-        safeId = excluded.safeId
+        safeId = excluded.safeId,
+        phoneVerified = excluded.phoneVerified
     `).run(
       user.id,
       user.name ?? '',
       user.email ?? '',
-      user.phone ?? '',
+      normalizePhone(user.phone),
       user.role || 'citizen',
       user.passwordHash ?? '',
       user.pin ?? null,
@@ -775,7 +864,8 @@ class DataStore {
       user.banned !== undefined && user.banned !== null ? (user.banned ? 1 : 0) : 0,
       user.aadhaarLast4Salt ?? null,
       user.aadhaarLast4Hash ?? null,
-      user.safeId ?? null
+      user.safeId ?? null,
+      user.phoneVerified ? 1 : 0
     );
 
     return this.findUserById(user.id);
@@ -1196,7 +1286,8 @@ class DataStore {
       resolvedAt: row.resolvedAt ?? null,
       emergencyContactsNotified: Number(row.emergencyContactsNotified || 0),
       notes: row.notes ?? null,
-      resolveTokenHash: row.resolveTokenHash ?? null
+      resolveTokenHash: row.resolveTokenHash ?? null,
+      clientRequestId: row.clientRequestId ?? null
     };
   }
 
@@ -1216,14 +1307,24 @@ class DataStore {
     return rows.map((r) => this._formatAlert(r));
   }
 
+  // Idempotency lookup for offline-queue replays: the same clientRequestId
+  // must never produce a second alert row.
+  findAlertByClientRequestId(clientRequestId) {
+    if (!clientRequestId) return null;
+    const row = this.db
+      .prepare('SELECT * FROM alerts WHERE clientRequestId = ? LIMIT 1')
+      .get(String(clientRequestId));
+    return this._formatAlert(row);
+  }
+
   saveAlert(alert) {
     if (!alert || !alert.id) throw new Error('Alert must have an ID');
     this.db.prepare(`
       INSERT INTO alerts (
         id, userId, userName, userPhone, latitude, longitude, accuracy,
         batteryLevel, alertType, status, escalationLevel, triggeredAt, resolvedAt,
-        emergencyContactsNotified, notes, resolveTokenHash
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        emergencyContactsNotified, notes, resolveTokenHash, clientRequestId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         userId = excluded.userId,
         userName = excluded.userName,
@@ -1239,7 +1340,8 @@ class DataStore {
         resolvedAt = excluded.resolvedAt,
         emergencyContactsNotified = excluded.emergencyContactsNotified,
         notes = excluded.notes,
-        resolveTokenHash = excluded.resolveTokenHash
+        resolveTokenHash = excluded.resolveTokenHash,
+        clientRequestId = excluded.clientRequestId
     `).run(
       alert.id,
       alert.userId ?? '',
@@ -1258,7 +1360,8 @@ class DataStore {
         ? Number(alert.emergencyContactsNotified)
         : 0,
       alert.notes ?? null,
-      alert.resolveTokenHash ?? null
+      alert.resolveTokenHash ?? null,
+      alert.clientRequestId ?? null
     );
 
     return this.findAlertById(alert.id);

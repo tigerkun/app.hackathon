@@ -87,16 +87,28 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() => _isLoading = false);
 
     if (success) {
-      // Automatically send OTP and navigate to PhoneOtpPage
-      await authState.sendOtp(phone);
+      // Automatically send OTP and navigate to PhoneOtpPage — only claim the
+      // code was sent when the backend actually accepted the request.
+      final otpSent = await authState.sendOtp(phone);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Account created. Verification code sent to $phone.'),
-          backgroundColor: Colors.teal,
-        ),
-      );
-      Navigator.pushNamed(context, AppRoutes.otp, arguments: phone);
+      if (otpSent) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Account created. Verification code sent to $phone.'),
+            backgroundColor: Colors.teal,
+          ),
+        );
+        Navigator.pushNamed(context, AppRoutes.otp, arguments: phone);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Account created, but the verification code could not be sent: ${authState.errorMessage ?? 'try again'}. You can request a new code from the verification screen.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        Navigator.pushNamed(context, AppRoutes.otp, arguments: phone);
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

@@ -625,6 +625,7 @@ describe('Milestone 2 Adversarial Verification - Server, WebSocket, Reports & Ma
         name: 'Marker Admin',
         email: 'markeradmin@safesphere.test',
         phone: '+919000000001',
+        phoneVerified: true,
         role: 'admin'
       }));
       const adminToken = signAccessToken(adminUser);

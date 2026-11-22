@@ -23,7 +23,15 @@ function normalizeEmail(email) {
 }
 
 function normalizePhone(phone) {
-  return (phone || '').trim();
+  // Canonical form: digits only, Indian mobile normalized to 91XXXXXXXXXX.
+  // '9876543210', '+91 98765-43210', '091-9876543210' must all resolve to the
+  // same account — raw trimmed text allowed duplicate accounts per SIM and
+  // broke forgot-PIN/OTP lookups for differently-formatted stored numbers.
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return `91${digits}`;
+  if (digits.length === 11 && digits.startsWith('0')) return `91${digits.slice(1)}`;
+  return digits;
 }
 
 function createUser({
@@ -44,6 +52,7 @@ function createUser({
   banned = false,
   aadhaarLast4Salt = null,
   aadhaarLast4Hash = null,
+  phoneVerified = false,
   safeId = generateSafeId(),
   createdAt = new Date().toISOString(),
   updatedAt = new Date().toISOString()
@@ -68,6 +77,7 @@ function createUser({
     banned: Boolean(banned),
     aadhaarLast4Salt,
     aadhaarLast4Hash,
+    phoneVerified: Boolean(phoneVerified),
     createdAt,
     updatedAt
   };
@@ -92,14 +102,31 @@ function toSafeUser(user) {
     strikes: Number(user.strikes || 0),
     banned: Boolean(user.banned),
     aadhaarLinked: Boolean(user.aadhaarLast4Hash),
+    phoneVerified: Boolean(user.phoneVerified),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt
+  };
+}
+
+/**
+ * Minimal projection for connection/trusted-circle counterparties.
+ * Deliberately excludes email, phone, emergencyContacts, strikes, banned,
+ * aadhaarLinked — pending or revoked connections must not leak PII.
+ */
+function toConnectionPeer(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    name: user.name,
+    safeId: user.safeId || null,
+    role: user.role || 'citizen'
   };
 }
 
 module.exports = {
   createUser,
   toSafeUser,
+  toConnectionPeer,
   generateUserId,
   generateSafeId,
   normalizeEmail,

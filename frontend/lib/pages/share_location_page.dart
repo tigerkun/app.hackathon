@@ -143,6 +143,18 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
 
       final sessionId = sessionData['sessionId'] as String;
       final sessionToken = sessionData['token'] as String;
+
+      // M6 orphan guard: if the page was disposed while the session was being
+      // created, the backend now holds a LIVE tracking session nobody is
+      // watching — terminate it immediately instead of leaking it.
+      if (!mounted) {
+        await AuthService.instance.terminateTrackingSession(
+          sessionId: sessionId,
+          trackingToken: sessionToken,
+          reason: 'Share page closed during session setup',
+        );
+        return;
+      }
       final shareUrl = sessionData['shareUrl'] as String? ?? 'https://www.google.com/maps?q=$_latitude,$_longitude';
       final expiresAt = sessionData['expiresAt'] as String?;
 

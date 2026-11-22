@@ -18,6 +18,7 @@ function createTestToken(userOverrides = {}) {
     role: 'citizen',
     passwordHash: 'dummy_hash',
     isActive: true,
+    phoneVerified: true,
     ...userOverrides
   });
   const token = signAccessToken(user, null);

@@ -10,6 +10,22 @@ const { findNearby } = require('../services/geoService');
 // M2.4: unverified reports expire 24h after creation — stale incidents
 // auto-archive off the live feed instead of lingering for a day.
 const REPORT_FRESHNESS_WINDOW_MS = 24 * 60 * 60 * 1000;
+const UNVERIFIED_STATUSES = new Set(['pending', 'under_investigation']);
+
+// Expiry instant: persisted expiresAt wins; fall back to createdAt + window
+// for rows written before the column existed.
+function reportExpiryMs(r) {
+  const exp = r.expiresAt ? new Date(r.expiresAt).getTime() : NaN;
+  if (!isNaN(exp)) return exp;
+  const created = r.createdAt ? new Date(r.createdAt).getTime() : NaN;
+  return isNaN(created) ? NaN : created + REPORT_FRESHNESS_WINDOW_MS;
+}
+
+function isReportExpired(r) {
+  if (!UNVERIFIED_STATUSES.has(r.status)) return false;
+  const exp = reportExpiryMs(r);
+  return !isNaN(exp) && Date.now() > exp;
+}
 
 function list(req, res, next) {
   try {
@@ -39,11 +55,7 @@ function list(req, res, next) {
       const tally = db.getReportVoteTally(r.id);
       safe.upvotes = tally.upvotes;
       safe.downvotes = tally.downvotes;
-      safe.expired = Boolean(
-        r.status === 'pending' &&
-        r.createdAt &&
-        (Date.now() - new Date(r.createdAt).getTime()) > REPORT_FRESHNESS_WINDOW_MS
-      );
+      safe.expired = isReportExpired(r);
       safe.isMine = Boolean(myId && r.reportedBy === myId);
       const myVote = myId ? db.getUserReportVote(r.id, myId) : null;
       safe.myVote = myVote ? myVote.vote : null;
@@ -51,11 +63,7 @@ function list(req, res, next) {
     });
 
     // M2.4 freshness: expired unverified reports drop out of the default feed
-    const isFreshEnough = (r) => !(
-      r.status === 'pending' &&
-      r.createdAt &&
-      (Date.now() - new Date(r.createdAt).getTime()) > REPORT_FRESHNESS_WINDOW_MS
-    );
+    const isFreshEnough = (r) => !isReportExpired(r);
 
     if (latParam !== undefined && lngParam !== undefined && latParam !== '' && lngParam !== '') {
       const targetLat = Number(latParam);
@@ -111,6 +119,19 @@ function create(req, res, next) {
         error: {
           code: 'SIGN_IN_REQUIRED',
           message: 'Sign in with a verified account to submit community reports.',
+          details: []
+        }
+      });
+    }
+
+    // M2.1/M2.3: reporting requires an OTP-verified phone — unverified or
+    // fake-phone accounts must not be able to submit or brigade votes.
+    if (!req.user.phoneVerified) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PHONE_NOT_VERIFIED',
+          message: 'Verify your phone number with the OTP sent at sign-up before reporting.',
           details: []
         }
       });
@@ -192,6 +213,18 @@ function vote(req, res, next) {
       });
     }
 
+    // M2.3: voting requires the same OTP-verified account as reporting.
+    if (!req.user.phoneVerified) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PHONE_NOT_VERIFIED',
+          message: 'Verify your phone number with the OTP sent at sign-up before voting.',
+          details: []
+        }
+      });
+    }
+
     const { id } = req.params;
     const { vote } = req.body || {};
 
@@ -265,7 +298,37 @@ function getById(req, res, next) {
       });
     }
 
+    // M2.4: expired unverified reports are invisible to the public — the
+    // by-ID route must apply the same rule the feed does, or it becomes a
+    // bypass for stale/archived incidents. Owner and privileged roles still
+    // see their own reports for moderation/history.
+    if (isReportExpired(report)) {
+      const viewerId = req.user ? req.user.id : null;
+      const viewerPrivileged = Boolean(
+        req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
+      );
+      const isOwner = Boolean(viewerId && report.reportedBy === viewerId);
+      if (!isOwner && !viewerPrivileged) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'REPORT_NOT_FOUND',
+            message: `Report with ID ${id} not found`,
+            details: []
+          }
+        });
+      }
+    }
+
     const safeReport = toSafeReport(report);
+    const tally = db.getReportVoteTally(report.id);
+    safeReport.upvotes = tally.upvotes;
+    safeReport.downvotes = tally.downvotes;
+    safeReport.expired = isReportExpired(report);
+    const viewerId = req.user ? req.user.id : null;
+    safeReport.isMine = Boolean(viewerId && report.reportedBy === viewerId);
+    const myVote = viewerId ? db.getUserReportVote(report.id, viewerId) : null;
+    safeReport.myVote = myVote ? myVote.vote : null;
     res.status(200).json({
       success: true,
       data: safeReport,
@@ -330,7 +393,14 @@ function updateStatus(req, res, next) {
     // reports persist); 'rejected' = false report (-20, +1 strike, 3 strikes
     // = banned from community submissions). SOS/tracking/chat/dialer are
     // NEVER gated by any of this (safety invariants are absolute).
-    if (updated.reportedBy) {
+    //
+    // Effects apply ONLY on the first terminal verdict: re-issuing the same
+    // status or flip-flopping verified↔rejected must not farm reputation or
+    // stack strikes. Moderators also get no reputation for verdicts on their
+    // OWN reports (self-verdict farming).
+    const isFirstVerdict = !['verified', 'rejected', 'resolved'].includes(existing.status);
+    const isSelfVerdict = Boolean(updated.reportedBy) && updated.reportedBy === req.user.id;
+    if (updated.reportedBy && isFirstVerdict && !isSelfVerdict) {
       const reporter = db.findUserById(updated.reportedBy);
       if (reporter) {
         let reputation = Number(reporter.reputationScore || 0);

@@ -33,7 +33,8 @@ function makeUser(store, name) {
     name,
     email: `${name.toLowerCase().replace(/\s+/g, '.')}.hardening@safesphere.test`,
     phone: `+9188${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`,
-    passwordHash: bcrypt.hashSync('Str0ngPass!23', 8)
+    passwordHash: bcrypt.hashSync('Str0ngPass!23', 8),
+    phoneVerified: true
   }));
 }
 
@@ -158,6 +159,7 @@ describe('Hardening Wave', () => {
         name: 'Caps User',
         email: 'caps@safesphere.test',
         phone: '+918800200009',
+        phoneVerified: true,
         passwordHash: bcrypt.hashSync('Str0ngPass!23', 8)
       }));
       const login = await t.request('/api/v1/auth/login', {

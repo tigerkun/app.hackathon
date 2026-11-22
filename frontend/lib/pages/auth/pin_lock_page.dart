@@ -450,11 +450,11 @@ class _ForgotPinSheetState extends State<_ForgotPinSheet> {
       _isBusy = true;
       _error = null;
     });
-    final res = await AuthService.instance.sendOtp(phone: phone, purpose: 'login');
+    final res = await AuthService.instance.sendOtp(phone);
     if (!mounted) return;
     setState(() {
       _isBusy = false;
-      if (res != null && res['success'] == true) {
+      if (res.success) {
         _otpSent = true;
         _error = null;
       } else {
@@ -482,6 +482,11 @@ class _ForgotPinSheetState extends State<_ForgotPinSheet> {
     if (!mounted) return;
     setState(() => _isBusy = false);
     if (ok) {
+      // Backend revoked all sessions during the reset — wipe the dead local
+      // tokens and install the NEW PIN so the keypad verifies what the user
+      // just chose (previously the old local PIN still unlocked).
+      await AuthService.instance.applyPinReset(newPin);
+      if (!mounted) return;
       Navigator.of(context).pop(true);
     } else {
       setState(() {

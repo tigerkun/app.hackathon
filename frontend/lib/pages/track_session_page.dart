@@ -110,6 +110,10 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
     await _connectWs();
     await _pollOnce();
 
+    // Dispose-race: the page may have closed during the awaits above — never
+    // start a periodic timer on a dead widget.
+    if (!mounted) return;
+
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) => _pollOnce());
 

@@ -30,6 +30,7 @@ describe('SafeSphere Wave 2 User-Facing Enhancements', () => {
       name: 'Wave2 User One',
       email: 'wave2_user1@safesphere.test',
       phone: '+919999900001',
+      phoneVerified: true,
       passwordHash: 'dummy',
       role: 'citizen'
     }));
@@ -48,6 +49,7 @@ describe('SafeSphere Wave 2 User-Facing Enhancements', () => {
       name: 'Wave2 User Two',
       email: 'wave2_user2@safesphere.test',
       phone: '+919999900002',
+      phoneVerified: true,
       passwordHash: 'dummy',
       role: 'citizen'
     }));

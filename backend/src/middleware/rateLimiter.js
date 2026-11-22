@@ -105,11 +105,21 @@ const otpLimiter = createRateLimiter({
   skipInTest: true
 });
 
+// Marker submissions feed a human moderation queue — cap the flood so one
+// actor cannot drown reviewers in pending pins.
+const markerLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: 'Too many marker submissions. Please wait before submitting again.',
+  skipInTest: true
+});
+
 module.exports = {
   createRateLimiter,
   globalLimiter,
   authLimiter,
   reportLimiter,
   aiLimiter,
-  otpLimiter
+  otpLimiter,
+  markerLimiter
 };

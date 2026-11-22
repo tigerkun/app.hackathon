@@ -95,7 +95,9 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
       ]);
 
       if (!mounted) return;
-      if (_hasGpsFix && AuthService.instance.lastFetchFailed && results[0].isEmpty) {
+      // Per-endpoint flags: a successful reports fetch must not mask a
+      // markers failure (and vice versa) when both run concurrently.
+      if (_hasGpsFix && AuthService.instance.markersFetchFailed && results[0].isEmpty) {
         setState(() {
           _errorMessage = "Could not fetch nearby safety data.";
           _isLoading = false;
@@ -121,20 +123,32 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
     }
   }
 
-  List<_MapPinItem> _getFilteredItems() {
+  // applyFilter=false returns EVERY loaded pin — the near-me strip needs the
+  // unfiltered set or choosing "Police" would hide the nearest hospital.
+  List<_MapPinItem> _getFilteredItems({bool applyFilter = true}) {
     final List<_MapPinItem> items = [];
 
     // 1. Process safety markers
     for (final m in _markers) {
       final String category = (m['category'] ?? 'Verified Safe Zone').toString();
       final String name = (m['name'] ?? 'Safety Facility').toString();
-      final double lat = (m['latitude'] is num) ? (m['latitude'] as num).toDouble() : _userLat;
-      final double lng = (m['longitude'] is num) ? (m['longitude'] as num).toDouble() : _userLng;
+      // Reject non-finite/out-of-range coordinates — previously a marker with
+      // a missing lat/lng silently rendered ON TOP of the user's position.
+      final rawLat = m['latitude'];
+      final rawLng = m['longitude'];
+      if (rawLat is! num || rawLng is! num) continue;
+      final lat = rawLat.toDouble();
+      final lng = rawLng.toDouble();
+      if (!lat.isFinite || !lng.isFinite || lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
       final String? address = m['address']?.toString();
       final bool isVerified = m['isVerified'] == true;
 
-      double distanceKm = 0.0;
-      if (m['distanceKm'] is num) {
+      double distanceKm;
+      if (!_hasGpsFix) {
+        // Delhi fallback coords are NOT the user's position — distance is
+        // honestly unknown (-1 sentinel), never a fabricated kilometre value.
+        distanceKm = -1;
+      } else if (m['distanceKm'] is num) {
         distanceKm = (m['distanceKm'] as num).toDouble();
       } else {
         distanceKm = Geolocator.distanceBetween(_userLat, _userLng, lat, lng) / 1000.0;
@@ -162,16 +176,16 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
         color = Colors.cyan;
       }
 
-      bool matchesFilter = false;
-      if (_selectedFilter == "All") {
+      bool matchesFilter = !applyFilter;
+      if (!matchesFilter && _selectedFilter == "All") {
         matchesFilter = true;
-      } else if (_selectedFilter == "Police" && catLower.contains('police')) {
+      } else if (!matchesFilter && _selectedFilter == "Police" && catLower.contains('police')) {
         matchesFilter = true;
-      } else if (_selectedFilter == "Hospitals" && (catLower.contains('hospital') || catLower.contains('medical'))) {
+      } else if (!matchesFilter && _selectedFilter == "Hospitals" && (catLower.contains('hospital') || catLower.contains('medical'))) {
         matchesFilter = true;
-      } else if (_selectedFilter == "Stores" && (catLower.contains('24x7') || catLower.contains('store'))) {
+      } else if (!matchesFilter && _selectedFilter == "Stores" && (catLower.contains('24x7') || catLower.contains('store'))) {
         matchesFilter = true;
-      } else if (_selectedFilter == "Safe Zones" && (catLower.contains('safe') || catLower.contains('transit'))) {
+      } else if (!matchesFilter && _selectedFilter == "Safe Zones" && (catLower.contains('safe') || catLower.contains('transit'))) {
         matchesFilter = true;
       }
 
@@ -193,17 +207,21 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
     }
 
     // 2. Process community hazard reports
-    if (_selectedFilter == "All" || _selectedFilter == "Hazards") {
+    if (!applyFilter || _selectedFilter == "All" || _selectedFilter == "Hazards") {
       for (final r in _reports) {
         final String type = (r['type'] ?? 'Hazard').toString();
         final String desc = (r['description'] ?? 'Community hazard report').toString();
         final String location = (r['location'] ?? 'Nearby').toString();
-        final double? lat = (r['latitude'] is num) ? (r['latitude'] as num).toDouble() : null;
-        final double? lng = (r['longitude'] is num) ? (r['longitude'] as num).toDouble() : null;
+        final rawLat = r['latitude'];
+        final rawLng = r['longitude'];
+        if (rawLat is! num || rawLng is! num) continue;
+        final lat = rawLat.toDouble();
+        final lng = rawLng.toDouble();
+        if (!lat.isFinite || !lng.isFinite || lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
 
-        if (lat == null || lng == null) continue;
-
-        final double distanceKm = Geolocator.distanceBetween(_userLat, _userLng, lat, lng) / 1000.0;
+        final double distanceKm = _hasGpsFix
+            ? Geolocator.distanceBetween(_userLat, _userLng, lat, lng) / 1000.0
+            : -1;
         final bool isVerified = (r['status'] == 'verified');
 
         items.add(_MapPinItem(
@@ -222,8 +240,19 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
       }
     }
 
-    items.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
+    // Unknown distances (-1, no GPS fix) sort last rather than posing as
+    // "0.0 km away".
+    double sortKey(_MapPinItem i) => i.distanceKm < 0 ? double.infinity : i.distanceKm;
+    items.sort((a, b) => sortKey(a).compareTo(sortKey(b)));
     return items;
+  }
+
+  /// Honest distance label — "-1" means GPS was unavailable, so no distance
+  /// claim is made at all.
+  String _fmtDistance(double km) {
+    if (km < 0) return 'distance unknown';
+    if (km < 1) return '${(km * 1000).round()} m';
+    return '${km.toStringAsFixed(1)} km';
   }
 
   Future<void> _openExternalDirections(double destLat, double destLng) async {
@@ -491,12 +520,22 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      // Dialog-local controllers must not outlive the dialog.
+      nameController.dispose();
+      addressController.dispose();
+      noteController.dispose();
+      latController.dispose();
+      lngController.dispose();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final filteredItems = _getFilteredItems();
+    // Near-me strip always sees the UNFILTERED set — category filters must
+    // not hide the nearest hospital/police/store chips.
+    final allPinItems = _getFilteredItems(applyFilter: false);
 
     return Scaffold(
       drawer: const AppDrawer(),
@@ -566,7 +605,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                     ],
                   ),
                 ),
-                if (_hasGpsFix && !_isListView) _buildNearMeStrip(filteredItems),
+                if (_hasGpsFix && !_isListView) _buildNearMeStrip(allPinItems),
               ],
             ),
           ),
@@ -809,7 +848,10 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
             // M4: guidance line — straight ("as the crow flies") path from the
             // user's fix to the selected pin. Honest: it is NOT turn-by-turn
             // routing; the details card still offers real external directions.
-            if (_hasGpsFix && _selectedItem != null && !_selectedItem!.isHazardReport && _selectedItem!.id != "you")
+            // Caution Areas are hazards to avoid, not destinations — never
+            // draw a guidance line toward one.
+            if (_hasGpsFix && _selectedItem != null && !_selectedItem!.isHazardReport && _selectedItem!.id != "you"
+                && !_selectedItem!.category.toLowerCase().contains('caution'))
               PolylineLayer(
                 polylines: [
                   Polyline(
@@ -872,7 +914,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                         color: item.color,
                         label:
                             item.name.length > 14 ? "${item.name.substring(0, 12)}.." : item.name,
-                        distanceText: "${item.distanceKm.toStringAsFixed(1)}km",
+                        distanceText: _fmtDistance(item.distanceKm),
                       ),
                     ),
                   ),
@@ -1006,7 +1048,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          "${item.distanceKm.toStringAsFixed(1)} km",
+                          "${_fmtDistance(item.distanceKm)}",
                           style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: item.color),
                         ),
                       ),
@@ -1065,7 +1107,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                     Text(
-                      "${item.category} • ${item.distanceKm.toStringAsFixed(2)} km away",
+                      "${item.category} • ${_fmtDistance(item.distanceKm)} away",
                       style: TextStyle(fontSize: 11, color: item.color),
                     ),
                   ],

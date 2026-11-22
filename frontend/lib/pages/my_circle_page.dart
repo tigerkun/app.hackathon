@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
@@ -54,6 +55,7 @@ class _MyCirclePageState extends State<MyCirclePage> {
         _outgoing = _asList(data['outgoing']);
         _isLoading = false;
       });
+      _publishBeacons(_incoming);
     } else {
       setState(() {
         _errorMessage = res['message']?.toString() ?? 'Could not load your circle.';
@@ -280,6 +282,44 @@ class _MyCirclePageState extends State<MyCirclePage> {
     );
   }
 
+  /// Foreground beacon: for every 'always'-mode connection where someone can
+  /// see me, publish the last known position so their live view isn't empty.
+  /// Honest scope: fires when this page loads — a true background beacon
+  /// needs a foreground service (TODO(REAL_HARDWARE)).
+  Future<void> _publishBeacons(List<Map<String, dynamic>> incoming) async {
+    final always = incoming.where(
+        (c) => c['status'] == 'active' && c['mode'] == 'always');
+    if (always.isEmpty) return;
+    Position? pos;
+    try {
+      pos = await Geolocator.getLastKnownPosition();
+    } catch (_) {}
+    if (pos == null) return;
+    for (final c in always) {
+      final id = c['id']?.toString();
+      if (id == null || id.isEmpty) continue;
+      try {
+        await _authService.pingConnectionLocation(
+          connectionId: id,
+          latitude: pos.latitude,
+          longitude: pos.longitude,
+          accuracy: pos.accuracy,
+        );
+      } catch (_) {
+        // Beacon failure is non-fatal — the grantee sees last-known staleness.
+      }
+    }
+  }
+
+  /// Renders the latest "check on them" ping for the owner view, if any.
+  String _checkInLine(Map<String, dynamic> conn) {
+    final ci = conn['lastCheckIn'];
+    if (ci is! Map) return '';
+    final msg = ci['message']?.toString() ?? '';
+    final name = ci['fromName']?.toString() ?? 'They';
+    return '\n$name checked on you: "$msg"';
+  }
+
   /// Active incoming — someone can see me. Show scopes + revoke.
   Widget _watchingMeTile(Map<String, dynamic> conn) {
     final scopes = (conn['scopes'] as List?)?.map((e) => e.toString()).toList() ?? [];
@@ -290,7 +330,8 @@ class _MyCirclePageState extends State<MyCirclePage> {
         leading: const Icon(Icons.visibility, color: AppColors.teal),
         title: Text(_counterpartName(conn), style: const TextStyle(color: Colors.white)),
         subtitle: Text(
-          'Can see: ${scopes.isEmpty ? 'nothing' : scopes.join(', ')} • mode ${conn['mode'] ?? 'sos_only'}',
+          'Can see: ${scopes.isEmpty ? 'nothing' : scopes.join(', ')} • mode ${conn['mode'] ?? 'sos_only'}'
+          '${_checkInLine(conn)}',
           style: const TextStyle(color: Colors.white60, fontSize: 12),
         ),
         trailing: IconButton(

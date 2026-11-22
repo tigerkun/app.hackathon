@@ -132,8 +132,10 @@ class NearMeStripPrivacyChallenges(unittest.TestCase):
         self.assertIn("none loaded", self.page)
 
     def test_04_nearest_selection_uses_distance_sorted_items(self):
-        """Items must be distance-sorted before the strip picks 'nearest'."""
-        self.assertIn("items.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));", self.page)
+        """Items must be distance-sorted before the strip picks 'nearest'.
+        Unknown distances (-1 sentinel, no GPS fix) sort last via sortKey."""
+        self.assertIn("items.sort((a, b) => sortKey(a).compareTo(sortKey(b)));", self.page)
+        self.assertIn("double sortKey(_MapPinItem i) => i.distanceKm < 0 ? double.infinity : i.distanceKm;", self.page)
 
 
 class RoutePolylineHonestyChallenges(unittest.TestCase):

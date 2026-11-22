@@ -7,7 +7,7 @@
 
 const connectionService = require('../services/connectionService');
 const { db } = require('../data/store');
-const { toSafeUser } = require('../models/userModel');
+const { toConnectionPeer } = require('../models/userModel');
 
 function handleError(res, error) {
   const status = error.status || 500;
@@ -44,12 +44,21 @@ async function getMyConnections(req, res) {
     const userId = req.user.id;
     const outgoing = db.listConnectionsByGrantee(userId).map((c) => ({
       ...c,
-      counterpart: toSafeUser(db.findUserById(c.ownerId))
+      counterpart: toConnectionPeer(db.findUserById(c.ownerId))
     }));
-    const incoming = db.listConnectionsByOwner(userId).map((c) => ({
-      ...c,
-      counterpart: toSafeUser(db.findUserById(c.granteeId))
-    }));
+    const incoming = db.listConnectionsByOwner(userId).map((c) => {
+      // Owner view: surface the grantee's latest "check on them" ping so the
+      // feature delivers what the UI promises.
+      const latest = c.status === 'active' ? db.getLatestConnectionCheckin(c.id) : null;
+      const fromUser = latest ? db.findUserById(latest.fromUserId) : null;
+      return {
+        ...c,
+        counterpart: toConnectionPeer(db.findUserById(c.granteeId)),
+        lastCheckIn: latest
+          ? { message: latest.message, at: latest.createdAt, fromName: fromUser ? fromUser.name : 'SafeSphere user' }
+          : null
+      };
+    });
     res.json({
       success: true,
       data: {

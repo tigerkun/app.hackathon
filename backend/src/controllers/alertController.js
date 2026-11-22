@@ -64,6 +64,30 @@ function trigger(req, res, next) {
     const batteryLevel = body.batteryLevel !== undefined ? body.batteryLevel : body.battery_level;
     const alertType = body.alertType || body.alert_type || 'CRITICAL_SOS';
     const notes = body.notes;
+    // Stable client-generated idempotency key: an offline-queue replay after a
+    // lost response must return the original alert, not create a duplicate.
+    const clientRequestId = body.clientRequestId || body.client_request_id || null;
+
+    if (clientRequestId) {
+      const existing = db.findAlertByClientRequestId(clientRequestId);
+      if (existing) {
+        // Rotate the resolve credential: the original plaintext was only ever
+        // in the lost response, so nobody else can hold it.
+        const resolveToken = crypto.randomBytes(24).toString('base64url');
+        db.updateAlert(existing.id, {
+          resolveTokenHash: crypto.createHash('sha256').update(resolveToken).digest('hex')
+        });
+        const replayed = { ...existing, resolveToken };
+        delete replayed.resolveTokenHash;
+        return res.status(200).json({
+          success: true,
+          deduplicated: true,
+          message: 'SOS alert already received — returning existing alert.',
+          data: replayed,
+          ...replayed
+        });
+      }
+    }
 
     // Identity comes exclusively from the verified token. For guests
     // (optionalAuth → req.user = null) any client-supplied userId/userName/
@@ -83,7 +107,8 @@ function trigger(req, res, next) {
       accuracy,
       batteryLevel,
       alertType,
-      notes
+      notes,
+      clientRequestId
     });
 
     // Wire real SOS alert broadcast across active WebSocket monitors and dispatchers.

@@ -180,7 +180,9 @@ describe('SafeSphere Authentication API & Service Tests', () => {
 
       assert.equal(res.status, 200);
       assert.equal(res.body.success, true);
-      assert.equal(res.body.data.user.phone, '+91 9876543210');
+      // Phone is stored canonically (digits only, 91-prefixed) regardless of
+      // the formatting used at input time.
+      assert.equal(res.body.data.user.phone, '919876543210');
     });
 
     it('rejects login with invalid password returning 401 Unauthorized', async () => {
@@ -314,7 +316,7 @@ describe('SafeSphere Authentication API & Service Tests', () => {
       assert.equal(verifyRes.body.success, true);
       assert.equal(verifyRes.body.data.verified, true);
       assert.ok(verifyRes.body.data.accessToken);
-      assert.equal(verifyRes.body.data.user.phone, testPhone);
+      assert.equal(verifyRes.body.data.user.phone, '919876543210');
     });
 
     it('rejects incorrect OTP code returning 401 Unauthorized', async () => {

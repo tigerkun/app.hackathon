@@ -36,6 +36,7 @@ function getSeedData() {
     name: 'Jane SafeSphere',
     email: 'demo@safesphere.org',
     phone: '+91 9876543210',
+    phoneVerified: true,
     passwordHash: DEMO_PASSWORD_HASH,
     pin: DEMO_PIN_HASH,
     pinHash: DEMO_PIN_HASH,
@@ -84,8 +85,10 @@ function getSeedData() {
       status: 'under_investigation',
       reportedBy: demoUser.id,
       attachments: [],
-      createdAt: '2026-04-11T20:15:00.000Z',
-      updatedAt: '2026-04-11T20:15:00.000Z'
+      // Freshness-relative timestamps: unverified statuses expire 24h after
+      // creation, so fixed calendar dates would silently archive the demo feed.
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
     },
     {
       id: 'rep_1003',

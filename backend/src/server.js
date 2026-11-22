@@ -75,14 +75,19 @@ wss.on('connection', (ws, req) => {
           timestamp: new Date().toISOString()
         }), (err) => {});
 
-        // Send existing session snapshot if available in database
+        // Send existing session snapshot if available in database. The raw
+        // row carries the tracking token (a live credential) — never echo it
+        // back, even to an authenticated subscriber.
         try {
           const session = db.findTrackingSessionById(sessionId);
           if (session) {
+            const safeSession = { ...session };
+            delete safeSession.token;
+            delete safeSession.resolveTokenHash;
             ws.send(JSON.stringify({
               type: 'TRACKING_SNAPSHOT',
               sessionId,
-              session,
+              session: safeSession,
               timestamp: new Date().toISOString()
             }), (err) => {});
           }

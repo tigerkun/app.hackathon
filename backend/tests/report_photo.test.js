@@ -33,6 +33,7 @@ describe('F5-4: Incident Report Photo Attachments', () => {
       name: 'Photo Test User',
       email: 'photo.test@safesphere.test',
       phone: '+918800200001',
+      phoneVerified: true,
       passwordHash: bcrypt.hashSync('Str0ngPass!23', 8)
     }));
     m2AuthHeaders = { Authorization: `Bearer ${signAccessToken(user, null)}` };

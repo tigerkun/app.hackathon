@@ -69,11 +69,21 @@ class MovementAnalyzer {
         if (raw is Map) {
           final lat = _toDouble(raw['latitude']);
           final lng = _toDouble(raw['longitude']);
-          if (lat == null || lng == null) continue;
+          // Reject NaN/Infinity/out-of-range fixes — they would poison every
+          // downstream distance, speed, and heading calculation.
+          if (lat == null || lng == null ||
+              !lat.isFinite || !lng.isFinite ||
+              lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            continue;
+          }
+          var speed = _toDouble(raw['speed']);
+          // implausible m/s (>720 km/h or negative) → drop the sample, don't poison
+          if (speed != null && (!speed.isFinite || speed < 0 || speed > 200)) {
+            speed = null;
+          }
           final ts = raw['timestamp'] != null
               ? DateTime.tryParse(raw['timestamp'].toString())
               : null;
-          final speed = _toDouble(raw['speed']);
           points.add(_Fix(lat, lng, ts, speed));
         }
       }
@@ -152,7 +162,7 @@ class MovementAnalyzer {
     }
 
     // Stationary: report dwell time from the last real movement.
-    final dwell = _dwellSeconds(window, ref);
+    final dwell = _dwellSeconds(window);
     return MovementState(
       state: 'stationary',
       summary: dwell != null
@@ -166,14 +176,17 @@ class MovementAnalyzer {
 
   /// Seconds the subject has been stationary, using the last fix that moved
   /// more than [minDisplacementM]. Null when the whole window is one place.
-  static int? _dwellSeconds(List<_Fix> window, DateTime ref) {
+  static int? _dwellSeconds(List<_Fix> window) {
     final last = window.last;
     if (last.timestamp == null) return null;
     for (int i = window.length - 2; i >= 0; i--) {
       final f = window[i];
       if (f.timestamp == null) continue;
       if (_haversineM(f.lat, f.lng, last.lat, last.lng) >= minDisplacementM) {
-        final d = _clampSeconds(ref.difference(f.timestamp!).inSeconds);
+        // Dwell ends at the NEWEST fix, not "now" — a stale feed must not
+        // inflate stationary time (stall is reported separately).
+        if (last.timestamp == null) return null;
+        final d = _clampSeconds(last.timestamp!.difference(f.timestamp!).inSeconds);
         return d > 0 ? d : null;
       }
     }
@@ -183,7 +196,10 @@ class MovementAnalyzer {
   static int _clampSeconds(int s) => s.clamp(0, 86400 * 7);
 
   static double? _headingDeg(_Fix from, _Fix to) {
-    final dx = to.lng - from.lng;
+    // Equirectangular bearing: longitude degrees shrink by cos(latitude) —
+    // omitting it skews headings ~15% at Indian latitudes.
+    final meanLat = (from.lat + to.lat) * 0.5 * 3.141592653589793 / 180;
+    final dx = (to.lng - from.lng) * math.cos(meanLat);
     final dy = to.lat - from.lat;
     if (dx == 0 && dy == 0) return null;
     final rad = math.atan2(dx, dy); // bearing from true north

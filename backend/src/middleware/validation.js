@@ -203,6 +203,30 @@ function validateReportCreate(req, res, next) {
     issues.push({ field: 'longitude', issue: 'Valid longitude coordinate is required.' });
   }
 
+  // Attachments: bounded array of URL strings or {type,url} objects. Without
+  // this an authenticated user could persist arbitrary payloads served to
+  // every feed reader (10MB body limit × N reports).
+  if (req.body?.attachments !== undefined && req.body?.attachments !== null) {
+    const atts = req.body.attachments;
+    const validAttachment = (a) => {
+      if (typeof a === 'string') {
+        return a.length <= 2048 && (/^https?:\/\//i.test(a) || a.startsWith('data:image/'));
+      }
+      if (a && typeof a === 'object' && !Array.isArray(a)) {
+        return typeof a.url === 'string' && a.url.length <= 2048
+          && (/^https?:\/\//i.test(a.url) || a.url.startsWith('data:image/'))
+          && (a.type === undefined || (typeof a.type === 'string' && a.type.length <= 50));
+      }
+      return false;
+    };
+    if (!Array.isArray(atts) || atts.length > 5 || !atts.every(validAttachment)) {
+      issues.push({
+        field: 'attachments',
+        issue: 'Attachments must be an array of at most 5 image URLs or {type,url} objects.'
+      });
+    }
+  }
+
   // A client-provided photoUrl bypasses the base64 image validation below —
   // only values derived from a validated photoBase64 payload may be used.
   if (req.body?.photoUrl !== undefined && req.body?.photoUrl !== null) {

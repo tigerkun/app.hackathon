@@ -57,8 +57,13 @@ function shareSession(req, res, next) {
       : null;
     const missedCheckIns = 0;
 
-    const userId = req.user ? req.user.id : (body.userId || body.user_id || null);
-    const userName = req.user ? req.user.name : (body.userName || body.user_name || 'SafeSphere Citizen');
+    // Guests must never assert a userId — a claimed ID would attribute the
+    // session to a victim (privacy-hub forgery) and resolve their real name.
+    // Guests get anonymous sessions; only the self-claimed display name is kept.
+    const userId = req.user ? req.user.id : null;
+    const userName = req.user
+      ? req.user.name
+      : (body.userName || body.user_name || 'SafeSphere Citizen');
 
     const result = trackingService.createShareSession({
       userId,

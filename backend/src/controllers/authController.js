@@ -6,6 +6,7 @@
 
 const authService = require('../services/authService');
 const otpService = require('../services/otpService');
+const config = require('../config');
 
 async function register(req, res, next) {
   try {
@@ -166,22 +167,29 @@ async function linkAadhaarLast4(req, res, next) {
 
     const crypto = require('crypto');
     const { db } = require('../data/store');
-    const salt = crypto.randomBytes(16).toString('hex');
+    // Deterministic keyed hash (HMAC): identical last-4 values produce identical
+    // hashes across accounts, so moderators can actually detect ban evasion —
+    // a per-user random salt made the stored value useless for that purpose.
+    // Last-4 is only 10k possibilities, so this remains a weak signal for
+    // review, never proof of identity.
+    const hashKey = process.env.AADHAAR_HASH_SECRET || config.jwtSecret;
     const hash = crypto
-      .createHash('sha256')
-      .update(salt + String(aadhaarLast4).trim())
+      .createHmac('sha256', String(hashKey))
+      .update(`aadhaar-last4:${String(aadhaarLast4).trim()}`)
       .digest('hex');
 
     db.updateUser(req.userId, {
-      aadhaarLast4Salt: salt,
+      aadhaarLast4Salt: 'hmac-v1',
       aadhaarLast4Hash: hash
     });
+
+    const duplicates = db.countUsersWithAadhaarHash(hash, req.userId);
 
     res.status(200).json({
       success: true,
       message:
-        'Linked. Stored only as a salted SHA-256 hash — used solely to prevent ban evasion.',
-      data: { aadhaarLinked: true }
+        'Linked. Stored only as a keyed hash — a weak signal moderators use for abuse review, not verified identity.',
+      data: { aadhaarLinked: true, duplicateAccounts: duplicates }
     });
   } catch (err) {
     next(err);
