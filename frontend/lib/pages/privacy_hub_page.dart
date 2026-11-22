@@ -237,7 +237,7 @@ class _PrivacyHubPageState extends State<PrivacyHubPage> {
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          const Icon(Icons.broadcast, color: Colors.redAccent, size: 18),
+          const Icon(Icons.sensors, color: Colors.redAccent, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text('Your live trip is streaming',

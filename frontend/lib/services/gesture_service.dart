@@ -54,7 +54,7 @@ class GestureService {
     _volumeHoldTimer?.cancel();
     _volumeHoldTimer = null;
     try {
-      VolumeController().removeListener();
+      VolumeController.instance.removeListener();
     } catch (_) {}
   }
 
@@ -98,7 +98,7 @@ class GestureService {
 
   void _initVolumeDetection(BuildContext context, Future<void> Function() onSosConfirmed) {
     try {
-      VolumeController().listener((double volume) {
+      VolumeController.instance.addListener((double volume) {
         final authState = AuthState();
         if (!authState.emergencyGesturesEnabled) return;
         if (_isPromptOpen || !context.mounted) return;

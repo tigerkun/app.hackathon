@@ -3,8 +3,13 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  share_plus
+  connectivity_plus
+  flutter_secure_storage_windows
+  geolocator_windows
+  local_auth_windows
   url_launcher_windows
+  share_plus
+  volume_controller
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

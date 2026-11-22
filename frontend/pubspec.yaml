@@ -38,6 +38,7 @@ dependencies:
   # Replaces google_maps_flutter (removed — the Maps SDK was never imported and
   # required a billing-verified Google Cloud account).
   flutter_map: ^7.0.0
+  latlong2: ^0.9.1
   path_provider: ^2.1.5
   # NOTE: Run 'flutter pub get' once Flutter SDK is available; do not edit pubspec.lock by hand.
   local_auth: ^2.3.0
