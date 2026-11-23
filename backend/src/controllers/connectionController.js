@@ -195,6 +195,12 @@ async function getOwnerStatus(req, res) {
       requiredScope: 'sos_status'
     });
     const owner = db.findUserById(conn.ownerId);
+    if (!owner) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'OWNER_NOT_FOUND', message: 'Owner user record no longer exists.' }
+      });
+    }
     const activeAlerts = db
       .getActiveAlerts()
       .filter((a) => a.userId === conn.ownerId);

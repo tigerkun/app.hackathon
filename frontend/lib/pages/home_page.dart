@@ -196,18 +196,25 @@ class _HomePageState extends State<HomePage> {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: Row(
-          children: [
-            const Icon(Icons.location_on, size: 18, color: AppColors.teal),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                _locationLabel,
-                style: const TextStyle(fontSize: 14),
-                overflow: TextOverflow.ellipsis,
-              ),
+        title: InkWell(
+          onTap: _refreshDashboard,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+            child: Row(
+              children: [
+                const Icon(Icons.location_on, size: 18, color: AppColors.teal),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    _locationLabel,
+                    style: const TextStyle(fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
         actions: [
           IconButton(

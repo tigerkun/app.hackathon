@@ -126,7 +126,6 @@ class DataStore {
         clientRequestId TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_alerts_status_triggeredAt ON alerts(status, triggeredAt);
-      CREATE INDEX IF NOT EXISTS idx_alerts_clientRequestId ON alerts(clientRequestId);
       CREATE INDEX IF NOT EXISTS idx_alerts_userId ON alerts(userId);
 
       CREATE TABLE IF NOT EXISTS otps (
@@ -246,6 +245,9 @@ class DataStore {
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE alerts ADD COLUMN clientRequestId TEXT");
+    } catch (_) {}
+    try {
+      this.db.exec("CREATE INDEX IF NOT EXISTS idx_alerts_clientRequestId ON alerts(clientRequestId)");
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE users ADD COLUMN phoneVerified INTEGER NOT NULL DEFAULT 0");
@@ -903,6 +905,11 @@ class DataStore {
     this.db.prepare('DELETE FROM sos_messages WHERE senderId = ? OR alertId IN (SELECT id FROM alerts WHERE userId = ?)').run(id, id);
     this.db.prepare('DELETE FROM alerts WHERE userId = ?').run(id);
     this.db.prepare('DELETE FROM tracking_sessions WHERE userId = ?').run(id);
+    this.db.prepare('DELETE FROM connection_locations WHERE connectionId IN (SELECT id FROM connections WHERE ownerId = ? OR granteeId = ?)').run(id, id);
+    this.db.prepare('DELETE FROM connection_checkins WHERE fromUserId = ? OR connectionId IN (SELECT id FROM connections WHERE ownerId = ? OR granteeId = ?)').run(id, id, id);
+    this.db.prepare('DELETE FROM connections WHERE ownerId = ? OR granteeId = ?').run(id, id);
+    this.db.prepare('DELETE FROM report_votes WHERE userId = ?').run(id);
+    this.db.prepare('UPDATE reports SET reportedBy = NULL WHERE reportedBy = ?').run(id);
     const res = this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
     return res.changes > 0;
   }
