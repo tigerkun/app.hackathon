@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import '../services/auth_service.dart';
 import '../services/gesture_service.dart';
 import '../data/auth_state.dart';
+import '../theme/app_colors.dart';
 
 class EmergencyPage extends StatefulWidget {
   const EmergencyPage({super.key});

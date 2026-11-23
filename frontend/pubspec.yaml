@@ -39,6 +39,9 @@ dependencies:
   # required a billing-verified Google Cloud account).
   flutter_map: ^7.0.0
   latlong2: ^0.9.1
+  # M6: direct dep for salted PIN hashing (sp1$salt$sha256 file fallback).
+  # Was transitive-only before — declaring it keeps a clean `pub get` honest.
+  crypto: ^3.0.3
   path_provider: ^2.1.5
   # NOTE: Run 'flutter pub get' once Flutter SDK is available; do not edit pubspec.lock by hand.
   local_auth: ^2.3.0

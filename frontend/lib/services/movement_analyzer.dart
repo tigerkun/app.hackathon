@@ -64,28 +64,26 @@ class MovementAnalyzer {
     final DateTime ref = now ?? DateTime.now();
     final points = <_Fix>[];
 
-    if (breadcrumbs != null) {
-      for (final raw in breadcrumbs) {
-        if (raw is Map) {
-          final lat = _toDouble(raw['latitude']);
-          final lng = _toDouble(raw['longitude']);
-          // Reject NaN/Infinity/out-of-range fixes — they would poison every
-          // downstream distance, speed, and heading calculation.
-          if (lat == null || lng == null ||
-              !lat.isFinite || !lng.isFinite ||
-              lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-            continue;
-          }
-          var speed = _toDouble(raw['speed']);
-          // implausible m/s (>720 km/h or negative) → drop the sample, don't poison
-          if (speed != null && (!speed.isFinite || speed < 0 || speed > 200)) {
-            speed = null;
-          }
-          final ts = raw['timestamp'] != null
-              ? DateTime.tryParse(raw['timestamp'].toString())
-              : null;
-          points.add(_Fix(lat, lng, ts, speed));
+    for (final raw in breadcrumbs) {
+      if (raw is Map) {
+        final lat = _toDouble(raw['latitude']);
+        final lng = _toDouble(raw['longitude']);
+        // Reject NaN/Infinity/out-of-range fixes — they would poison every
+        // downstream distance, speed, and heading calculation.
+        if (lat == null || lng == null ||
+            !lat.isFinite || !lng.isFinite ||
+            lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+          continue;
         }
+        var speed = _toDouble(raw['speed']);
+        // implausible m/s (>720 km/h or negative) → drop the sample, don't poison
+        if (speed != null && (!speed.isFinite || speed < 0 || speed > 200)) {
+          speed = null;
+        }
+        final ts = raw['timestamp'] != null
+            ? DateTime.tryParse(raw['timestamp'].toString())
+            : null;
+        points.add(_Fix(lat, lng, ts, speed));
       }
     }
 

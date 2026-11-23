@@ -143,6 +143,30 @@ class _PrivacyHubPageState extends State<PrivacyHubPage> {
                         'This page shows every channel that is open right now — '
                         'and closes them the moment you want.',
                   ),
+                  // Honest offline state — this page only claims what's true now.
+                  if (_errorMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.redAccent.withOpacity(0.4)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.cloud_off, color: Colors.redAccent, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(_errorMessage!,
+                                style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 18),
 
                   // ── Live tracking sessions ──────────────────────────────
