@@ -9,21 +9,6 @@ const { toSafeAlert } = require('../models/alertModel');
 const { toSafeSosMessage } = require('../models/sosMessageModel');
 const crypto = require('crypto');
 
-// Attach indexed getAlertsByUserId to DataStore if not present
-if (typeof db.getAlertsByUserId !== 'function') {
-  db.constructor.prototype.getAlertsByUserId = function(userId, status = null) {
-    if (!userId) return [];
-    let sql = 'SELECT * FROM alerts WHERE userId = ?';
-    const params = [userId];
-    if (status) {
-      sql += ' AND LOWER(status) = ?';
-      params.push(String(status).toLowerCase());
-    }
-    sql += ' ORDER BY triggeredAt DESC';
-    const rows = this.db.prepare(sql).all(...params);
-    return rows.map((r) => this._formatAlert(r));
-  };
-}
 
 function verifyResolveToken(alert, presentedToken) {
   if (!presentedToken || !alert.resolveTokenHash) return false;

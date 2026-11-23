@@ -31,9 +31,7 @@ function generateConnectionId() {
  */
 function findUserBySafeId(safeId) {
   if (!safeId) return null;
-  return db.db
-    .prepare('SELECT * FROM users WHERE safeId = ? LIMIT 1')
-    .get(String(safeId).trim().toUpperCase());
+  return db.findUserBySafeId(safeId);
 }
 
 /**

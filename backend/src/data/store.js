@@ -786,6 +786,21 @@ class DataStore {
     return this._formatUser(row);
   }
 
+  findUserBySafeId(safeId) {
+    if (!safeId) return null;
+    const row = this.db.prepare('SELECT * FROM users WHERE safeId = ? LIMIT 1').get(String(safeId).trim().toUpperCase());
+    return this._formatUser(row);
+  }
+
+  ping() {
+    try {
+      const row = this.db.prepare('SELECT 1 AS ok').get();
+      return Boolean(row && row.ok === 1);
+    } catch (_) {
+      return false;
+    }
+  }
+
   findUserByEmail(email) {
     if (!email) return null;
     const normalized = normalizeEmail(email);
@@ -1316,6 +1331,19 @@ class DataStore {
     if (!id) return null;
     const row = this.db.prepare('SELECT * FROM alerts WHERE id = ? LIMIT 1').get(id);
     return this._formatAlert(row);
+  }
+
+  getAlertsByUserId(userId, status = null) {
+    if (!userId) return [];
+    let sql = 'SELECT * FROM alerts WHERE userId = ?';
+    const params = [userId];
+    if (status) {
+      sql += ' AND LOWER(status) = ?';
+      params.push(String(status).toLowerCase());
+    }
+    sql += ' ORDER BY triggeredAt DESC';
+    const rows = this.db.prepare(sql).all(...params);
+    return rows.map((r) => this._formatAlert(r));
   }
 
   getActiveAlerts() {

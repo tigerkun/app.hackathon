@@ -50,15 +50,9 @@ app.get('/health', (req, res) => {
 
   try {
     const { db } = require('./data/store');
-    if (!db || !db.db) {
-      dbStatus = 'DOWN';
+    if (!db || typeof db.ping !== 'function' || !db.ping()) {
+      dbStatus = 'ERROR';
       dbReachable = false;
-    } else {
-      const row = db.db.prepare('SELECT 1 AS ok').get();
-      if (!row || row.ok !== 1) {
-        dbStatus = 'ERROR';
-        dbReachable = false;
-      }
     }
   } catch (err) {
     dbStatus = 'ERROR';

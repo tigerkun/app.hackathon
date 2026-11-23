@@ -39,7 +39,7 @@ router.post('/pin/reset', authLimiter, validatePinReset, authController.resetPin
 router.post('/aadhaar/link', requireAuth, authController.linkAadhaarLast4);
 
 // Session token refresh
-router.post('/refresh', validateRefresh, authController.refresh);
+router.post('/refresh', authLimiter, validateRefresh, authController.refresh);
 
 // Protected user profile & deletion
 router.get('/me', requireAuth, authController.me);

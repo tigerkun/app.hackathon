@@ -32,7 +32,13 @@ async function createConnection(req, res) {
       scopes,
       mode: mode || 'sos_only'
     });
-    res.status(201).json({ success: true, data: result });
+    res.status(201).json({
+      success: true,
+      data: {
+        id: result.connection.id,
+        ...result
+      }
+    });
   } catch (error) {
     handleError(res, error);
   }
