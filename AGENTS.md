@@ -297,7 +297,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 | `AI Assistant (Groq)` | `backend/src/services/aiService.js`, `backend/src/controllers/aiController.js`, `frontend/lib/pages/ai_assistant_page.dart` | `POST /api/v1/ai/chat` (Groq; key via `GROQ_API_KEY` env only), optionalAuth + 10/min `aiLimiter`, sanitized history (12 turns), honest 503 `AI_NOT_CONFIGURED` fallback to offline guides | DONE |
 | `Hardening Wave (audit)` | `alertController.js`, `authMiddleware.js`, `validation.js`, `rateLimiter.js`, `config/index.js`, `auth_service.dart` | Guest SOS identity stripping (body identity ignored), optionalAuth + requireAuth session-revocation gates (missing/invalid session ⇒ guest/rejected), dedicated 10/min `otpLimiter` on `/otp/send`+`/otp/verify`, input caps (SOS notes 500 / alertType 40 / report description 2000 / location 200 / coords validated / direct `photoUrl` rejected), env fail-closed (unknown `NODE_ENV` ⇒ production hygiene, incl. inside `validateJwtSecretHygiene`), offline SOS queue 24h TTL with `_queuedAt` stamps | DONE |
 | `SMS Gateway (Fast2SMS)` | `backend/src/services/smsGatewayService.js`, `otpService.js`, `sosService.js` | Real SMS delivery via dual providers (`SMS_PROVIDER` env): **fast2sms** (Smart OTP needs DLT template; Quick route ₹7/SMS needs ₹100 top-up) and **textlocal** (10 free credits, no DLT — chosen zero-money demo path; signup must be done in a full browser — the site does not render in embedded webviews). Failed dispatches fail honestly (`502 OTP_DISPATCH_FAILED`). MSG91 was abandoned — its login pipeline is broken. | Adapter DONE — awaiting Textlocal API hash from owner |
-| `Maps key` | `frontend/lib/services/map_config.dart` | Google Maps abandoned — Safety Map runs on `flutter_map` + OSM/CARTO tiles, zero key/card; optional MapTiler key via dart-define | DONE (free tier) |
+| `Maps key` | `frontend/lib/services/map_config.dart` | Google Maps & CARTO keyless abandoned (CARTO now requires API key and watermarks tiles) — Safety Map runs on `flutter_map` + standard OpenStreetMap raster tiles with client-side dark-mode filter, zero key/card; optional MapTiler key via dart-define | DONE (free tier) |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/services/auth_service.dart` (`verifyBiometrics`) | Real biometric scan via `local_auth` wired with hardware check and fallback | DONE |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/pages/home_page.dart`, `emergency_page.dart` | Volume button / hardware panic intercept requires native plugin, fallback F4-2-alt shipped | DEFERRED |
 | `F3-1 (SOS Escalation)` | `backend/src/services/sosService.js`, `frontend/lib/pages/emergency_page.dart` | 60s escalation watchdog, escalationLevel cap 3, WS broadcast, active ageSeconds & badge | DONE |
@@ -340,8 +340,10 @@ Search `TODO(REAL_` for the live list. Current stubs:
   direct dependency (e.g. `geolocator`, `flutter_map`, `local_auth`, `flutter_secure_storage`). Run
   `flutter pub get` on a Flutter-equipped machine before building; do NOT edit `pubspec.lock` by hand.
 - **Maps are OSM-based via `flutter_map`** — no API key, no card, no billing
-  account. The Safety Map renders CARTO dark raster tiles (OSM data) with an
-  OSM attribution; a free MapTiler key can be passed at build time via
+  account. The Safety Map renders OpenStreetMap standard raster tiles with
+  flutter_map's built-in `darkModeTilesContainerBuilder` filter (OSM data) with an
+  OSM attribution (CARTO dark tiles were abandoned after CARTO began watermarking
+  keyless requests); a free MapTiler key can be passed at build time via
   `--dart-define=SAFESPHERE_MAP_TILER_KEY=<key>` to upgrade tiles. The former
   `google_maps_flutter` dependency was removed (it was never imported and its
   SDK required a billing-verified Google Cloud account).

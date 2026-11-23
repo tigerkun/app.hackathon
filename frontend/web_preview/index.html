@@ -57,6 +57,9 @@
       box-shadow: 0 0 0 rgba(46, 224, 201, 0.6);
       animation: pulse-ring 1.8s infinite;
     }
+    .map-tiles-dark {
+      filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+    }
     @keyframes pulse-ring {
       0% { box-shadow: 0 0 0 0 rgba(46, 224, 201, 0.7); }
       70% { box-shadow: 0 0 0 16px rgba(46, 224, 201, 0); }
@@ -706,10 +709,10 @@
     function initMainMap() {
       if (!mainMapInstance) {
         mainMapInstance = L.map('mainMap', { zoomControl: false }).setView([currentLat, currentLng], 14);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19,
-          subdomains: 'abcd',
-          attribution: '&copy; OpenStreetMap &copy; CARTO'
+          className: 'map-tiles-dark',
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(mainMapInstance);
         L.control.zoom({ position: 'bottomright' }).addTo(mainMapInstance);
 
@@ -756,9 +759,10 @@
     function initShareMap() {
       if (!shareMapInstance) {
         shareMapInstance = L.map('shareMap', { zoomControl: false, dragging: true }).setView([currentLat, currentLng], 15);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19,
-          subdomains: 'abcd'
+          className: 'map-tiles-dark',
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(shareMapInstance);
 
         const pulseIcon = L.divIcon({

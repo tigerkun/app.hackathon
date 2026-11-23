@@ -817,10 +817,17 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
             },
           ),
           children: [
+            // Dark-mode color filter applied to standard OSM light tiles when
+            // no natively dark tile provider is configured. Uses flutter_map's
+            // built-in darkModeTilesContainerBuilder for container-level inversion
+            // (eliminates per-tile saveLayer performance overhead).
             TileLayer(
               urlTemplate: SafeSphereMapConfig.tileUrlTemplate,
               userAgentPackageName: SafeSphereMapConfig.userAgentPackageName,
               maxNativeZoom: 19,
+              tilesContainerBuilder: SafeSphereMapConfig.needsDarkFilter
+                  ? darkModeTilesContainerBuilder
+                  : null,
             ),
             RichAttributionWidget(
               attributions: [
