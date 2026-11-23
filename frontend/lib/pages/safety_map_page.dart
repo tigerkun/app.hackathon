@@ -651,7 +651,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
           /// ---------------- ERROR BANNER ----------------
           if (_errorMessage != null)
             Positioned(
-              top: _hasGpsFix && !_isListView ? 112 : 60,
+              top: _hasGpsFix && !_isListView ? 112 : (_isListView ? 60 : 96),
               left: 20,
               right: 20,
               child: Container(
@@ -779,7 +779,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
               : () {
                   setState(() => _selectedItem = nearest);
                   try {
-                    _mapController.move(LatLng(nearest.latitude, nearest.longitude), 15.0);
+                    _mapController.move(LatLng(nearest!.latitude, nearest!.longitude), 15.0);
                   } catch (_) {}
                 },
           child: Container(

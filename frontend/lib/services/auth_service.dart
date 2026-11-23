@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:crypto/crypto.dart' show sha256;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 import '../models/user_model.dart';
@@ -90,6 +91,23 @@ class AuthService {
     defaultValue: 'http://127.0.0.1:3000',
   );
 
+  /// Resolves the effective base URL, automatically translating local development
+  /// loopback addresses (127.0.0.1 / localhost) to 10.0.2.2 on Android emulators.
+  static String resolveBaseUrl([String? url]) {
+    final target = url ?? apiBaseUrl;
+    if (kIsWeb) return target;
+    try {
+      if (Platform.isAndroid) {
+        if (target.contains('127.0.0.1')) {
+          return target.replaceAll('127.0.0.1', '10.0.2.2');
+        } else if (target.contains('localhost')) {
+          return target.replaceAll('localhost', '10.0.2.2');
+        }
+      }
+    } catch (_) {}
+    return target;
+  }
+
   static AuthService? _singleton;
 
   /// Shared singleton instance for callers that do not need custom config.
@@ -101,12 +119,12 @@ class AuthService {
   }) {
     if (baseUrl != null || storage != null) {
       return AuthService._internal(
-        baseUrl: baseUrl ?? apiBaseUrl,
+        baseUrl: resolveBaseUrl(baseUrl),
         storage: storage ?? StorageService(),
       );
     }
     _singleton ??= AuthService._internal(
-      baseUrl: apiBaseUrl,
+      baseUrl: resolveBaseUrl(),
       storage: StorageService(),
     );
     return _singleton!;

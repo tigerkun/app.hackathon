@@ -139,7 +139,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   String _calculateSafetyLevel() {
-    if (_isBackendUnavailable) return "Unavailable — connect to backend";
+    if (_isBackendUnavailable) return "Offline Safety Mode";
     if (_lastFetchTime == null && _isLoading) return "Assessing local safety...";
     final count = _reports.length;
     if (count == 0) return "Safety Level: High";
@@ -198,17 +198,27 @@ class _HomePageState extends State<HomePage> {
         ),
         title: InkWell(
           onTap: _refreshDashboard,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white12),
+            ),
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.location_on, size: 18, color: AppColors.teal),
+                Icon(
+                  _userLat != null ? Icons.location_on : Icons.location_off_outlined,
+                  size: 15,
+                  color: _userLat != null ? AppColors.teal : AppColors.amber,
+                ),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
                     _locationLabel,
-                    style: const TextStyle(fontSize: 14),
+                    style: const TextStyle(fontSize: 12, color: Colors.white70),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -229,50 +239,34 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          FloatingActionButton.small(
-            heroTag: 'home_fab_ai',
-            backgroundColor: AppColors.purple,
-            tooltip: "AI Safety Assistant",
-            child: const Icon(Icons.smart_toy, color: Colors.white),
-            onPressed: () {
-              Navigator.pushNamed(context, '/ai-assistant');
-            },
-          ),
-          const SizedBox(height: 10),
-          Semantics(
-            button: true,
-            label: "Trigger emergency SOS",
-            child: FloatingActionButton.extended(
-              heroTag: 'home_fab_sos',
-              backgroundColor: const Color(0xFFDC2626),
-              icon: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 24),
-              label: const Text(
-                "EMERGENCY SOS",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  letterSpacing: 1.1,
-                ),
-              ),
-              tooltip: "Immediate Emergency SOS",
-              onPressed: () {
-                Navigator.pushNamed(context, '/emergency');
-              },
+      floatingActionButton: Semantics(
+        button: true,
+        label: "Trigger emergency SOS",
+        child: FloatingActionButton.extended(
+          heroTag: 'home_fab_sos',
+          backgroundColor: const Color(0xFFDC2626),
+          icon: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 22),
+          label: const Text(
+            "EMERGENCY SOS",
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              letterSpacing: 1.1,
             ),
           ),
-        ],
+          tooltip: "Immediate Emergency SOS",
+          onPressed: () {
+            Navigator.pushNamed(context, '/emergency');
+          },
+        ),
       ),
       body: RefreshIndicator(
         onRefresh: _refreshDashboard,
         color: AppColors.teal,
         backgroundColor: const Color(0xFF101A33),
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
           children: [
             /// 🆘 SOS-FIRST HERO (M1.1): the dominant first-paint element.
             /// Minimum 40% of viewport, high-contrast red, one-handed reach.
@@ -285,15 +279,20 @@ class _HomePageState extends State<HomePage> {
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 20),
                   width: double.infinity,
-                  height: MediaQuery.of(context).size.height * 0.40,
+                  height: (MediaQuery.of(context).size.height * 0.32).clamp(200.0, 260.0),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFDC2626),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFE11D48), Color(0xFFDC2626), Color(0xFF991B1B)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white24, width: 2),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 1.5),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFFDC2626).withValues(alpha: 0.35),
-                        blurRadius: 24,
+                        color: const Color(0xFFDC2626).withValues(alpha: 0.38),
+                        blurRadius: 22,
+                        offset: const Offset(0, 6),
                         spreadRadius: 2,
                       ),
                     ],
@@ -301,25 +300,59 @@ class _HomePageState extends State<HomePage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
-                        Icons.warning_amber_rounded,
-                        color: Colors.white,
-                        size: 56,
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.16),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1.5),
+                        ),
+                        child: const Icon(
+                          Icons.warning_amber_rounded,
+                          color: Colors.white,
+                          size: 38,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       const Text(
                         "EMERGENCY SOS",
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 28,
+                          fontSize: 26,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 2.0,
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       const Text(
                         "Press for immediate help",
-                        style: TextStyle(color: Colors.white70, fontSize: 14),
+                        style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white24, width: 1),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              "ONE-TAP DISPATCH",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                            SizedBox(width: 4),
+                            Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 10),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -361,7 +394,7 @@ class _HomePageState extends State<HomePage> {
                 padding: const EdgeInsets.all(12),
                 child: Row(
                   children: [
-                    Icon(_isBackendUnavailable ? Icons.cloud_off : Icons.shield, size: 28, color: safetyColor),
+                    Icon(_isBackendUnavailable ? Icons.shield_outlined : Icons.shield, size: 28, color: safetyColor),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -377,23 +410,41 @@ class _HomePageState extends State<HomePage> {
                           const SizedBox(height: 2),
                           Text(
                             _isBackendUnavailable
-                                ? "Connect to backend to assess local safety"
+                                ? "Emergency dialer (112) active • Tap to sync telemetry"
                                 : "Based on ${_reports.length} verified community report(s)",
                             style: const TextStyle(color: Colors.white60, fontSize: 12),
                           ),
                         ],
                       ),
                     ),
-                    Text(
-                      _isBackendUnavailable
-                          ? (_lastFetchTime != null
-                              ? "Offline"
-                              : "Syncing...")
-                          : (_lastFetchTime != null
-                              ? "Synced ${_formatRelativeTime(_lastFetchTime!.toIso8601String())}"
-                              : ""),
-                      style: const TextStyle(color: Colors.white38, fontSize: 11),
-                    ),
+                    if (_isBackendUnavailable)
+                      InkWell(
+                        onTap: _refreshDashboard,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppColors.amber.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.amber.withValues(alpha: 0.3)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.refresh, size: 12, color: AppColors.amber),
+                              SizedBox(width: 4),
+                              Text("Retry", style: TextStyle(color: AppColors.amber, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      Text(
+                        _lastFetchTime != null
+                            ? "Synced ${_formatRelativeTime(_lastFetchTime!.toIso8601String())}"
+                            : "",
+                        style: const TextStyle(color: Colors.white38, fontSize: 11),
+                      ),
                   ],
                 ),
               ),
@@ -499,13 +550,21 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 10),
 
             if (_isBackendUnavailable)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.cloud_off, color: AppColors.amber, size: 22),
-                  title: Text("Activity feed unavailable — connect to backend", style: TextStyle(color: Colors.white70)),
-                  subtitle: Text("Connect to backend to view recent activity", style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  leading: const Icon(Icons.wifi_off_outlined, color: AppColors.amber, size: 22),
+                  title: const Text("Offline Safety Guides Active", style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500)),
+                  subtitle: const Text("Emergency SOS works offline via SMS and cached contacts", style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  trailing: TextButton(
+                    onPressed: _refreshDashboard,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.teal,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    ),
+                    child: const Text("Retry", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
                 ),
               )
             else if (recentReports.isEmpty)
@@ -559,7 +618,7 @@ class _HomePageState extends State<HomePage> {
                             const SizedBox(height: 4),
                             Text(
                               _isBackendUnavailable
-                                  ? "Unavailable — connect to backend"
+                                  ? "Offline — tap to view safety map & offline refuges"
                                   : "${_reports.length} verified alert(s) in active area",
                               style: const TextStyle(
                                 fontSize: 12,
@@ -572,14 +631,16 @@ class _HomePageState extends State<HomePage> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: AppColors.red,
+                          color: _isBackendUnavailable ? AppColors.amber.withValues(alpha: 0.2) : AppColors.red,
                           borderRadius: BorderRadius.circular(20),
+                          border: _isBackendUnavailable ? Border.all(color: AppColors.amber.withValues(alpha: 0.4)) : null,
                         ),
                         child: Text(
-                          _isBackendUnavailable ? "—" : "${_reports.length}",
-                          style: const TextStyle(
-                            fontSize: 12,
+                          _isBackendUnavailable ? "Offline" : "${_reports.length}",
+                          style: TextStyle(
+                            fontSize: 11,
                             fontWeight: FontWeight.bold,
+                            color: _isBackendUnavailable ? AppColors.amber : Colors.white,
                           ),
                         ),
                       ),
