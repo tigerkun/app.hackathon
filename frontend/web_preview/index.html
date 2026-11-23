@@ -751,6 +751,15 @@
         });
         L.marker([currentLat + 0.003, currentLng + 0.004], { icon: hazardIcon }).addTo(mainMapInstance)
           .bindPopup('<b style="color:#0B1220">Poor Street Lighting</b><br>Reported 40m ago • Caution');
+
+        // 24x7 Safe Refuge Store Pin (M4)
+        const storeIcon = L.divIcon({
+          html: '<div style="background:#00BFA5; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; border:2px solid white; box-shadow:0 0 10px #00BFA5"><i class="fa-solid fa-store text-xs"></i></div>',
+          iconSize: [26, 26],
+          iconAnchor: [13, 13]
+        });
+        L.marker([currentLat + 0.002, currentLng - 0.004], { icon: storeIcon }).addTo(mainMapInstance)
+          .bindPopup('<b style="color:#0B1220">24x7 Safe Refuge Store</b><br>Staffed • Active footfall • First aid');
       } else {
         mainMapInstance.invalidateSize();
       }
