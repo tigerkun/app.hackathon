@@ -1056,17 +1056,156 @@ class _EmergencyPageState extends State<EmergencyPage> {
       } else {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not open dialer for $phoneNumber')),
+            SnackBar(
+              content: Text('Could not open dialer for $phoneNumber'),
+              action: SnackBarAction(
+                label: 'Options',
+                textColor: AppColors.teal,
+                onPressed: () => _showDialerFallback(context, phoneNumber),
+              ),
+            ),
           );
+          _showDialerFallback(context, phoneNumber);
         }
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error dialing $phoneNumber: $e')),
+          SnackBar(
+            content: Text('Error dialing $phoneNumber: $e'),
+            action: SnackBarAction(
+              label: 'Options',
+              textColor: AppColors.teal,
+              onPressed: () => _showDialerFallback(context, phoneNumber),
+            ),
+          ),
         );
+        _showDialerFallback(context, phoneNumber);
       }
     }
+  }
+
+  /// Fallback sheet when tel: cannot be launched (e.g. tablet, wifi device, no SIM)
+  void _showDialerFallback(BuildContext context, String phoneNumber) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF101A33),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.phone_disabled, color: AppColors.red, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Cannot open phone dialer",
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        "No dialer or SIM available for $phoneNumber",
+                        style: const TextStyle(color: Colors.white60, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Emergency Helpline",
+                          style: TextStyle(color: Colors.white54, fontSize: 11),
+                        ),
+                        Text(
+                          phoneNumber,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.teal,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                    icon: const Icon(Icons.copy, size: 16),
+                    label: const Text("Copy", style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: phoneNumber));
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text("Copied $phoneNumber to clipboard")),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.teal,
+                  side: const BorderSide(color: AppColors.teal),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                icon: const Icon(Icons.share_location, size: 18),
+                label: const Text(
+                  "Share My Location with Contacts",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _shareSosViaWhatsApp();
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildResponderChatPanel(Color textColor, Color cardColor, bool isDark) {
