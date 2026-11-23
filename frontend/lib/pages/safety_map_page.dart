@@ -29,6 +29,8 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
   // depend on this flag).
   bool _hasGpsFix = false;  
 
+  late final MapController _mapController;
+
   List<Map<String, dynamic>> _markers = [];
   List<Map<String, dynamic>> _reports = [];
   _MapPinItem? _selectedItem;
@@ -36,7 +38,14 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
   @override
   void initState() {
     super.initState();
+    _mapController = MapController();
     _initMap();
+  }
+
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
   }
 
   Future<void> _initMap() async {
@@ -69,6 +78,9 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
           _userLng = pos.longitude;
           _hasGpsFix = true;
         });
+        try {
+          _mapController.move(LatLng(pos.latitude, pos.longitude), 14.5);
+        } catch (_) {}
       }
     } catch (_) {
       // Keep default coordinates
@@ -85,20 +97,18 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
 
     try {
       final results = await Future.wait([
-        _hasGpsFix
-            ? AuthService.instance.fetchNearbyMarkers(
-                latitude: _userLat,
-                longitude: _userLng,
-                radiusKm: 10,
-              )
-            : Future<List<Map<String, dynamic>>>.value(const []),
+        AuthService.instance.fetchNearbyMarkers(
+          latitude: _userLat,
+          longitude: _userLng,
+          radiusKm: 10,
+        ),
         AuthService.instance.fetchReports(limit: 50),
       ]);
 
       if (!mounted) return;
       // Per-endpoint flags: a successful reports fetch must not mask a
       // markers failure (and vice versa) when both run concurrently.
-      if (_hasGpsFix && AuthService.instance.markersFetchFailed && results[0].isEmpty) {
+      if (AuthService.instance.markersFetchFailed && results[0].isEmpty) {
         setState(() {
           _errorMessage = "Could not fetch nearby safety data.";
           _isLoading = false;
@@ -110,9 +120,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
         _markers = results[0];
         _reports = results[1];
         _isLoading = false;
-        _errorMessage = _hasGpsFix
-            ? null
-            : "Location permission off — showing community reports only. Enable GPS for nearby markers.";
+        _errorMessage = null;
       });
     } catch (e) {
       if (mounted) {
@@ -569,6 +577,9 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
             onPressed: () async {
               await _centerUserLocation();
               await _loadMapData();
+              try {
+                _mapController.move(LatLng(_userLat, _userLng), 14.5);
+              } catch (_) {}
             },
           ),
           IconButton(
@@ -644,10 +655,13 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
               left: 20,
               right: 20,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.red.shade900.withValues(alpha: 0.9),
+                  color: Colors.red.shade900.withValues(alpha: 0.95),
                   borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 8, offset: const Offset(0, 2)),
+                  ],
                 ),
                 child: Row(
                   children: [
@@ -655,8 +669,18 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                     const SizedBox(width: 8),
                     Expanded(child: Text(_errorMessage!, style: const TextStyle(color: Colors.white, fontSize: 12))),
                     TextButton(
-                      onPressed: _loadMapData,
+                      onPressed: () async {
+                        await _centerUserLocation();
+                        await _loadMapData();
+                      },
                       child: const Text("RETRY", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white70, size: 16),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: "Dismiss",
+                      onPressed: () => setState(() => _errorMessage = null),
                     ),
                   ],
                 ),
@@ -685,6 +709,9 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                   onPressed: () async {
                     await _centerUserLocation();
                     await _loadMapData();
+                    try {
+                      _mapController.move(LatLng(_userLat, _userLng), 14.5);
+                    } catch (_) {}
                   },
                   child: _isLocating
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.teal))
@@ -747,7 +774,14 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
       }
       chips.add(
         GestureDetector(
-          onTap: nearest == null ? null : () => setState(() => _selectedItem = nearest),
+          onTap: nearest == null
+              ? null
+              : () {
+                  setState(() => _selectedItem = nearest);
+                  try {
+                    _mapController.move(LatLng(nearest.latitude, nearest.longitude), 15.0);
+                  } catch (_) {}
+                },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
@@ -802,6 +836,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
     return Stack(
       children: [
         FlutterMap(
+          mapController: _mapController,
           options: MapOptions(
             initialCenter: LatLng(_userLat, _userLng),
             initialZoom: 13.5,
@@ -899,6 +934,9 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                           color: AppColors.teal,
                         );
                       });
+                      try {
+                        _mapController.move(LatLng(_userLat, _userLng), 14.5);
+                      } catch (_) {}
                     },
                     child: const _InteractivePin(
                       icon: Icons.my_location,
@@ -916,7 +954,12 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                     height: 64,
                     alignment: Alignment.topCenter,
                     child: GestureDetector(
-                      onTap: () => setState(() => _selectedItem = item),
+                      onTap: () {
+                        setState(() => _selectedItem = item);
+                        try {
+                          _mapController.move(LatLng(item.latitude, item.longitude), 15.0);
+                        } catch (_) {}
+                      },
                       child: _InteractivePin(
                         icon: item.icon,
                         color: item.color,
@@ -931,33 +974,100 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
           ],
         ),
 
+        // Dedicated Zoom Controls (+ / -)
+        Positioned(
+          right: 16,
+          bottom: _selectedItem != null ? 240 : 85,
+          child: _buildZoomControls(),
+        ),
+
         // Honest GPS-off indicator: the map centers on the Delhi fallback
         // until a real fix arrives — never presented as the user's location.
+        // Tapping it prompts for location permission and centers the map.
         if (!_hasGpsFix)
           Positioned(
             top: 56,
             left: 16,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.75),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.amber.withValues(alpha: 0.4)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.gps_off, size: 12, color: AppColors.amber),
-                  SizedBox(width: 5),
-                  Text(
-                    "GPS off — showing default area",
-                    style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
-                  ),
-                ],
+            child: GestureDetector(
+              onTap: () async {
+                await _centerUserLocation();
+                await _loadMapData();
+                try {
+                  _mapController.move(LatLng(_userLat, _userLng), 14.5);
+                } catch (_) {}
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.amber.withValues(alpha: 0.6)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.gps_off, size: 12, color: AppColors.amber),
+                    SizedBox(width: 5),
+                    Text(
+                      "GPS off — showing default area (tap to enable)",
+                      style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
       ],
+    );
+  }
+
+  /// On-screen Zoom In / Zoom Out controls for convenient map navigation.
+  Widget _buildZoomControls() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF101A33).withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12),
+        boxShadow: const [
+          BoxShadow(color: Colors.black45, blurRadius: 6, offset: Offset(0, 2)),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.add, color: AppColors.teal, size: 20),
+            tooltip: "Zoom In",
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            padding: EdgeInsets.zero,
+            onPressed: () {
+              try {
+                final currentZoom = _mapController.camera.zoom;
+                _mapController.move(
+                  _mapController.camera.center,
+                  (currentZoom + 1).clamp(3.0, 18.0),
+                );
+              } catch (_) {}
+            },
+          ),
+          Container(height: 1, width: 28, color: Colors.white12),
+          IconButton(
+            icon: const Icon(Icons.remove, color: AppColors.teal, size: 20),
+            tooltip: "Zoom Out",
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            padding: EdgeInsets.zero,
+            onPressed: () {
+              try {
+                final currentZoom = _mapController.camera.zoom;
+                _mapController.move(
+                  _mapController.camera.center,
+                  (currentZoom - 1).clamp(3.0, 18.0),
+                );
+              } catch (_) {}
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -999,7 +1109,15 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
           ),
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
-            onTap: () => setState(() => _selectedItem = item),
+            onTap: () {
+              setState(() {
+                _selectedItem = item;
+                _isListView = false;
+              });
+              try {
+                _mapController.move(LatLng(item.latitude, item.longitude), 15.0);
+              } catch (_) {}
+            },
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Row(
