@@ -117,7 +117,7 @@ if (isProduction) {
 
   const missingProdVars = [];
   if (!process.env.CORS_ORIGIN) missingProdVars.push('CORS_ORIGIN');
-  if (!process.env.DB_PATH) missingProdVars.push('DB_PATH');
+  if (!process.env.DB_PATH && !isSnapshotPersistenceMode) missingProdVars.push('DB_PATH');
   if (!process.env.PORT) missingProdVars.push('PORT');
 
   if (missingProdVars.length > 0) {
