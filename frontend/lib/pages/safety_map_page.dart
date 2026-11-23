@@ -110,7 +110,9 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
       // markers failure (and vice versa) when both run concurrently.
       if (AuthService.instance.markersFetchFailed && results[0].isEmpty) {
         setState(() {
-          _errorMessage = "Could not fetch nearby safety data.";
+          _errorMessage = AuthService.instance.lastFetchFailed
+              ? "Can't reach SafeSphere servers right now. Emergency SOS still works offline — it queues and sends when you're back online."
+              : "Could not fetch nearby safety data.";
           _isLoading = false;
         });
         return;
@@ -860,8 +862,8 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
               urlTemplate: SafeSphereMapConfig.tileUrlTemplate,
               userAgentPackageName: SafeSphereMapConfig.userAgentPackageName,
               maxNativeZoom: 19,
-              tilesContainerBuilder: SafeSphereMapConfig.needsDarkFilter
-                  ? darkModeTilesContainerBuilder
+              tileBuilder: SafeSphereMapConfig.needsDarkFilter
+                  ? darkModeTileBuilder
                   : null,
             ),
             RichAttributionWidget(
@@ -983,11 +985,15 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
 
         // Honest GPS-off indicator: the map centers on the Delhi fallback
         // until a real fix arrives — never presented as the user's location.
-        // Tapping it prompts for location permission and centers the map.
+        // M6 UX fix: a prominent tappable CARD (not a tiny chip) so a user who
+        // denied location permission understands WHY they see a generic map,
+        // and can enable GPS in one tap instead of staring at a broken-looking
+        // Delhi view.
         if (!_hasGpsFix)
           Positioned(
             top: 56,
             left: 16,
+            right: 16,
             child: GestureDetector(
               onTap: () async {
                 await _centerUserLocation();
@@ -997,21 +1003,44 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                 } catch (_) {}
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.85),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.amber.withValues(alpha: 0.6)),
+                  color: const Color(0xFF101A33).withValues(alpha: 0.95),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.amber.withValues(alpha: 0.7), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3)),
+                  ],
                 ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
+                child: Row(
                   children: [
-                    Icon(Icons.gps_off, size: 12, color: AppColors.amber),
-                    SizedBox(width: 5),
-                    Text(
-                      "GPS off — showing default area (tap to enable)",
-                      style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.amber.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.gps_off, size: 22, color: AppColors.amber),
                     ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            "Location is off — showing a generic area",
+                            style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            "Tap to enable GPS and see safety pins near you.",
+                            style: TextStyle(color: Colors.white60, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right, color: AppColors.amber, size: 20),
                   ],
                 ),
               ),
