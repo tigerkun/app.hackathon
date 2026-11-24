@@ -915,8 +915,8 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                 // User location pin
                 Marker(
                   point: LatLng(_userLat, _userLng),
-                  width: 48,
-                  height: 60,
+                  width: 60,
+                  height: 72,
                   alignment: Alignment.topCenter,
                   child: GestureDetector(
                     onTap: () {
@@ -952,8 +952,8 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                 for (final item in items)
                   Marker(
                     point: LatLng(item.latitude, item.longitude),
-                    width: 48,
-                    height: 64,
+                    width: 76,
+                    height: 80,
                     alignment: Alignment.topCenter,
                     child: GestureDetector(
                       onTap: () {
@@ -1434,6 +1434,8 @@ class _InteractivePin extends StatelessWidget {
                 Text(
                   distanceText!,
                   style: const TextStyle(fontSize: 8, color: Colors.white70),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
             ],
           ),
