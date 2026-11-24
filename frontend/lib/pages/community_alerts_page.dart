@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/auth_service.dart';
-import '../services/map_config.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_drawer.dart';
 

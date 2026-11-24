@@ -27,7 +27,7 @@ Future<void> main() async {
 }
 
 /// Primary route table definition for static verification & fallback resolution
-final Map<String, WidgetBuilder> _appRouteMap = {
+final Map<String, WidgetBuilder> appRouteMap = {
   '/': (_) => const HomePage(),
   '/home': (_) => const HomePage(),
   '/map': (_) => const SafetyMapPage(),

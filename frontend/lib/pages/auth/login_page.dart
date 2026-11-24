@@ -353,36 +353,46 @@ class _LoginPageState extends State<LoginPage> {
 
                   // Alternative Quick Auth Methods: Biometric, PIN, SMS OTP
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       // Biometric Auth Button
-                      OutlinedButton.icon(
-                        onPressed: _handleBiometricAuth,
-                        icon: const Icon(Icons.fingerprint, color: AppColors.teal, size: 20),
-                        label: const Text('Biometric', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: AppColors.border),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _handleBiometricAuth,
+                          icon: const Icon(Icons.fingerprint, color: AppColors.teal, size: 18),
+                          label: const Text('Biometric', style: TextStyle(color: Colors.white70, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: AppColors.border),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                          ),
                         ),
                       ),
+                      const SizedBox(width: 8),
                       // PIN Fast Login Button
-                      OutlinedButton.icon(
-                        onPressed: () => Navigator.pushNamed(context, AppRoutes.pinLock),
-                        icon: const Icon(Icons.dialpad, color: AppColors.teal, size: 20),
-                        label: const Text('4-Digit PIN', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: AppColors.border),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => Navigator.pushNamed(context, AppRoutes.pinLock),
+                          icon: const Icon(Icons.dialpad, color: AppColors.teal, size: 18),
+                          label: const Text('4-Digit PIN', style: TextStyle(color: Colors.white70, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: AppColors.border),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                          ),
                         ),
                       ),
+                      const SizedBox(width: 8),
                       // SMS OTP Button
-                      OutlinedButton.icon(
-                        onPressed: _showSmsOtpDialog,
-                        icon: const Icon(Icons.sms_outlined, color: AppColors.teal, size: 20),
-                        label: const Text('SMS OTP', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: AppColors.border),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _showSmsOtpDialog,
+                          icon: const Icon(Icons.sms_outlined, color: AppColors.teal, size: 18),
+                          label: const Text('SMS OTP', style: TextStyle(color: Colors.white70, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: AppColors.border),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                          ),
                         ),
                       ),
                     ],

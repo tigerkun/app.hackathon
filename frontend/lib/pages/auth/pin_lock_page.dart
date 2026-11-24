@@ -4,7 +4,6 @@ import '../../data/auth_state.dart';
 import '../../routes/app_routes.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/glass_container.dart';
 
 class PinLockPage extends StatefulWidget {
   const PinLockPage({super.key});
