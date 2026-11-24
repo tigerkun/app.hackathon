@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide Path;
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_drawer.dart';
@@ -24,6 +24,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
 
   double _userLat = SafeSphereMapConfig.defaultLatitude;
   double _userLng = SafeSphereMapConfig.defaultLongitude;
+  String _userLocationLabel = "Connaught Place, New Delhi";
   // False until a real GPS fix arrives — never present the Delhi default as
   // the user's location (nearby markers, distances, and the AppBar label all
   // depend on this flag).
@@ -49,41 +50,50 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
   }
 
   Future<void> _initMap() async {
-    await _centerUserLocation();
+    final loc = LocationService.instance;
+    if (loc.isManualOverride) {
+      _userLat = loc.currentLat;
+      _userLng = loc.currentLng;
+      _userLocationLabel = loc.locationLabel;
+      _hasGpsFix = true;
+    } else {
+      await _centerUserLocation();
+    }
     await _loadMapData();
   }
 
   Future<void> _centerUserLocation() async {
     setState(() => _isLocating = true);
     try {
-      final permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        final requested = await Geolocator.requestPermission();
-        if (requested == LocationPermission.denied || requested == LocationPermission.deniedForever) {
-          if (mounted) setState(() => _isLocating = false);
-          return;
+      final loc = LocationService.instance;
+      final success = await loc.detectLiveGps();
+      if (success) {
+        if (mounted) {
+          setState(() {
+            _userLat = loc.currentLat;
+            _userLng = loc.currentLng;
+            _userLocationLabel = loc.locationLabel;
+            _hasGpsFix = true;
+          });
+          try {
+            _mapController.move(LatLng(_userLat, _userLng), 14.5);
+          } catch (_) {}
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _userLat = loc.currentLat;
+            _userLng = loc.currentLng;
+            _userLocationLabel = loc.locationLabel;
+            _hasGpsFix = loc.isManualOverride;
+          });
+          try {
+            _mapController.move(LatLng(_userLat, _userLng), 14.5);
+          } catch (_) {}
         }
       }
-
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 4),
-        ),
-      ).timeout(const Duration(seconds: 4));
-
-      if (mounted) {
-        setState(() {
-          _userLat = pos.latitude;
-          _userLng = pos.longitude;
-          _hasGpsFix = true;
-        });
-        try {
-          _mapController.move(LatLng(pos.latitude, pos.longitude), 14.5);
-        } catch (_) {}
-      }
     } catch (_) {
-      // Keep default coordinates
+      // Keep coordinates
     } finally {
       if (mounted) setState(() => _isLocating = false);
     }
@@ -555,17 +565,55 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.maybePop(context),
         ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text("Safety Map", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            Text(
-              _hasGpsFix
-                  ? "GPS: ${_userLat.toStringAsFixed(4)}, ${_userLng.toStringAsFixed(4)}"
-                  : "GPS: off",
-              style: const TextStyle(fontSize: 11, color: Colors.white60),
+        title: InkWell(
+          onTap: () {
+            LocationService.showLocationPickerSheet(
+              context,
+              onLocationChanged: () {
+                final loc = LocationService.instance;
+                setState(() {
+                  _userLat = loc.currentLat;
+                  _userLng = loc.currentLng;
+                  _userLocationLabel = loc.locationLabel;
+                  _hasGpsFix = true;
+                });
+                _loadMapData();
+                try {
+                  _mapController.move(LatLng(_userLat, _userLng), 14.5);
+                } catch (_) {}
+              },
+            );
+          },
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      LocationService.instance.isManualOverride ? "Custom Area" : "Safety Map",
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    const Icon(Icons.arrow_drop_down, size: 18, color: AppColors.teal),
+                  ],
+                ),
+                Text(
+                  _hasGpsFix
+                      ? LocationService.instance.locationLabel
+                      : "GPS: off — tap to set location",
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: LocationService.instance.isManualOverride ? AppColors.blue : Colors.white70,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-          ],
+          ),
         ),
         actions: [
           IconButton(
@@ -915,8 +963,8 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                 // User location pin
                 Marker(
                   point: LatLng(_userLat, _userLng),
-                  width: 60,
-                  height: 72,
+                  width: 82,
+                  height: 86,
                   alignment: Alignment.topCenter,
                   child: GestureDetector(
                     onTap: () {
@@ -952,8 +1000,8 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                 for (final item in items)
                   Marker(
                     point: LatLng(item.latitude, item.longitude),
-                    width: 76,
-                    height: 80,
+                    width: 82,
+                    height: 86,
                     alignment: Alignment.topCenter,
                     child: GestureDetector(
                       onTap: () {
@@ -968,6 +1016,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                         label:
                             item.name.length > 14 ? "${item.name.substring(0, 12)}.." : item.name,
                         distanceText: _fmtDistance(item.distanceKm),
+                        isPulsing: item.isVerified,
                       ),
                     ),
                   ),
@@ -1370,6 +1419,27 @@ class _MapPinItem {
   });
 }
 
+class _PointerTailPainter extends CustomPainter {
+  final Color color;
+  const _PointerTailPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 class _InteractivePin extends StatelessWidget {
   final IconData icon;
   final Color color;
@@ -1389,37 +1459,63 @@ class _InteractivePin extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        // Glowing Pin Head
         Container(
-          padding: const EdgeInsets.all(6),
+          width: 28,
+          height: 28,
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.25),
+            color: color.withValues(alpha: 0.35),
             shape: BoxShape.circle,
             border: Border.all(color: color, width: 2),
-            // M4: category-tinted glow halo — two stacked shadows give the
-            // pins a soft outer aura so refuges pop on dark tiles at night.
+            // M4: category-tinted glow halo — multi-tier neon aura so refuges pop on dark tiles at night.
             boxShadow: [
               BoxShadow(
-                color: color.withValues(alpha: 0.55),
-                blurRadius: isPulsing ? 16 : 9,
-                spreadRadius: isPulsing ? 3 : 1,
+                color: color.withValues(alpha: isPulsing ? 0.90 : 0.65),
+                blurRadius: isPulsing ? 18 : 10,
+                spreadRadius: isPulsing ? 4 : 2,
               ),
               BoxShadow(
-                color: color.withValues(alpha: 0.20),
-                blurRadius: 22,
+                color: color.withValues(alpha: 0.35),
+                blurRadius: 24,
                 spreadRadius: 6,
               ),
             ],
           ),
-          child: Icon(icon, color: color, size: 18),
+          child: Center(
+            child: Icon(icon, color: Colors.white, size: 15),
+          ),
         ),
-        const SizedBox(height: 2),
+        // Downward Pointer Needle / Arrow
+        CustomPaint(
+          size: const Size(8, 5),
+          painter: _PointerTailPainter(color: color),
+        ),
+        // Luminous Beacon Anchor Point
+        Container(
+          width: 3.5,
+          height: 3.5,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: color,
+                blurRadius: 5,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 1),
+        // Pin Label Badge
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.85),
+            color: Colors.black.withValues(alpha: 0.88),
             borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: color.withValues(alpha: 0.4)),
+            border: Border.all(color: color.withValues(alpha: 0.5)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,

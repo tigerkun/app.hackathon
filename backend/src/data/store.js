@@ -304,9 +304,21 @@ class DataStore {
     // Phone canonicalization backfill: rows stored before normalizePhone
     // became canonical may hold '+91 …'/spaced forms; rewrite them so
     // login/OTP/PIN-reset lookups resolve regardless of input formatting.
+    // Ensure all seed markers exist
     try {
-      this._backfillPhoneCanonical();
+      this._seedMissingMarkers();
     } catch (_) {}
+  }
+
+  _seedMissingMarkers() {
+    const seed = getSeedData();
+    if (Array.isArray(seed.markers)) {
+      for (const m of seed.markers) {
+        if (!this.findMarkerById(m.id)) {
+          this.saveMarker(m);
+        }
+      }
+    }
   }
 
   _backfillPhoneCanonical() {

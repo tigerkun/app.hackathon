@@ -135,6 +135,136 @@ function getSeedData() {
       address: 'Central Secretariat Metro, Gate 1',
       isVerified: true,
       createdAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'marker_store_cp_247',
+      name: 'Apollo 24x7 Emergency Chemist & Safe Store',
+      category: '24x7 Store',
+      latitude: 28.6322,
+      longitude: 77.2185,
+      address: 'Block E, Inner Circle, Connaught Place, New Delhi',
+      isVerified: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'marker_store_delhi_24seven',
+      name: '24 Seven Lit Convenience & Safe Refuge',
+      category: '24x7 Store',
+      latitude: 28.6295,
+      longitude: 77.2152,
+      address: 'Regal Building, Connaught Circus, New Delhi',
+      isVerified: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'marker_police_hauz_khas',
+      name: 'Hauz Khas Police Station',
+      category: 'Police Station',
+      latitude: 28.5494,
+      longitude: 77.2001,
+      address: 'Aurobindo Marg, Hauz Khas, New Delhi',
+      isVerified: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'marker_hospital_safdarjung',
+      name: 'Safdarjung Hospital Emergency Services',
+      category: 'Hospital',
+      latitude: 28.5695,
+      longitude: 77.2075,
+      address: 'Ring Road, Opposite AIIMS, New Delhi',
+      isVerified: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'marker_safe_noida_hub',
+      name: 'Sector 18 Metro Safe Women Helpdesk',
+      category: 'Verified Safe Zone',
+      latitude: 28.5708,
+      longitude: 77.3271,
+      address: 'Sector 18 Metro Gate 2, Noida',
+      isVerified: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'marker_store_noida_247',
+      name: 'Guardian 24x7 Chemist & Safe Haven',
+      category: '24x7 Store',
+      latitude: 28.5715,
+      longitude: 77.3260,
+      address: 'Atta Market, Sector 18, Noida',
+      isVerified: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'marker_police_blr_indiranagar',
+      name: 'Indiranagar Police Station',
+      category: 'Police Station',
+      latitude: 12.9784,
+      longitude: 77.6408,
+      address: '100 Feet Rd, Indiranagar, Bengaluru',
+      isVerified: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'marker_hospital_blr_manipal',
+      name: 'Manipal Hospital Emergency & Trauma Care',
+      category: 'Hospital',
+      latitude: 12.9584,
+      longitude: 77.6489,
+      address: '98 HAL Old Airport Rd, Kodihalli, Bengaluru',
+      isVerified: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'marker_store_blr_247',
+      name: 'MedPlus 24x7 Pharmacy & Lit Safe Refuge',
+      category: '24x7 Store',
+      latitude: 12.9716,
+      longitude: 77.6412,
+      address: '12th Main Rd, Indiranagar, Bengaluru',
+      isVerified: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'marker_safe_blr_hub',
+      name: 'Koramangala Safe Transit Zone & Kiosk',
+      category: 'Verified Safe Zone',
+      latitude: 12.9352,
+      longitude: 77.6245,
+      address: '80 Feet Road, Koramangala 4th Block, Bengaluru',
+      isVerified: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'marker_police_mum_bandra',
+      name: 'Bandra Police Station',
+      category: 'Police Station',
+      latitude: 19.0553,
+      longitude: 72.8335,
+      address: 'Hill Road, Bandra West, Mumbai',
+      isVerified: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'marker_hospital_mum_lilavati',
+      name: 'Lilavati Hospital & Emergency Care',
+      category: 'Hospital',
+      latitude: 19.0515,
+      longitude: 72.8291,
+      address: 'A-791 Bandra Reclamation, Mumbai',
+      isVerified: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
+      id: 'marker_store_mum_wellness',
+      name: 'Wellness Forever 24x7 Safe Refuge',
+      category: '24x7 Store',
+      latitude: 19.0596,
+      longitude: 72.8295,
+      address: 'Turner Road, Bandra West, Mumbai',
+      isVerified: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
     }
   ];
 

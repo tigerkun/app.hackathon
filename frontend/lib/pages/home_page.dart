@@ -56,28 +56,28 @@ class _HomePageState extends State<HomePage> {
     setState(() => _isLoading = true);
 
     try {
-      // 1. Detect user position if permitted
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
-        final pos = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 4)),
-        ).timeout(const Duration(seconds: 4));
-
-        _userLat = pos.latitude;
-        _userLng = pos.longitude;
-        _locationLabel = "GPS: ${_userLat!.toStringAsFixed(2)}, ${_userLng!.toStringAsFixed(2)}";
+      // 1. Detect or apply user position from LocationService
+      final loc = LocationService.instance;
+      if (loc.isManualOverride) {
+        _userLat = loc.currentLat;
+        _userLng = loc.currentLng;
+        _locationLabel = loc.locationLabel;
       } else {
-        _userLat = null;
-        _userLng = null;
-        _locationLabel = "Unavailable — enable location";
+        final success = await loc.detectLiveGps();
+        if (success) {
+          _userLat = loc.currentLat;
+          _userLng = loc.currentLng;
+          _locationLabel = loc.locationLabel;
+        } else {
+          _userLat = loc.currentLat;
+          _userLng = loc.currentLng;
+          _locationLabel = loc.locationLabel;
+        }
       }
     } catch (_) {
-      _userLat = null;
-      _userLng = null;
-      _locationLabel = "Unavailable — enable location";
+      _userLat = LocationService.instance.currentLat;
+      _userLng = LocationService.instance.currentLng;
+      _locationLabel = LocationService.instance.locationLabel;
     }
 
     try {
@@ -197,7 +197,14 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         title: InkWell(
-          onTap: _refreshDashboard,
+          onTap: () {
+            LocationService.showLocationPickerSheet(
+              context,
+              onLocationChanged: () {
+                _refreshDashboard();
+              },
+            );
+          },
           borderRadius: BorderRadius.circular(20),
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
@@ -210,9 +217,13 @@ class _HomePageState extends State<HomePage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  _userLat != null ? Icons.location_on : Icons.location_off_outlined,
+                  LocationService.instance.isManualOverride
+                      ? Icons.edit_location_alt
+                      : (_userLat != null ? Icons.location_on : Icons.location_off_outlined),
                   size: 15,
-                  color: _userLat != null ? AppColors.teal : AppColors.amber,
+                  color: LocationService.instance.isManualOverride
+                      ? AppColors.blue
+                      : (_userLat != null ? AppColors.teal : AppColors.amber),
                 ),
                 const SizedBox(width: 6),
                 Flexible(
@@ -222,6 +233,8 @@ class _HomePageState extends State<HomePage> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                const SizedBox(width: 4),
+                const Icon(Icons.arrow_drop_down, size: 16, color: Colors.white54),
               ],
             ),
           ),
