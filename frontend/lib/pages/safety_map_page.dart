@@ -276,6 +276,18 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
     return '${km.toStringAsFixed(1)} km';
   }
 
+  String _shortPinLabel(String name, String category) {
+    final n = name.trim();
+    if (n.length <= 16) return n;
+    final cat = category.toLowerCase();
+    if (n.startsWith('Local Emergency Police')) return 'Police Post';
+    if (n.startsWith('Emergency Medical')) return 'Hospital / ER';
+    if (n.startsWith('24x7 Lit Store')) return '24x7 Store';
+    if (n.startsWith('Verified Safe Zone')) return 'Safe Zone';
+    if (cat.contains('police')) return '${n.substring(0, 14)}..';
+    return '${n.substring(0, 14)}..';
+  }
+
   Future<void> _openExternalDirections(double destLat, double destLng) async {
     final uri = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$destLat,$destLng");
     if (await canLaunchUrl(uri)) {
@@ -1000,7 +1012,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                 for (final item in items)
                   Marker(
                     point: LatLng(item.latitude, item.longitude),
-                    width: 82,
+                    width: 96,
                     height: 86,
                     alignment: Alignment.topCenter,
                     child: GestureDetector(
@@ -1013,8 +1025,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                       child: _InteractivePin(
                         icon: item.icon,
                         color: item.color,
-                        label:
-                            item.name.length > 14 ? "${item.name.substring(0, 12)}.." : item.name,
+                        label: _shortPinLabel(item.name, item.category),
                         distanceText: _fmtDistance(item.distanceKm),
                         isPulsing: item.isVerified,
                       ),

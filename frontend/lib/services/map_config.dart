@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../theme/app_colors.dart';
@@ -71,10 +73,10 @@ class LocationService extends ChangeNotifier {
 
   LocationService._internal();
 
-  // Default initial location: Connaught Place, New Delhi
-  double _currentLat = 28.6315;
-  double _currentLng = 77.2167;
-  String _locationLabel = "Connaught Place, New Delhi";
+  // Default initial location: Sehore, Madhya Pradesh
+  double _currentLat = 23.1967;
+  double _currentLng = 77.0819;
+  String _locationLabel = "Sehore, Madhya Pradesh";
   bool _hasLiveGps = false;
   bool _isManualOverride = false;
   bool _isDetecting = false;
@@ -87,6 +89,14 @@ class LocationService extends ChangeNotifier {
   bool get isDetecting => _isDetecting;
 
   static const List<LocationPreset> presets = [
+    LocationPreset(
+      name: "Sehore Central",
+      city: "Madhya Pradesh",
+      latitude: 23.1967,
+      longitude: 77.0819,
+      description: "Your Live Location & Active Zone",
+      icon: Icons.my_location,
+    ),
     LocationPreset(
       name: "Connaught Place",
       city: "New Delhi",
@@ -173,18 +183,26 @@ class LocationService extends ChangeNotifier {
       }
 
       if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
-        final pos = await Geolocator.getCurrentPosition(
+        Position? pos = await Geolocator.getLastKnownPosition();
+        pos ??= await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            timeLimit: Duration(seconds: 5),
+            accuracy: LocationAccuracy.medium,
+            timeLimit: Duration(seconds: 4),
           ),
-        ).timeout(const Duration(seconds: 5));
+        ).timeout(const Duration(seconds: 4));
 
         _currentLat = pos.latitude;
         _currentLng = pos.longitude;
         _hasLiveGps = true;
         _isManualOverride = false;
-        _locationLabel = "Live GPS: ${_currentLat.toStringAsFixed(2)}, ${_currentLng.toStringAsFixed(2)}";
+
+        // Format label with readable city or live coordinates
+        if ((_currentLat - 23.1967).abs() < 0.1 && (_currentLng - 77.0819).abs() < 0.1) {
+          _locationLabel = "Sehore, Madhya Pradesh";
+        } else {
+          _locationLabel = "Live GPS: ${_currentLat.toStringAsFixed(2)}, ${_currentLng.toStringAsFixed(2)}";
+        }
+
         _isDetecting = false;
         notifyListeners();
         return true;
@@ -238,6 +256,10 @@ class _LocationPickerSheet extends StatefulWidget {
 class _LocationPickerSheetState extends State<_LocationPickerSheet> {
   final _service = LocationService.instance;
   bool _isCustomExpanded = false;
+  bool _isSearching = false;
+  String? _searchError;
+  List<Map<String, dynamic>> _searchResults = [];
+  final _searchController = TextEditingController();
   final _latController = TextEditingController();
   final _lngController = TextEditingController();
   final _nameController = TextEditingController();
@@ -252,10 +274,58 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     _latController.dispose();
     _lngController.dispose();
     _nameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _searchPlace() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return;
+    setState(() {
+      _isSearching = true;
+      _searchError = null;
+    });
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 6);
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', 'search', {
+        'q': query,
+        'format': 'json',
+        'limit': '5',
+      });
+      final req = await client.getUrl(uri);
+      req.headers.set(HttpHeaders.userAgentHeader, SafeSphereMapConfig.userAgentPackageName);
+      final res = await req.close().timeout(const Duration(seconds: 6));
+      final body = await utf8.decoder.bind(res).join();
+      if (!mounted) return;
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(body);
+        if (decoded is List) {
+          setState(() {
+            _searchResults = decoded.whereType<Map<String, dynamic>>().toList();
+            _searchError = _searchResults.isEmpty ? "No places found for '$query'" : null;
+            _isSearching = false;
+          });
+          return;
+        }
+      }
+      setState(() {
+        _searchError = "Search unavailable right now";
+        _isSearching = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _searchError = "Could not reach place search";
+          _isSearching = false;
+        });
+      }
+    } finally {
+      client.close(force: true);
+    }
   }
 
   void _applyAndClose(double lat, double lng, String label) {
@@ -440,11 +510,114 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                   ),
                 ),
               ),
-              // Preset Locations List
+              // Search by City / Area + Preset Locations List
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: TextField(
+                        controller: _searchController,
+                        textInputAction: TextInputAction.search,
+                        onSubmitted: (_) => _searchPlace(),
+                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        decoration: InputDecoration(
+                          hintText: "Search city, area, or landmark (e.g. Sehore, Bhopal)...",
+                          hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                          prefixIcon: const Icon(Icons.search, color: AppColors.teal, size: 18),
+                          suffixIcon: _isSearching
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.teal),
+                                  ),
+                                )
+                              : IconButton(
+                                  icon: const Icon(Icons.arrow_forward, color: AppColors.teal, size: 18),
+                                  tooltip: "Search",
+                                  onPressed: _searchPlace,
+                                ),
+                          filled: true,
+                          fillColor: const Color(0xFF161F30),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Colors.white12),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Colors.white12),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: AppColors.teal),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        ),
+                      ),
+                    ),
+                    if (_searchError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8, left: 4),
+                        child: Text(
+                          _searchError!,
+                          style: const TextStyle(color: AppColors.amber, fontSize: 12),
+                        ),
+                      ),
+                    if (_searchResults.isNotEmpty) ...[
+                      const Padding(
+                        padding: EdgeInsets.only(left: 4, bottom: 6),
+                        child: Text(
+                          "Search Results",
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.teal,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                      ..._searchResults.map((place) {
+                        final displayName = (place['display_name'] ?? 'Selected Location').toString();
+                        final shortLabel = displayName.split(',').take(2).map((s) => s.trim()).join(', ');
+                        final lat = double.tryParse((place['lat'] ?? '').toString());
+                        final lon = double.tryParse((place['lon'] ?? '').toString());
+                        if (lat == null || lon == null) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: InkWell(
+                            onTap: () => _applyAndClose(lat, lon, shortLabel.isNotEmpty ? shortLabel : displayName),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: AppColors.teal.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.teal.withValues(alpha: 0.35)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.place, color: AppColors.teal, size: 18),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      displayName,
+                                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const Icon(Icons.chevron_right, color: AppColors.teal, size: 18),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 6),
+                    ],
                     const Padding(
                       padding: EdgeInsets.only(left: 4, bottom: 8, top: 4),
                       child: Text(

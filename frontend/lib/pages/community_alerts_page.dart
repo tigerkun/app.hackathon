@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:geolocator/geolocator.dart';
 import '../services/auth_service.dart';
+import '../services/map_config.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_drawer.dart';
 
@@ -23,7 +23,8 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
 
   double? _userLat;
   double? _userLng;
-  static const double _searchRadiusKm = 10;
+  bool _allAreas = false;
+  static const double _searchRadiusKm = 15;
 
   // Live reports fetched from /api/v1/reports
   List<Map<String, dynamic>> _rawReports = [];
@@ -46,29 +47,21 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
       errorMessage = null;
     });
 
-    try {
-      final perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.whileInUse || perm == LocationPermission.always) {
-        final pos = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.medium,
-            timeLimit: Duration(seconds: 4),
-          ),
-        );
-        _userLat = pos.latitude;
-        _userLng = pos.longitude;
-      } else {
-        _userLat = null;
-        _userLng = null;
+    final loc = LocationService.instance;
+    if (!_allAreas) {
+      if (!loc.isManualOverride && !loc.hasLiveGps) {
+        await loc.detectLiveGps();
       }
-    } catch (_) {
+      _userLat = loc.currentLat;
+      _userLng = loc.currentLng;
+    } else {
       _userLat = null;
       _userLng = null;
     }
 
     try {
       final authService = AuthService.instance;
-      final hasLocation = _userLat != null && _userLng != null;
+      final hasLocation = !_allAreas && _userLat != null && _userLng != null;
       final reports = await authService.fetchReports(
         limit: 50,
         latitude: hasLocation ? _userLat : null,
@@ -221,7 +214,67 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
               ],
             ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      LocationService.showLocationPickerSheet(
+                        context,
+                        onLocationChanged: () {
+                          setState(() => _allAreas = false);
+                          _fetchRealCommunityAlerts();
+                        },
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.06),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _allAreas ? Icons.public : Icons.location_on,
+                            size: 14,
+                            color: _allAreas ? AppColors.blue : AppColors.teal,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              _allAreas
+                                  ? "Showing all areas"
+                                  : "Near ${LocationService.instance.locationLabel} (15 km)",
+                              style: const TextStyle(fontSize: 12, color: Colors.white70),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.arrow_drop_down, size: 16, color: Colors.white54),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilterChip(
+                  label: const Text("All Areas", style: TextStyle(fontSize: 12)),
+                  selected: _allAreas,
+                  onSelected: (val) {
+                    setState(() => _allAreas = val);
+                    _fetchRealCommunityAlerts();
+                  },
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 10),
 
             // Filter chips
             Wrap(

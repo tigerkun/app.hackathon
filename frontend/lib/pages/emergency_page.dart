@@ -571,7 +571,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
 
               // 🟠 INFORM CONTACTS
               _actionCard(
-                color: AuthState().isDiscreetMode ? const Color(0xFF334155) : const Color(0xFFF9A825),
+                color: AuthState().isDiscreetMode ? const Color(0xFF334155) : const Color(0xFFB45309),
                 icon: Icons.group,
                 title: "Inform Trusted Contacts",
                 subtitle:

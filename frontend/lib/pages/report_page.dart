@@ -3,6 +3,7 @@ import 'package:geolocator/geolocator.dart';
 import '../data/report_store.dart';
 import '../models/report_model.dart';
 import '../services/auth_service.dart';
+import '../services/map_config.dart';
 import '../widgets/map_placeholder.dart';
 import '../widgets/glass_container.dart';
 import '../theme/app_colors.dart';
@@ -43,28 +44,29 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Future<void> _detectLocation() async {
+    final loc = LocationService.instance;
+    if (loc.isManualOverride || loc.hasLiveGps) {
+      if (mounted) {
+        setState(() {
+          _latitude = loc.currentLat;
+          _longitude = loc.currentLng;
+          _locationTag = "${loc.locationLabel} (${loc.currentLat.toStringAsFixed(4)}, ${loc.currentLng.toStringAsFixed(4)})";
+        });
+      }
+      return;
+    }
+
+    final success = await loc.detectLiveGps();
+    if (success && mounted) {
+      setState(() {
+        _latitude = loc.currentLat;
+        _longitude = loc.currentLng;
+        _locationTag = "${loc.locationLabel} (${loc.currentLat.toStringAsFixed(4)}, ${loc.currentLng.toStringAsFixed(4)})";
+      });
+      return;
+    }
+
     try {
-      LocationPermission perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
-      if (perm == LocationPermission.whileInUse || perm == LocationPermission.always) {
-        final pos = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            timeLimit: Duration(seconds: 6),
-          ),
-        );
-        if (mounted) {
-          setState(() {
-            _latitude = pos.latitude;
-            _longitude = pos.longitude;
-            _locationTag = "${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)} (GPS Verified)";
-          });
-        }
-        return;
-      }
-      // Try last known as fallback if permission was already granted before
       final last = await Geolocator.getLastKnownPosition();
       if (last != null && mounted) {
         setState(() {
@@ -74,13 +76,13 @@ class _ReportPageState extends State<ReportPage> {
         });
       } else if (mounted) {
         setState(() {
-          _locationTag = "Location unavailable";
+          _locationTag = "Tap to choose location";
         });
       }
     } catch (_) {
       if (mounted) {
         setState(() {
-          _locationTag = "GPS unavailable — location will not be attached";
+          _locationTag = "Tap to choose location";
         });
       }
     }
@@ -381,22 +383,58 @@ class _ReportPageState extends State<ReportPage> {
 
                         const SizedBox(height: 14),
 
-                        /// LOCATION INFO
-                        Row(
-                          children: [
-                            const Icon(Icons.gps_fixed,
-                                color: AppColors.teal, size: 18),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                "Tagged Location: $_locationTag",
-                                style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 12),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            )
-                          ],
+                        /// LOCATION INFO (tappable to change via LocationService)
+                        InkWell(
+                          onTap: () {
+                            LocationService.showLocationPickerSheet(
+                              context,
+                              onLocationChanged: () {
+                                final loc = LocationService.instance;
+                                setState(() {
+                                  _latitude = loc.currentLat;
+                                  _longitude = loc.currentLng;
+                                  _locationTag = "${loc.locationLabel} (${loc.currentLat.toStringAsFixed(4)}, ${loc.currentLng.toStringAsFixed(4)})";
+                                });
+                              },
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _latitude != null ? Icons.gps_fixed : Icons.edit_location_alt,
+                                  color: AppColors.teal,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    "Tagged: $_locationTag",
+                                    style: const TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 12),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.teal.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: AppColors.teal.withValues(alpha: 0.4)),
+                                  ),
+                                  child: const Text(
+                                    "Change",
+                                    style: TextStyle(color: AppColors.teal, fontSize: 10, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
 
                         // GPS unavailable → manual landmark is REQUIRED by the
