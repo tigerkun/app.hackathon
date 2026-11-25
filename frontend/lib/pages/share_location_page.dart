@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_drawer.dart';
 import '../theme/app_colors.dart';
 import '../services/auth_service.dart';
+import '../services/map_config.dart';
 
 class ShareLocationPage extends StatefulWidget {
   const ShareLocationPage({super.key});
@@ -96,6 +97,14 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
         }
       }
     } catch (_) {}
+
+    if (lat == null || lng == null) {
+      final loc = LocationService.instance;
+      if (loc.hasLiveGps || loc.isManualOverride) {
+        lat = loc.currentLat;
+        lng = loc.currentLng;
+      }
+    }
 
     if (mounted) {
       setState(() {

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/auth_service.dart';
+import '../services/map_config.dart';
 import '../theme/app_colors.dart';
 
 /// M3: My Circle — account-to-account trusted circle.
@@ -290,20 +291,34 @@ class _MyCirclePageState extends State<MyCirclePage> {
     final always = incoming.where(
         (c) => c['status'] == 'active' && c['mode'] == 'always');
     if (always.isEmpty) return;
-    Position? pos;
+    double? lat;
+    double? lng;
+    double? acc;
     try {
-      pos = await Geolocator.getLastKnownPosition();
+      final pos = await Geolocator.getLastKnownPosition();
+      if (pos != null) {
+        lat = pos.latitude;
+        lng = pos.longitude;
+        acc = pos.accuracy;
+      }
     } catch (_) {}
-    if (pos == null) return;
+    if (lat == null || lng == null) {
+      final loc = LocationService.instance;
+      if (loc.hasLiveGps || loc.isManualOverride) {
+        lat = loc.currentLat;
+        lng = loc.currentLng;
+      }
+    }
+    if (lat == null || lng == null) return;
     for (final c in always) {
       final id = c['id']?.toString();
       if (id == null || id.isEmpty) continue;
       try {
         await _authService.pingConnectionLocation(
           connectionId: id,
-          latitude: pos.latitude,
-          longitude: pos.longitude,
-          accuracy: pos.accuracy,
+          latitude: lat,
+          longitude: lng,
+          accuracy: acc,
         );
       } catch (_) {
         // Beacon failure is non-fatal — the grantee sees last-known staleness.

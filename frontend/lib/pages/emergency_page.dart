@@ -12,6 +12,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/auth_service.dart';
 import '../services/gesture_service.dart';
+import '../services/map_config.dart';
 import '../data/auth_state.dart';
 import '../theme/app_colors.dart';
 
@@ -1517,19 +1518,16 @@ class _EmergencyPageState extends State<EmergencyPage> {
     await _executeSosDispatch(context);
   }
 
-  Future<void> _executeSosDispatch(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-
-    double? lat;
-    double? lng;
-    double? acc;
-
+  /// Resolves live GPS coordinates, falling back to last-known GPS or
+  /// LocationService's active location so an emergency alert is never blocked.
+  Future<({double? lat, double? lng, double? acc})> _resolveEmergencyCoordinates({
+    bool requestPermission = false,
+  }) async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
+      if (permission == LocationPermission.denied && requestPermission) {
         permission = await Geolocator.requestPermission();
       }
-
       if (permission == LocationPermission.whileInUse ||
           permission == LocationPermission.always) {
         final position = await Geolocator.getCurrentPosition(
@@ -1538,11 +1536,35 @@ class _EmergencyPageState extends State<EmergencyPage> {
             timeLimit: Duration(seconds: 5),
           ),
         );
-        lat = position.latitude;
-        lng = position.longitude;
-        acc = position.accuracy;
+        return (
+          lat: position.latitude,
+          lng: position.longitude,
+          acc: position.accuracy,
+        );
       }
     } catch (_) {}
+
+    try {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) {
+        return (lat: last.latitude, lng: last.longitude, acc: last.accuracy);
+      }
+    } catch (_) {}
+
+    final loc = LocationService.instance;
+    if (loc.hasLiveGps || loc.isManualOverride) {
+      return (lat: loc.currentLat, lng: loc.currentLng, acc: null);
+    }
+    return (lat: null, lng: null, acc: null);
+  }
+
+  Future<void> _executeSosDispatch(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    final coords = await _resolveEmergencyCoordinates(requestPermission: true);
+    final double? lat = coords.lat;
+    final double? lng = coords.lng;
+    final double? acc = coords.acc;
 
     if (lat == null || lng == null) {
       messenger.showSnackBar(
@@ -1623,7 +1645,11 @@ class _EmergencyPageState extends State<EmergencyPage> {
       );
       lat = position.latitude;
       lng = position.longitude;
-    } catch (_) {}
+    } catch (_) {
+      final fallback = await _resolveEmergencyCoordinates();
+      lat = fallback.lat;
+      lng = fallback.lng;
+    }
 
     final buffer = StringBuffer();
     buffer.write("🚨 [SafeSphere EMERGENCY] I need help RIGHT NOW.");
@@ -1692,19 +1718,9 @@ class _EmergencyPageState extends State<EmergencyPage> {
 
   Future<void> _triggerDirectSmsFallback(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    double? lat;
-    double? lng;
-
-    try {
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 5),
-        ),
-      );
-      lat = position.latitude;
-      lng = position.longitude;
-    } catch (_) {}
+    final coords = await _resolveEmergencyCoordinates();
+    final double? lat = coords.lat;
+    final double? lng = coords.lng;
 
     final locationUrl = (lat != null && lng != null)
         ? "https://www.google.com/maps?q=$lat,$lng"

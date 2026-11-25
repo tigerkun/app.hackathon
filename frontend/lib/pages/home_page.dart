@@ -2,7 +2,6 @@
 // via sensors_plus) with honest gating, intermediate confirmation, and mandatory 5s countdown dialog.
 
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/app_drawer.dart';
@@ -30,6 +29,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    LocationService.instance.addListener(_onLocationServiceChanged);
     _refreshDashboard();
     _loadQueuedSos();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -46,8 +46,25 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  void _onLocationServiceChanged() {
+    if (!mounted) return;
+    final loc = LocationService.instance;
+    final changed = _userLat != loc.currentLat ||
+        _userLng != loc.currentLng ||
+        _locationLabel != loc.locationLabel;
+    if (changed) {
+      setState(() {
+        _userLat = loc.currentLat;
+        _userLng = loc.currentLng;
+        _locationLabel = loc.locationLabel;
+      });
+      _refreshDashboard();
+    }
+  }
+
   @override
   void dispose() {
+    LocationService.instance.removeListener(_onLocationServiceChanged);
     GestureService.instance.stopListening();
     super.dispose();
   }

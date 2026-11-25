@@ -498,11 +498,12 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                         onPressed: _service.isDetecting
                             ? null
                             : () async {
+                                final nav = Navigator.of(context);
                                 final success = await _service.detectLiveGps();
                                 if (!mounted) return;
                                 if (success) {
                                   widget.onLocationChanged?.call();
-                                  Navigator.of(context).pop();
+                                  nav.pop();
                                 }
                               },
                       ),
