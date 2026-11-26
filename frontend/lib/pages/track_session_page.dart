@@ -53,7 +53,7 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
   Timer? _pollTimer;
 
   static String get _wsUrl {
-    final uri = Uri.parse(AuthService.apiBaseUrl);
+    final uri = Uri.parse(AuthService.resolveBaseUrl());
     final wsScheme = uri.scheme == 'https' ? 'wss' : 'ws';
     final portPart = uri.hasPort ? ':${uri.port}' : '';
     return '$wsScheme://${uri.host}$portPart/ws/sos';

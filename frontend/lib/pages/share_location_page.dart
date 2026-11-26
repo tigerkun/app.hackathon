@@ -41,9 +41,8 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
   WebSocket? _ws;
 
   // ── Backend base URL (matches AuthService) ─────────────────────────────────
-  static const String _backendBase = AuthService.apiBaseUrl;
   static String get _wsUrl {
-    final uri = Uri.parse(AuthService.apiBaseUrl);
+    final uri = Uri.parse(AuthService.resolveBaseUrl());
     final wsScheme = uri.scheme == 'https' ? 'wss' : 'ws';
     final portPart = uri.hasPort ? ':${uri.port}' : '';
     return '$wsScheme://${uri.host}$portPart/ws/sos';
@@ -825,7 +824,7 @@ class _ShareLocationPageState extends State<ShareLocationPage> {
                     const SizedBox(width: 10),
                     const Expanded(
                       child: Text(
-                        "Guardians with your share link are receiving your real-time location every 10 seconds via the SafeSphere WebSocket channel.",
+                        "Guardians with your share link are receiving your real-time location every 30 seconds via the SafeSphere WebSocket channel.",
                         style: TextStyle(fontSize: 12, color: Colors.white70),
                       ),
                     ),

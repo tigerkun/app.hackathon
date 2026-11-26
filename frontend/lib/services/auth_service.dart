@@ -1378,8 +1378,9 @@ class AuthService {
       if (accuracy != null) 'accuracy': accuracy,
       'durationMinutes': durationMinutes,
       if (checkInIntervalMin != null) 'checkInIntervalMin': checkInIntervalMin,
-      // Backend builds shareUrl from this; without it prod links point at localhost.
-      'baseUrl': apiBaseUrl,
+      // Backend builds shareUrl from this; send the RESOLVED base (emulator
+      // 10.0.2.2 fix) so guardian links never point at a dead loopback.
+      'baseUrl': resolveBaseUrl(),
     };
 
     final res = await _requestDetailed(
