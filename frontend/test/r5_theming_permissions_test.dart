@@ -47,7 +47,7 @@ void main() {
       }
     });
 
-    test('AndroidManifest.xml contains INTERNET, ACCESS_FINE_LOCATION, CALL_PHONE, and tel: queries', () {
+    test('AndroidManifest.xml contains INTERNET, location, tel: queries, and no unused call permissions', () {
       final manifestFile = File('android/app/src/main/AndroidManifest.xml');
       expect(manifestFile.existsSync(), isTrue);
 
@@ -57,8 +57,10 @@ void main() {
           reason: 'AndroidManifest.xml must declare INTERNET permission');
       expect(content.contains('android.permission.ACCESS_FINE_LOCATION'), isTrue,
           reason: 'AndroidManifest.xml must declare ACCESS_FINE_LOCATION permission');
-      expect(content.contains('android.permission.CALL_PHONE'), isTrue,
-          reason: 'AndroidManifest.xml must declare CALL_PHONE permission');
+      expect(content.contains('android.permission.CALL_PHONE'), isFalse,
+          reason: 'CALL_PHONE is unused; tel: opens the dialer without it');
+      expect(content.contains('android.permission.FOREGROUND_SERVICE'), isFalse,
+          reason: 'No foreground service is declared');
       expect(content.contains('android:scheme="tel"'), isTrue,
           reason: 'AndroidManifest.xml must declare <queries> intent for scheme="tel" to support Android 11+ dialer queries');
     });

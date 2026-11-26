@@ -18,7 +18,8 @@ class TestR5ThemingAndPermissions(unittest.TestCase):
         self.assertIn('android.permission.INTERNET', content, "Must declare INTERNET permission")
         self.assertIn('android.permission.ACCESS_FINE_LOCATION', content, "Must declare ACCESS_FINE_LOCATION permission")
         self.assertIn('android.permission.ACCESS_COARSE_LOCATION', content, "Must declare ACCESS_COARSE_LOCATION permission")
-        self.assertIn('android.permission.CALL_PHONE', content, "Must declare CALL_PHONE permission")
+        self.assertNotIn('android.permission.CALL_PHONE', content, "CALL_PHONE is unused; tel: opens the dialer")
+        self.assertNotIn('android.permission.FOREGROUND_SERVICE', content, "No foreground service is declared")
         self.assertIn('android:scheme="tel"', content, "Must declare tel scheme in <queries>")
 
     def test_ios_plist(self):
