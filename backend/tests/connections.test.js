@@ -586,4 +586,99 @@ describe('Connections — Trusted Circle (M3)', () => {
       assert.equal(Number(count.c), 200);
     });
   });
+
+  describe('Account deletion cascade (no orphan M3 rows)', () => {
+    it('deleting a user purges their connections, locations, checkins, and votes', () => {
+      // Two fresh users with a live connection + beacon + checkin + a report vote.
+      const owner = db.saveUser(createUser({
+        id: 'usr_cascade_owner', name: 'Cascade Owner',
+        email: 'cascade.owner@safesphere.test', phone: '+918800700001',
+        passwordHash: bcrypt.hashSync('Str0ngPass!23', 8)
+      }));
+      const grantee = db.saveUser(createUser({
+        id: 'usr_cascade_grantee', name: 'Cascade Grantee',
+        email: 'cascade.grantee@safesphere.test', phone: '+918800700002',
+        passwordHash: bcrypt.hashSync('Str0ngPass!23', 8)
+      }));
+
+      const conn = db.saveConnection({
+        id: 'conn_cascade_1', ownerId: owner.id, granteeId: grantee.id,
+        scopes: ['location'], mode: 'always', status: 'active',
+        createdAt: new Date().toISOString()
+      });
+      db.saveConnectionLocation({ connectionId: conn.id, latitude: 28.61, longitude: 77.21, accuracy: 8 });
+      db.saveConnectionCheckin({ connectionId: conn.id, fromUserId: grantee.id, message: 'ok?' });
+
+      // A report the grantee voted on (vote must be purged too).
+      const { createReport } = require('../src/models/reportModel');
+      const report = db.saveReport(createReport({
+        id: 'rep_cascade_1', type: 'hazard', description: 'cascade vote target',
+        latitude: 28.61, longitude: 77.21, reportedBy: owner.id
+      }));
+      db.saveReportVote({ id: 'vote_cascade_1', reportId: report.id, userId: grantee.id, vote: 'confirm', createdAt: new Date().toISOString() });
+      assert.ok(db.getUserReportVote(report.id, grantee.id), 'vote exists pre-delete');
+
+      // Delete the OWNER — every row touching them must vanish.
+      db.deleteUser(owner.id);
+
+      assert.equal(db.findConnectionById(conn.id), null, 'connection purged');
+      assert.equal(
+        db.db.prepare('SELECT COUNT(*) AS c FROM connection_locations WHERE connectionId = ?').get(conn.id).c, 0,
+        'beacon locations purged'
+      );
+      assert.equal(db.getConnectionCheckins(conn.id).length, 0, 'checkins purged');
+      // The grantee's vote on the owner's report SURVIVES owner deletion
+      // (only the grantee's own deletion purges it — covered in the next test).
+      assert.ok(db.getUserReportVote(report.id, grantee.id), 'grantee vote survives owner delete');
+      assert.ok(db.findReportById(report.id), 'report survives (reportedBy nulled)');
+      assert.equal(db.findReportById(report.id).reportedBy, null, 'reportedBy anonymized');
+
+      // No orphan rows anywhere referencing the deleted owner.
+      final_check_no_orphans(owner.id);
+    });
+
+    it('deleting the GRANTEE also purges the shared connection + their votes', () => {
+      const owner = db.saveUser(createUser({
+        id: 'usr_cascade2_owner', name: 'C2 Owner',
+        email: 'c2.owner@safesphere.test', phone: '+918800700003',
+        passwordHash: bcrypt.hashSync('Str0ngPass!23', 8)
+      }));
+      const grantee = db.saveUser(createUser({
+        id: 'usr_cascade2_grantee', name: 'C2 Grantee',
+        email: 'c2.grantee@safesphere.test', phone: '+918800700004',
+        passwordHash: bcrypt.hashSync('Str0ngPass!23', 8)
+      }));
+      const conn = db.saveConnection({
+        id: 'conn_cascade_2', ownerId: owner.id, granteeId: grantee.id,
+        scopes: ['sos_status'], mode: 'sos_only', status: 'active',
+        createdAt: new Date().toISOString()
+      });
+      // Grantee casts a vote that must be purged when THEY are deleted.
+      const { createReport } = require('../src/models/reportModel');
+      const report2 = db.saveReport(createReport({
+        id: 'rep_cascade_2', type: 'hazard', description: 'grantee vote target',
+        latitude: 28.62, longitude: 77.22, reportedBy: owner.id
+      }));
+      db.saveReportVote({ id: 'vote_cascade_2', reportId: report2.id, userId: grantee.id, vote: 'decline', createdAt: new Date().toISOString() });
+      assert.ok(db.getUserReportVote(report2.id, grantee.id), 'grantee vote exists pre-delete');
+
+      db.deleteUser(grantee.id);
+      assert.equal(db.findConnectionById(conn.id), null, 'shared connection purged on grantee delete');
+      assert.equal(db.getUserReportVote(report2.id, grantee.id) ?? null, null, 'grantee vote purged on their delete');
+      final_check_no_orphans(grantee.id);
+    });
+  });
 });
+
+/** Asserts zero rows in any user-referencing table still point at userId. */
+function final_check_no_orphans(userId) {
+  const tables = [
+    ['connections', 'ownerId'], ['connections', 'granteeId'],
+    ['report_votes', 'userId'], ['sessions', 'userId'],
+    ['alerts', 'userId'], ['tracking_sessions', 'userId'],
+  ];
+  for (const [table, col] of tables) {
+    const row = db.db.prepare(`SELECT COUNT(*) AS c FROM ${table} WHERE ${col} = ?`).get(userId);
+    assert.equal(Number(row.c), 0, `no orphan rows in ${table}.${col} for ${userId}`);
+  }
+}

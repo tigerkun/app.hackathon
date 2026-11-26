@@ -606,27 +606,42 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
 
               // M2.3: community vote chips — confirm/decline for authed users.
               // Optimistic UI with honest rollback on failure.
+              // Self-vote guard: the backend 403s CANNOT_VOTE_OWN_REPORT, but
+              // the UI must not OFFER voting on your own report — hide the
+              // chips entirely and show an honest "your report" note instead.
               if (AuthService.instance.currentUser != null) ...[
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _voteChip(
-                      report,
-                      vote: 'confirm',
-                      icon: Icons.thumb_up,
-                      label: "Confirm ${report['upvotes'] ?? 0}",
-                      color: Colors.teal,
-                    ),
-                    const SizedBox(width: 8),
-                    _voteChip(
-                      report,
-                      vote: 'decline',
-                      icon: Icons.thumb_down,
-                      label: "Decline ${report['downvotes'] ?? 0}",
-                      color: Colors.redAccent,
-                    ),
-                  ],
-                ),
+                if (report['isMine'] == true)
+                  Row(
+                    children: [
+                      const Icon(Icons.person, size: 14, color: Colors.white54),
+                      const SizedBox(width: 6),
+                      Text(
+                        "Your report — voting on your own report isn't allowed",
+                        style: TextStyle(fontSize: 11, color: Colors.white54, fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                  )
+                else
+                  Row(
+                    children: [
+                      _voteChip(
+                        report,
+                        vote: 'confirm',
+                        icon: Icons.thumb_up,
+                        label: "Confirm ${report['upvotes'] ?? 0}",
+                        color: Colors.teal,
+                      ),
+                      const SizedBox(width: 8),
+                      _voteChip(
+                        report,
+                        vote: 'decline',
+                        icon: Icons.thumb_down,
+                        label: "Decline ${report['downvotes'] ?? 0}",
+                        color: Colors.redAccent,
+                      ),
+                    ],
+                  ),
               ],
 
               const SizedBox(height: 8),
