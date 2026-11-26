@@ -94,8 +94,9 @@ class AppDrawer extends StatelessWidget {
                   leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.teal),
                   title: const Text('Privacy & Consent (DPDP)', style: TextStyle(color: Colors.white)),
                   onTap: () {
+                    final hostContext = Navigator.of(context).context;
                     Navigator.pop(context);
-                    _showPrivacyConsentDialog(context, authState);
+                    _showPrivacyConsentDialog(hostContext, authState);
                   },
                 ),
                 if (authState.isAuthenticated)
@@ -154,8 +155,9 @@ class AppDrawer extends StatelessWidget {
                   leading: const Icon(Icons.contact_phone_outlined, color: AppColors.teal),
                   title: const Text('Emergency Contacts', style: TextStyle(color: Colors.white)),
                   onTap: () {
+                    final hostContext = Navigator.of(context).context;
                     Navigator.pop(context);
-                    _showContactsDialog(context, authState);
+                    _showContactsDialog(hostContext, authState);
                   },
                 ),
                 ListTile(
@@ -229,27 +231,39 @@ class AppDrawer extends StatelessWidget {
             const Icon(Icons.verified, color: AppColors.teal, size: 16),
           ],
         ),
-        accountEmail: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              user.email.isNotEmpty ? user.email : user.phone,
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
-            ),
-            if (user.safeId != null && user.safeId!.isNotEmpty) ...[
-              const SizedBox(height: 2),
+        accountEmail: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
               Text(
-                'Safe ID: ${user.safeId}',
-                style: const TextStyle(color: AppColors.teal, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.0),
+                user.email.isNotEmpty ? user.email : user.phone,
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (user.safeId != null && user.safeId!.isNotEmpty)
+                Text(
+                  'Safe ID: ${user.safeId}',
+                  style: const TextStyle(
+                    color: AppColors.teal,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              Text(
+                'Emergency Contact: $contactPhone',
+                style: const TextStyle(
+                  color: AppColors.amber,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
-            const SizedBox(height: 2),
-            Text(
-              'Emergency Contact: $contactPhone',
-              style: const TextStyle(color: AppColors.amber, fontSize: 11, fontWeight: FontWeight.w600),
-            ),
-          ],
+          ),
         ),
       );
     } else {
@@ -535,7 +549,9 @@ class AppDrawer extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ).whenComplete(() {
+      Future<void>.delayed(const Duration(milliseconds: 400), pinController.dispose);
+    });
   }
 
   // ===== DRAWER TILE BUILDER =====
