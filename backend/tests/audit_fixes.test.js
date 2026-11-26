@@ -179,9 +179,27 @@ describe('Audit fixes — SOS idempotency, guest identity, peer projection', () 
     assert.equal(report2.status, 201, JSON.stringify(report2.body));
     const reportId = report2.body.data.id || report2.body.report.id;
 
-    const vote = await t.request(`/api/v1/reports/${reportId}/vote`, {
+    // Self-vote on own report is rejected.
+    const selfVote = await t.request(`/api/v1/reports/${reportId}/vote`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
+      body: { vote: 'confirm' }
+    });
+    assert.equal(selfVote.status, 403, JSON.stringify(selfVote.body));
+    assert.equal(selfVote.body.error.code, 'CANNOT_VOTE_OWN_REPORT');
+
+    // A different verified user CAN vote.
+    const email2 = `audit.verified.${Date.now()}@safesphere.test`;
+    const reg2 = await t.request('/api/v1/auth/register', {
+      method: 'POST',
+      body: { name: 'Audit Verified', email: email2, phone: '+91 9888877777', password: 'Str0ngPass!23' }
+    });
+    const token2 = reg2.body.data.accessToken;
+    const userId2 = reg2.body.data.user.id;
+    db.updateUser(userId2, { phoneVerified: true });
+    const vote = await t.request(`/api/v1/reports/${reportId}/vote`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token2}` },
       body: { vote: 'confirm' }
     });
     assert.equal(vote.status, 200, JSON.stringify(vote.body));

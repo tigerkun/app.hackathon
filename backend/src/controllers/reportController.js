@@ -251,6 +251,19 @@ function vote(req, res, next) {
       });
     }
 
+    // Users must not vote on their own reports — self-confirming inflates
+    // credibility and defeats community verification.
+    if (report.reportedBy && report.reportedBy === req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'CANNOT_VOTE_OWN_REPORT',
+          message: 'You cannot vote on a report you submitted.',
+          details: []
+        }
+      });
+    }
+
     const crypto = require('crypto');
     const voteRecord = {
       id: `vte_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
