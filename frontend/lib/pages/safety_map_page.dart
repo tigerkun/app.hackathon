@@ -284,8 +284,8 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
     if (n.startsWith('Emergency Medical')) return 'Hospital / ER';
     if (n.startsWith('24x7 Lit Store')) return '24x7 Store';
     if (n.startsWith('Verified Safe Zone')) return 'Safe Zone';
-    if (cat.contains('police')) return '${n.substring(0, 14)}..';
-    return '${n.substring(0, 14)}..';
+    if (cat.contains('police')) return n.length <= 20 ? n : '${n.substring(0, 19)}…';
+    return n.length <= 20 ? n : '${n.substring(0, 19)}…';
   }
 
   Future<void> _openExternalDirections(double destLat, double destLng) async {
@@ -1012,8 +1012,8 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                 for (final item in items)
                   Marker(
                     point: LatLng(item.latitude, item.longitude),
-                    width: 96,
-                    height: 86,
+                    width: 120,
+                    height: 90,
                     alignment: Alignment.topCenter,
                     child: GestureDetector(
                       onTap: () {
@@ -1531,11 +1531,15 @@ class _InteractivePin extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                label,
-                style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.bold),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 108),
+                child: Text(
+                  label,
+                  style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.bold),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
               ),
               if (distanceText != null)
                 Text(

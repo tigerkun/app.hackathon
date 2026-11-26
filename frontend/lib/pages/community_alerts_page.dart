@@ -157,6 +157,16 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     return reports;
   }
 
+  /// Reports that still represent an ongoing concern. Resolved/expired
+  /// items stay visible in the feed (badged) but must not inflate the
+  /// "live alerts" count.
+  List<Map<String, dynamic>> get _liveReports => _rawReports
+      .where((r) {
+        final st = (r['status'] as String? ?? 'pending').toLowerCase();
+        return st != 'resolved' && st != 'expired' && st != 'closed';
+      })
+      .toList();
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredReports;
@@ -187,9 +197,9 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
                   child: Text(
                     isLoading
                         ? "Fetching live alerts…"
-                        : _rawReports.isEmpty
+                        : _liveReports.isEmpty
                             ? "No active community alerts"
-                            : "${_rawReports.length} live alerts in your area",
+                            : "${_liveReports.length} live alerts in your area",
                     style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -505,7 +515,7 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      "Reported: $createdAt",
+                      "Reported ${_formatTime(createdAt)}",
                       style: const TextStyle(color: Colors.white70, fontSize: 12),
                     ),
                   ),

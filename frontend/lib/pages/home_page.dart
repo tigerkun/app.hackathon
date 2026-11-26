@@ -200,7 +200,17 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final safetyLevel = _calculateSafetyLevel();
     final safetyColor = _getSafetyLevelColor();
-    final recentReports = _reports.take(3).toList();
+    // "Recent Local Activity" must show current concerns only: resolved or
+    // expired reports and week-old items are not recent activity.
+    final cutoff = DateTime.now().subtract(const Duration(days: 7));
+    final recentReports = _reports.where((r) {
+      final st = (r['status'] as String? ?? 'pending').toLowerCase();
+      if (st == 'resolved' || st == 'expired' || st == 'closed') return false;
+      final raw = r['createdAt'] as String? ?? r['reportedAt'] as String? ?? '';
+      final dt = DateTime.tryParse(raw);
+      if (dt != null && dt.isBefore(cutoff)) return false;
+      return true;
+    }).take(3).toList();
 
     return Scaffold(
       drawer: const AppDrawer(),
@@ -371,7 +381,7 @@ class _HomePageState extends State<HomePage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              "ONE-TAP DISPATCH",
+                              "GET HELP NOW",
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 11,

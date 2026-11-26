@@ -499,6 +499,26 @@ class _EmergencyPageState extends State<EmergencyPage> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 10),
+                      // Stand-down must be reachable at the TOP of the active
+                      // SOS view — a victim who is safe should never have to
+                      // scroll past history to end the alert.
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _resolveActiveSos,
+                          icon: const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                          label: const Text(
+                            "I'm Safe — Stop This Alert",
+                            style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.green),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -685,105 +705,8 @@ class _EmergencyPageState extends State<EmergencyPage> {
               const SizedBox(height: 24),
 
               // 🟢 I'M SAFE
-              Semantics(
-                button: true,
-                label: "I'm safe now",
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    try {
-                      HapticFeedback.lightImpact();
-                    } catch (_) {}
-                    final messenger = ScaffoldMessenger.of(context);
-                    final authService = AuthService.instance;
-                    final activeSosId = await authService.getActiveSosId();
-
-                    if (activeSosId == null || activeSosId.isEmpty) {
-                      messenger.showSnackBar(
-                        const SnackBar(
-                          content: Text("No active emergency SOS session to resolve."),
-                        ),
-                      );
-                      return;
-                    }
-
-                    final success = await authService.resolveSos(
-                      alertId: activeSosId,
-                      notes: 'Resolved by user directly in Emergency screen',
-                    );
-
-                    if (success) {
-                      _stopSosPolling();
-                      _loadSosHistory();
-                      // M1.4: "I'm Safe" confirmation — show exactly who was
-                      // notified, honestly accounting for channels that are
-                      // not configured yet (no fabricated delivery claims).
-                      if (mounted) {
-                        final contacts =
-                            AuthService.instance.currentUser?.emergencyContacts ??
-                            const [];
-                        final names = contacts
-                            .map((c) => c.name)
-                            .where((n) => n.isNotEmpty)
-                            .toList();
-                        final contactLine = names.isEmpty
-                            ? "Your emergency contacts"
-                            : names.join(", ");
-                        final channelLine = _contactsNotified > 0
-                            ? "$_contactsNotified notification(s) were delivered to them."
-                            : "SMS/email alerts activate when a delivery gateway is configured — your live monitoring clients were notified.";
-                        await showDialog<void>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20)),
-                            title: Row(
-                              children: const [
-                                Icon(Icons.verified, color: Colors.green, size: 28),
-                                SizedBox(width: 8),
-                                Text("You're Safe",
-                                    style: TextStyle(fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                            content: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  "✓ Your SOS was resolved and everyone watching was updated.",
-                                  style: TextStyle(fontSize: 14),
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  "Notified: $contactLine",
-                                  style: const TextStyle(
-                                      fontSize: 14, fontWeight: FontWeight.w600),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  channelLine,
-                                  style: const TextStyle(
-                                      fontSize: 12, color: Colors.grey),
-                                ),
-                              ],
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(ctx).pop(),
-                                child: const Text("Done"),
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-                    } else {
-                      messenger.showSnackBar(
-                        const SnackBar(
-                          content: Text("Could not resolve SOS alert with server. Please check connection."),
-                          backgroundColor: Colors.redAccent,
-                        ),
-                      );
-                    }
-                  },
+              OutlinedButton.icon(
+                  onPressed: _resolveActiveSos,
                   icon: const Icon(Icons.check_circle, color: Colors.green),
                   label: const Text("I'm Safe Now"),
                   style: OutlinedButton.styleFrom(
@@ -793,7 +716,6 @@ class _EmergencyPageState extends State<EmergencyPage> {
                     padding: const EdgeInsets.symmetric(
                         vertical: 18, horizontal: 20),
                   ),
-                ),
               ),
 
               const SizedBox(height: 24),
@@ -810,6 +732,105 @@ class _EmergencyPageState extends State<EmergencyPage> {
         ),
       ),
     );
+  }
+
+
+  /// Shared resolve flow: used by the bottom "I'm Safe Now" button, the
+  /// broadcast hero, and the "False alarm" quick reply.
+  Future<void> _resolveActiveSos() async {
+    try {
+      HapticFeedback.lightImpact();
+    } catch (_) {}
+    final messenger = ScaffoldMessenger.of(context);
+    final authService = AuthService.instance;
+    final activeSosId = await authService.getActiveSosId();
+
+    if (activeSosId == null || activeSosId.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text("No active emergency SOS session to resolve."),
+        ),
+      );
+      return;
+    }
+
+    final success = await authService.resolveSos(
+      alertId: activeSosId,
+      notes: 'Resolved by user directly in Emergency screen',
+    );
+
+    if (success) {
+      _stopSosPolling();
+      _loadSosHistory();
+      // M1.4: "I'm Safe" confirmation — show exactly who was
+      // notified, honestly accounting for channels that are
+      // not configured yet (no fabricated delivery claims).
+      if (mounted) {
+        final contacts =
+            AuthService.instance.currentUser?.emergencyContacts ??
+            const [];
+        final names = contacts
+            .map((c) => c.name)
+            .where((n) => n.isNotEmpty)
+            .toList();
+        final contactLine = names.isEmpty
+            ? "Your emergency contacts"
+            : names.join(", ");
+        final channelLine = _contactsNotified > 0
+            ? "$_contactsNotified notification(s) were delivered to them."
+            : "SMS/email alerts activate when a delivery gateway is configured — your live monitoring clients were notified.";
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: const [
+                Icon(Icons.verified, color: Colors.green, size: 28),
+                SizedBox(width: 8),
+                Text("You're Safe",
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "✓ Your SOS was resolved and everyone watching was updated.",
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  "Notified: $contactLine",
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  channelLine,
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text("Done"),
+              ),
+            ],
+          ),
+        );
+      }
+    } else {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text("Could not resolve SOS alert with server. Please check connection."),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   // ---------------- HELPERS ----------------
@@ -1398,6 +1419,12 @@ class _EmergencyPageState extends State<EmergencyPage> {
                             : () {
                                 _chatController.text = reply;
                                 _sendChatMessage();
+                                // "False alarm — I'm safe" is a stand-down
+                                // intent, not just a chat message: offer the
+                                // same resolve flow as the I'm Safe button.
+                                if (reply == "False alarm — I'm safe") {
+                                  _resolveActiveSos();
+                                }
                               },
                       ),
                     ),
