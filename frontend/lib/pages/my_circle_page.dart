@@ -145,14 +145,17 @@ class _MyCirclePageState extends State<MyCirclePage> {
 
   Future<void> _showRequestDialog() async {
     final controller = TextEditingController();
-    // Dispose the controller once the sheet is fully dismissed — otherwise
-    // every open of the sheet leaks one controller (M6 dispose sweep).
+    // Dispose the controller only after the modal exit transition finishes —
+    // showModalBottomSheet's Future resolves on pop before the route unmounts,
+    // so immediate dispose() tears down TextField mid-animation and can
+    // leave InheritedElement dependents dirty (`_dependents.isEmpty`).
     await showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1E293B),
       isScrollControlled: true,
       builder: (ctx) => _SendRequestSheet(controller: controller, onSent: _loadCircle),
     );
+    await Future<void>.delayed(const Duration(milliseconds: 400));
     controller.dispose();
   }
 

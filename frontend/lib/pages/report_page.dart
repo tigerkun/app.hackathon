@@ -632,7 +632,11 @@ class _ReportPageState extends State<ReportPage> {
           ),
         ],
       ),
-    ).whenComplete(() => last4Controller.dispose());
+    ).whenComplete(() {
+      // Wait for the dialog exit transition to finish unmounting TextField
+      // before disposing the controller.
+      Future<void>.delayed(const Duration(milliseconds: 400), last4Controller.dispose);
+    });
   }
 
 }

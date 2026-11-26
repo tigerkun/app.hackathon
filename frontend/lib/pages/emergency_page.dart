@@ -1963,7 +1963,9 @@ class _FakeCallOverlayState extends State<FakeCallOverlay> {
           ),
         ],
       ),
-    ).whenComplete(() => controller.dispose());
+    ).whenComplete(() {
+      Future<void>.delayed(const Duration(milliseconds: 400), controller.dispose);
+    });
     if (newName != null && newName.isNotEmpty && mounted) {
       setState(() => _callerName = newName);
     }
@@ -2113,7 +2115,7 @@ class _FakeCallOverlayState extends State<FakeCallOverlay> {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        "• 'Yes, I\\'m heading over right now.'\n• 'Everything is fine, see you in 10 minutes.'\n• 'Don\\'t worry, I have the keys with me.'",
+                        "• 'Yes, I'm heading over right now.'\n• 'Everything is fine, see you in 10 minutes.'\n• 'Don't worry, I have the keys with me.'",
                         style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
                       ),
                     ],
