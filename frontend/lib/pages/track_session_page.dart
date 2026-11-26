@@ -51,6 +51,7 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
 
   WebSocket? _ws;
   Timer? _pollTimer;
+  int _pollGeneration = 0;
 
   static String get _wsUrl {
     final uri = Uri.parse(AuthService.resolveBaseUrl());
@@ -99,6 +100,7 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
     }
 
     if (!mounted) return;
+    _pollGeneration++;
     setState(() {
       _connecting = true;
       _error = null;
@@ -208,11 +210,15 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
         break;
       case 'STREAM_TERMINATE':
         if (!mounted) return;
+        _pollGeneration++;
+        _pollTimer?.cancel();
         setState(() {
           _status = 'ended';
           _live = false;
+          _stallDetected = false;
+          _signalRestored = false;
+          _checkInMissed = false;
         });
-        _pollTimer?.cancel();
         break;
       case 'ERROR':
         if (!mounted) return;
@@ -226,29 +232,34 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
 
   Future<void> _pollOnce() async {
     if (_sessionId == null || _sessionToken == null) return;
+    if (_status == 'ended' || _status == 'expired') return;
+    final gen = _pollGeneration;
     final data = await AuthService.instance.fetchTrackingSession(
       sessionId: _sessionId!,
       trackingToken: _sessionToken!,
     );
-    if (data == null) {
-      if (mounted) {
-        setState(() {
-          _error = 'Session not found, expired, or link invalid.';
-          _status = 'unavailable';
-        });
-      }
+    if (!mounted || gen != _pollGeneration || _status == 'ended' || _status == 'expired') {
       return;
     }
-    if (mounted) {
+    if (data == null) {
       setState(() {
-        _error = null;
-        _applySession(data);
+        _error = 'Session not found, expired, or link invalid.';
+        _status = 'unavailable';
       });
+      return;
     }
+    setState(() {
+      _error = null;
+      _applySession(data);
+    });
   }
 
   void _applySession(Map<String, dynamic> data) {
-    _status = data['status'] as String? ?? _status;
+    final nextStatus = data['status'] as String? ?? _status;
+    if (_status == 'ended' || _status == 'expired') {
+      return;
+    }
+    _status = nextStatus;
     _userName = data['userName'] as String? ?? _userName;
     _expiresAt = data['expiresAt'] as String?;
     final crumbs = data['breadcrumbs'];
@@ -330,6 +341,7 @@ class _TrackSessionPageState extends State<TrackSessionPage> {
   }
 
   void _stopWatching() {
+    _pollGeneration++;
     _pollTimer?.cancel();
     _pollTimer = null;
     _ws?.close();
