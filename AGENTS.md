@@ -73,9 +73,17 @@ flutter build apk --release --dart-define=SAFESPHERE_API_URL=https://<render-app
 
 If `--dart-define=SAFESPHERE_API_URL` is omitted, the mobile app defaults to `http://127.0.0.1:3000` for local development.
 The Android wrapper requires Gradle 9.5.0, Android Gradle Plugin 9.3.1, and
-Kotlin Gradle Plugin 2.4.20. The current release build still uses the debug
-signing key; it is not suitable for Play Store distribution until a private
-release keystore is configured.
+Kotlin Gradle Plugin 2.4.20. Release builds use `signingConfigs.release` when
+`frontend/android/key.properties` + `frontend/android/app/upload-keystore.jks`
+(both gitignored) are present, falling back to debug signing only when absent;
+`frontend/android/app/proguard-rules.pro` is also wired if minification is
+enabled later.
+
+Free-tier Render deployments (`https://safesphere-backend-c4fs.onrender.com`)
+spin down after ~15m of idle time and experience ~20–50s cold starts; use an
+external uptime ping to `GET /healthz` if keep-alive is desired. Production CORS
+accepts comma-separated exact origins from `CORS_ORIGIN` (`*` is ignored in
+production; native mobile clients without an `Origin` header remain allowed).
 
 ## Architecture
 
