@@ -180,7 +180,7 @@ class AuthService {
     bool retryOn401 = true,
   }) async {
     final client = HttpClient();
-    client.connectionTimeout = const Duration(seconds: 4);
+    client.connectionTimeout = const Duration(seconds: 8);
     try {
       final uri = Uri.parse('$baseUrl$path');
 
@@ -203,7 +203,7 @@ class AuthService {
         request.write(jsonStr);
       }
 
-      final response = await request.close().timeout(const Duration(seconds: 5));
+      final response = await request.close().timeout(const Duration(seconds: 15));
       final statusCode = response.statusCode;
       final responseBody = await response.transform(utf8.decoder).join()
           .timeout(const Duration(seconds: 10));
