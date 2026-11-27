@@ -31,6 +31,9 @@ class AuthState extends ChangeNotifier {
   UserModel? _currentUser;
   String? _errorMessage;
   String? _pendingPhone;
+  String? _lastOtpChannel;
+  String? _lastOtpMaskedEmail;
+  String? _lastOtpMessage;
   bool _isOnboarded = false;
   String? _consentVersion;
   String? _consentTimestamp;
@@ -41,6 +44,9 @@ class AuthState extends ChangeNotifier {
   UserModel? get currentUser => _currentUser;
   String? get errorMessage => _errorMessage;
   String? get pendingPhone => _pendingPhone;
+  String? get lastOtpChannel => _lastOtpChannel;
+  String? get lastOtpMaskedEmail => _lastOtpMaskedEmail;
+  String? get lastOtpMessage => _lastOtpMessage;
   bool get isOnboarded => _isOnboarded;
   String? get consentVersion => _consentVersion;
   String? get consentTimestamp => _consentTimestamp;
@@ -198,21 +204,27 @@ class AuthState extends ChangeNotifier {
     }
   }
 
-  Future<bool> sendOtp(String phone) async {
+  Future<bool> sendOtp(String phone, {String? email}) async {
     _status = AuthStatus.loading;
     _errorMessage = null;
     _pendingPhone = phone;
+    _lastOtpChannel = null;
+    _lastOtpMaskedEmail = null;
+    _lastOtpMessage = null;
     notifyListeners();
 
     try {
-      final result = await authService.sendOtp(phone);
+      final result = await authService.sendOtp(phone, email: email);
       if (result.success) {
+        _lastOtpChannel = result.channel;
+        _lastOtpMaskedEmail = result.maskedEmail;
+        _lastOtpMessage = result.message;
         _status = AuthStatus.otpPending;
         notifyListeners();
         return true;
       } else {
         _status = AuthStatus.unauthenticated;
-        _errorMessage = result.message ?? 'Failed to send OTP.';
+        _errorMessage = result.message ?? 'Failed to send verification code.';
         notifyListeners();
         return false;
       }

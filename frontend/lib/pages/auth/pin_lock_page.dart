@@ -531,7 +531,7 @@ class _ForgotPinSheetState extends State<_ForgotPinSheet> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'We will text a 6-digit code to your registered phone number.',
+            'We will email a 6-digit verification code to the address on your account.',
             style: TextStyle(color: Colors.white60, fontSize: 12),
           ),
           const SizedBox(height: 16),

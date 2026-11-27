@@ -113,9 +113,9 @@ class _LoginPageState extends State<LoginPage> {
         ),
         title: const Row(
           children: [
-            Icon(Icons.sms_outlined, color: AppColors.teal),
+            Icon(Icons.mark_email_read_outlined, color: AppColors.teal),
             SizedBox(width: 8),
-            Text('Login with SMS OTP', style: TextStyle(color: Colors.white, fontSize: 18)),
+            Text('Login with Verification Code', style: TextStyle(color: Colors.white, fontSize: 18)),
           ],
         ),
         content: Column(
@@ -123,7 +123,7 @@ class _LoginPageState extends State<LoginPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Enter your 10-digit registered phone number to receive a one-time verification code.',
+              'Enter your 10-digit registered phone number. A 6-digit verification code will be sent to the email address on your account.',
               style: TextStyle(color: Colors.white70, fontSize: 13),
             ),
             const SizedBox(height: 12),
@@ -382,12 +382,12 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // SMS OTP Button
+                      // Email OTP Button
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: _showSmsOtpDialog,
-                          icon: const Icon(Icons.sms_outlined, color: AppColors.teal, size: 18),
-                          label: const Text('SMS OTP', style: TextStyle(color: Colors.white70, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          icon: const Icon(Icons.mark_email_read_outlined, color: AppColors.teal, size: 18),
+                          label: const Text('Email OTP', style: TextStyle(color: Colors.white70, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(color: AppColors.border),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

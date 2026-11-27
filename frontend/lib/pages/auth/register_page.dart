@@ -70,12 +70,11 @@ class _RegisterPageState extends State<RegisterPage> {
         : null;
 
     final phone = _phoneController.text.trim();
+    final email = _emailController.text.trim();
 
     final success = await authState.register(
       name: _nameController.text.trim(),
-      email: _emailController.text.trim().isNotEmpty
-          ? _emailController.text.trim()
-          : '$phone@safesphere.org',
+      email: email,
       phone: phone,
       password: _passwordController.text,
       emergencyContactPhone: _emergencyPhoneController.text.trim(),
@@ -87,14 +86,22 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() => _isLoading = false);
 
     if (success) {
-      // Automatically send OTP and navigate to PhoneOtpPage — only claim the
-      // code was sent when the backend actually accepted the request.
-      final otpSent = await authState.sendOtp(phone);
+      // Automatically send OTP (emailed when Resend is active) and navigate
+      // to the verification screen with honest delivery status copy.
+      final otpSent = await authState.sendOtp(phone, email: email);
       if (!mounted) return;
       if (otpSent) {
+        final sentViaEmail = authState.lastOtpChannel == 'email';
+        final targetText = sentViaEmail
+            ? 'sent to ${authState.lastOtpMaskedEmail ?? email}'
+            : (authState.lastOtpMessage ?? 'generated for $phone');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Account created. Verification code sent to $phone.'),
+            content: Text(
+              sentViaEmail
+                  ? 'Account created. Verification code $targetText.'
+                  : 'Account created. $targetText',
+            ),
             backgroundColor: Colors.teal,
           ),
         );
@@ -211,19 +218,27 @@ class _RegisterPageState extends State<RegisterPage> {
                         ),
                         const SizedBox(height: 14),
 
-                        // Email (Optional)
+                        // Email (Required for OTP verification & recovery)
                         TextFormField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
                           style: const TextStyle(color: Colors.white),
                           decoration: InputDecoration(
-                            labelText: 'Email Address (Optional)',
+                            labelText: 'Email Address *',
                             labelStyle: const TextStyle(color: Colors.white60),
                             prefixIcon: const Icon(Icons.email_outlined, color: AppColors.teal),
                             filled: true,
                             fillColor: Colors.white.withValues(alpha: 0.05),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                           ),
+                          validator: (val) {
+                            final trimmed = val?.trim() ?? '';
+                            if (trimmed.isEmpty ||
+                                !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(trimmed)) {
+                              return 'Valid email address is required for verification';
+                            }
+                            return null;
+                          },
                         ),
                         const SizedBox(height: 18),
 
@@ -374,16 +389,19 @@ class _RegisterPageState extends State<RegisterPage> {
                         const SizedBox(height: 14),
 
                         // Optional 4-Digit PIN Enrollment
-                        CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text(
-                            'Setup 4-digit PIN for rapid unlock',
-                            style: TextStyle(color: Colors.white70, fontSize: 13),
+                        Material(
+                          type: MaterialType.transparency,
+                          child: CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text(
+                              'Setup 4-digit PIN for rapid unlock',
+                              style: TextStyle(color: Colors.white70, fontSize: 13),
+                            ),
+                            value: _enablePinSetup,
+                            activeColor: AppColors.teal,
+                            checkColor: Colors.black,
+                            onChanged: (val) => setState(() => _enablePinSetup = val ?? false),
                           ),
-                          value: _enablePinSetup,
-                          activeColor: AppColors.teal,
-                          checkColor: Colors.black,
-                          onChanged: (val) => setState(() => _enablePinSetup = val ?? false),
                         ),
 
                         if (_enablePinSetup) ...[
@@ -429,7 +447,7 @@ class _RegisterPageState extends State<RegisterPage> {
                                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black87),
                                   )
                                 : const Text(
-                                    'Register & Verify Phone',
+                                    'Register & Send Verification Code',
                                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                                   ),
                           ),

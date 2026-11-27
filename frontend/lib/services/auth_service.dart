@@ -43,6 +43,9 @@ class OtpSendResult {
   final bool success;
   final String? message;
   final String? phone;
+  final String? channel;
+  final bool emailDispatched;
+  final String? maskedEmail;
   final int? expiresInSeconds;
   final int? cooldownSeconds;
   final String? devOtp;
@@ -51,6 +54,9 @@ class OtpSendResult {
     required this.success,
     this.message,
     this.phone,
+    this.channel,
+    this.emailDispatched = false,
+    this.maskedEmail,
     this.expiresInSeconds,
     this.cooldownSeconds,
     this.devOtp,
@@ -408,19 +414,26 @@ class AuthService {
   // ---------------------------------------------------------------------------
   // Send OTP (POST /api/v1/auth/otp/send)
   // ---------------------------------------------------------------------------
-  Future<OtpSendResult> sendOtp(String phone) async {
+  Future<OtpSendResult> sendOtp(String phone, {String? email}) async {
     final body = <String, dynamic>{
       'phone': phone.trim(),
       'purpose': 'verification',
+      if (email != null && email.trim().isNotEmpty) 'email': email.trim(),
     };
 
     final res = await _request(method: 'POST', path: '/api/v1/auth/otp/send', body: body);
 
     if (res != null && res['success'] == true) {
+      final data = res['data'] as Map<String, dynamic>?;
       return OtpSendResult(
         success: true,
-        message: res['message'] as String? ?? 'OTP sent successfully',
+        message: res['message'] as String? ?? 'Verification code sent',
         phone: res['phone'] as String? ?? phone,
+        channel: res['channel'] as String? ?? data?['channel'] as String?,
+        emailDispatched:
+            (res['emailDispatched'] as bool?) ?? (data?['emailDispatched'] as bool?) ?? false,
+        maskedEmail:
+            res['maskedEmail'] as String? ?? data?['maskedEmail'] as String?,
         expiresInSeconds: res['expiresInSeconds'] as int? ?? 300,
         cooldownSeconds: res['cooldownSeconds'] as int? ?? 60,
         devOtp: res['devOtp'] as String?,
@@ -428,9 +441,8 @@ class AuthService {
     }
 
     // NOTE: Removed hardcoded fake devOtp '123456' offline fallback.
-    // Real SMS OTP requires an operational backend SMS gateway / provider integration.
-    // NOTE: Wire to active SMS gateway endpoint (endpoints verified live).
-    final errMsg = res?['error']?['message'] as String? ?? 'Failed to send OTP. SMS gateway connection failed.';
+    final errMsg = res?['error']?['message'] as String? ??
+        'Failed to send verification code. Please check your connection and try again.';
     return OtpSendResult(success: false, message: errMsg);
   }
 

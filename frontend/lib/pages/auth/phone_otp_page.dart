@@ -108,7 +108,7 @@ class _PhoneOtpPageState extends State<PhoneOtpPage> {
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Phone number successfully verified! Citizen security active.'),
+          content: Text('Verification successful! Citizen security active.'),
           backgroundColor: Colors.teal,
         ),
       );
@@ -135,15 +135,19 @@ class _PhoneOtpPageState extends State<PhoneOtpPage> {
     });
 
     final authState = AuthState();
-    final success = await authState.sendOtp(phone);
+    final success = await authState.sendOtp(phone, email: authState.currentUser?.email);
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (success) {
+      final viaEmail = authState.lastOtpChannel == 'email';
+      final notice = viaEmail
+          ? 'New verification code sent to your email (${authState.lastOtpMaskedEmail ?? 'registered email'}).'
+          : (authState.lastOtpMessage ?? 'New verification code generated for ${_maskPhone(phone)}.');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('New verification code sent to ${_maskPhone(phone)}.'),
+          content: Text(notice),
           backgroundColor: Colors.teal,
         ),
       );
@@ -208,13 +212,25 @@ class _PhoneOtpPageState extends State<PhoneOtpPage> {
   @override
   Widget build(BuildContext context) {
     final activePhone = widget.phone ?? AuthState().pendingPhone ?? '+91 9876543210';
+    final channel = AuthState().lastOtpChannel;
+    final maskedEmail = AuthState().lastOtpMaskedEmail;
+    final String subtitleText;
+    if (channel == 'email') {
+      subtitleText = 'Verification code sent to your email (${maskedEmail ?? 'registered email'})';
+    } else if (channel == 'sms') {
+      subtitleText = 'Code sent via SMS to ${_maskPhone(activePhone)}';
+    } else if (channel == 'dev_fallback') {
+      subtitleText = 'Development code active for ${_maskPhone(activePhone)} (email/SMS gateway unconfigured)';
+    } else {
+      subtitleText = 'Enter the 6-digit code sent to your email for ${_maskPhone(activePhone)}';
+    }
 
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Phone Verification', style: TextStyle(color: Colors.white)),
+        title: const Text('Account Verification', style: TextStyle(color: Colors.white)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.maybePop(context),
@@ -236,7 +252,7 @@ class _PhoneOtpPageState extends State<PhoneOtpPage> {
               const SizedBox(height: 16),
               const Center(
                 child: Text(
-                  'Verify Your Number',
+                  'Verify Your Account',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -247,7 +263,8 @@ class _PhoneOtpPageState extends State<PhoneOtpPage> {
               const SizedBox(height: 8),
               Center(
                 child: Text(
-                  'Code sent via SMS to ${_maskPhone(activePhone)}',
+                  subtitleText,
+                  textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 14, color: Colors.white70),
                 ),
               ),
@@ -316,7 +333,7 @@ class _PhoneOtpPageState extends State<PhoneOtpPage> {
                         onPressed: _isLoading ? null : _handleResend,
                         icon: const Icon(Icons.refresh, color: AppColors.teal, size: 18),
                         label: const Text(
-                          'Resend SMS Code',
+                          'Resend Code',
                           style: TextStyle(
                             color: AppColors.teal,
                             fontWeight: FontWeight.bold,
