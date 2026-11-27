@@ -80,10 +80,9 @@ Kotlin Gradle Plugin 2.4.20. Release builds use `signingConfigs.release` when
 enabled later.
 
 Free-tier Render deployments (`https://safesphere-backend-c4fs.onrender.com`)
-spin down after ~15m of idle time and experience ~20–50s cold starts; use an
-external uptime ping to `GET /healthz` if keep-alive is desired. Production CORS
+spin down after ~15m of idle time and experience ~20–50s cold starts; `AuthService.warmUpBackend()` pre-warms `/health` on launch. An external uptime ping (e.g. `cron-job.org` hitting `GET /health` every 10m) avoids sleep at the cost of burning continuous free-tier hours (~440h/mo per service), so keep-alive is left optional rather than mandatory. Production CORS
 accepts comma-separated exact origins from `CORS_ORIGIN` (`*` is ignored in
-production; native mobile clients without an `Origin` header remain allowed).
+production; native mobile clients without an `Origin` header and same-origin `/track` fetches remain allowed). Also note: `sensors_plus ^6.1.1` (locked `6.1.2`) and `share_plus ^10.0.0` (locked `10.1.4`) still emit the Flutter KGP deprecation notice on AGP `9.3.1` with no non-breaking patch releases available.
 
 ## Architecture
 
