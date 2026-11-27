@@ -41,6 +41,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(globalLimiter);
 
 const { trackerHtml } = require('./views/trackerPage');
+const { privacyPolicyHtml } = require('./views/privacyPolicyPage');
 
 // Root System Health Check (for Docker, load balancers, and monitoring)
 app.get('/health', (req, res) => {
@@ -119,6 +120,13 @@ app.get('/track', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   return res.status(200).send(trackerHtml);
+});
+
+// Public Privacy Policy HTML page for Play Store Data Safety & DPDP Act compliance
+app.get(['/privacy', '/privacy-policy'], (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  return res.status(200).send(privacyPolicyHtml);
 });
 
 // API Version 1
