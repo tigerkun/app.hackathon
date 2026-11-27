@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sos_widget_description">One-tap SafeSphere Emergency SOS and 112 quick dialer widget</string>
+    <string name="shortcut_sos_short">Emergency SOS</string>
+    <string name="shortcut_sos_long">Open Emergency SOS &amp; 112</string>
+</resources>

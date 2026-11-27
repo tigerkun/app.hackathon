@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/quick_access_service.dart';
 import '../widgets/app_drawer.dart';
 
 class AboutPage extends StatelessWidget {
@@ -36,7 +37,15 @@ class AboutPage extends StatelessWidget {
             _feature(Icons.smart_toy, "AI Safety Assistant"),
             _feature(Icons.share_location, "One-Tap Location Sharing"),
             _feature(Icons.warning_amber, "Emergency SOS"),
-            _feature(Icons.touch_app_outlined, "Home & Lock Screen Quick Widget"),
+            _feature(
+              Icons.touch_app_outlined,
+              "Home & Lock Screen Quick Widget",
+              trailing: TextButton(
+                onPressed: () => QuickAccessService.showQuickAccessSetupSheet(context),
+                child: const Text("Configure"),
+              ),
+              onTap: () => QuickAccessService.showQuickAccessSetupSheet(context),
+            ),
 
             const SizedBox(height: 30),
 
@@ -61,10 +70,17 @@ class AboutPage extends StatelessWidget {
     );
   }
 
-  static Widget _feature(IconData icon, String text) {
+  static Widget _feature(
+    IconData icon,
+    String text, {
+    Widget? trailing,
+    VoidCallback? onTap,
+  }) {
     return ListTile(
       leading: Icon(icon, color: Colors.blue),
       title: Text(text),
+      trailing: trailing,
+      onTap: onTap,
     );
   }
 }

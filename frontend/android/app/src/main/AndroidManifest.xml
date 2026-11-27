@@ -31,7 +31,38 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <!-- Home & Lock Screen Quick Emergency SOS Widget -->
+        <receiver
+            android:name=".SafeSphereSosWidgetProvider"
+            android:exported="true"
+            android:label="SafeSphere Emergency SOS">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/safesphere_sos_widget_info" />
+        </receiver>
+
+        <!-- Lock Screen & Quick Settings Emergency Tile -->
+        <service
+            android:name=".SafeSphereSosTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_sos_tile"
+            android:label="SafeSphere SOS"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.ACTIVE_TILE"
+                android:value="true" />
+        </service>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_sos_tile"
+        android:shortcutId="emergency_sos"
+        android:shortcutLongLabel="@string/shortcut_sos_long"
+        android:shortcutShortLabel="@string/shortcut_sos_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.example.newhere.MainActivity"
+            android:targetPackage="com.example.newhere">
+            <extra
+                android:name="safesphere_route"
+                android:value="/emergency" />
+            <extra
+                android:name="show_when_locked"
+                android:value="true" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+</shortcuts>

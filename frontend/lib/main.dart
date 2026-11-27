@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'theme/app_theme.dart';
 import 'data/auth_state.dart';
+import 'services/quick_access_service.dart';
 import 'routes/route_guard.dart';
 import 'routes/app_routes.dart';
 import 'pages/home_page.dart';
@@ -24,7 +25,8 @@ Future<void> main() async {
   // Otherwise initialRoute '/home' is built while AuthState is still 'loading'
   // and the RouteGuard's pin-lock check can never retroactively redirect it.
   await AuthState().initialize();
-  runApp(const MyApp());
+  final initialQuickRoute = await QuickAccessService.instance.consumeInitialRoute();
+  runApp(MyApp(initialRoute: initialQuickRoute));
 }
 
 /// Primary route table definition for static verification & fallback resolution
@@ -49,7 +51,9 @@ final Map<String, WidgetBuilder> appRouteMap = {
 };
 
 class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+  final String? initialRoute;
+
+  const MyApp({super.key, this.initialRoute});
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -58,6 +62,7 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   bool dark = true;
   late final AuthState _authState;
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
@@ -65,6 +70,9 @@ class _MyAppState extends State<MyApp> {
     _authState = AuthState();
     _authState.initialize();
     unawaited(_authState.authService.warmUpBackend());
+    QuickAccessService.instance.registerRouteHandler((route) {
+      _navigatorKey.currentState?.pushNamed(route);
+    });
   }
 
   @override
@@ -73,9 +81,10 @@ class _MyAppState extends State<MyApp> {
       listenable: _authState,
       builder: (context, _) {
         return MaterialApp(
+          navigatorKey: _navigatorKey,
           debugShowCheckedModeBanner: false,
           theme: dark ? AppTheme.dark() : AppTheme.light(),
-          initialRoute: AppRoutes.home,
+          initialRoute: widget.initialRoute ?? AppRoutes.home,
           onGenerateRoute: (settings) => RouteGuard.generateRoute(settings, _authState),
           onUnknownRoute: (settings) => MaterialPageRoute(
             builder: (_) => const HomePage(),

@@ -3,9 +3,12 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SemanticsAction;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../lib/data/auth_state.dart';
+import '../lib/main.dart';
+import '../lib/pages/about_page.dart';
 import '../lib/pages/auth/phone_otp_page.dart';
 import '../lib/pages/auth/register_page.dart';
 import '../lib/pages/emergency_page.dart';
@@ -13,6 +16,7 @@ import '../lib/pages/home_page.dart';
 import '../lib/services/auth_service.dart';
 import '../lib/services/gesture_service.dart';
 import '../lib/services/movement_analyzer.dart';
+import '../lib/services/quick_access_service.dart';
 import '../lib/services/storage_service.dart';
 
 class _PassthroughHttpOverrides extends HttpOverrides {}
@@ -392,6 +396,108 @@ void main() {
       expect(find.text('Account Verification'), findsOneWidget);
       expect(find.textContaining('sent to your email'), findsOneWidget);
       expect(find.textContaining('Code sent via SMS'), findsNothing);
+    });
+
+    test('QuickAccessService bridges widget/tile channel cleanly', () async {
+      const channel = MethodChannel('com.safesphere/quick_access');
+      final List<String> calls = [];
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (MethodCall call) async {
+          calls.add(call.method);
+          switch (call.method) {
+            case 'consumeInitialQuickRoute':
+              return '/emergency';
+            case 'isPinWidgetSupported':
+              return true;
+            case 'requestPinWidget':
+              return true;
+            case 'isQuickTilePinSupported':
+              return true;
+            case 'requestAddQuickTile':
+              return 'added';
+            default:
+              return null;
+          }
+        },
+      );
+
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final route = await QuickAccessService.instance.consumeInitialRoute();
+      expect(route, '/emergency');
+      expect(await QuickAccessService.instance.isPinWidgetSupported(), isTrue);
+      expect(await QuickAccessService.instance.requestPinHomeWidget(), isTrue);
+      expect(await QuickAccessService.instance.isQuickTilePinSupported(), isTrue);
+      expect(await QuickAccessService.instance.requestAddLockQuickTile(), 'added');
+      expect(calls, containsAll(['consumeInitialQuickRoute', 'isPinWidgetSupported', 'requestPinWidget', 'isQuickTilePinSupported', 'requestAddQuickTile']));
+    });
+
+    testWidgets('QuickAccessService MyApp(initialRoute: /emergency) bypasses PIN lock and AboutPage setup sheet invokes pin', (WidgetTester tester) async {
+      const channel = MethodChannel('com.safesphere/quick_access');
+      final List<String> calls = [];
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (MethodCall call) async {
+          calls.add(call.method);
+          if (call.method == 'isPinWidgetSupported') return true;
+          if (call.method == 'isQuickTilePinSupported') return true;
+          if (call.method == 'requestPinWidget') return true;
+          return null;
+        },
+      );
+
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final storage = _InMemoryStorage();
+      final auth = AuthService(baseUrl: 'http://127.0.0.1:1', storage: storage);
+      late AuthState authState;
+      await tester.runAsync(() async {
+        await storage.setString(AuthService.keyToken, 'tok_quick');
+        await storage.setString(AuthService.keyUser, jsonEncode({
+          'id': 'u_quick',
+          'name': 'Quick User',
+          'email': 'quick@example.com',
+          'phone': '9999999999',
+        }));
+        await auth.setPin('1234');
+        authState = AuthState(authService: auth);
+        await authState.initialize();
+      });
+      expect(authState.isPinLocked, isTrue);
+
+      await tester.pumpWidget(const MyApp(initialRoute: '/emergency'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.byType(EmergencyPage), findsOneWidget);
+      expect(find.bySemanticsLabel('Call National Emergency, 112'), findsOneWidget);
+
+      await tester.pumpWidget(const MaterialApp(home: AboutPage()));
+      await tester.pump();
+      await tester.ensureVisible(find.text('Configure'));
+      await tester.pump();
+      await tester.tap(find.text('Configure'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('1-Tap Emergency Access'), findsOneWidget);
+      expect(find.text('Add SOS Widget to Home Screen'), findsOneWidget);
+      expect(find.text('Add Quick Settings Tile'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Add SOS Widget to Home Screen'));
+      await tester.tap(find.text('Add SOS Widget to Home Screen'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(calls, contains('requestPinWidget'));
     });
   });
 }

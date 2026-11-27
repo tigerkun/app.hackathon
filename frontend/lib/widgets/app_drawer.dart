@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../data/auth_state.dart';
+import '../services/quick_access_service.dart';
 import '../routes/app_routes.dart';
 import '../theme/app_colors.dart';
 import '../pages/auth/login_page.dart';
@@ -135,6 +136,23 @@ class AppDrawer extends StatelessWidget {
                     HapticFeedback.selectionClick();
                   } catch (_) {}
                   await authState.setDiscreetMode(val);
+                },
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.widgets_outlined, color: AppColors.red),
+                title: const Text(
+                  'Home & Lock Screen Widget',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: const Text(
+                  'Pin 1-tap SOS button outside the app',
+                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+                onTap: () {
+                  final hostContext = Navigator.of(context).context;
+                  Navigator.pop(context);
+                  QuickAccessService.showQuickAccessSetupSheet(hostContext);
                 },
               ),
 
