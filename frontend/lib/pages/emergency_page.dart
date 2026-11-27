@@ -416,13 +416,17 @@ class _EmergencyPageState extends State<EmergencyPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        "HELP IS ON THE WAY",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 22,
-                          letterSpacing: 1.0,
+                      Semantics(
+                        header: true,
+                        liveRegion: true,
+                        child: const Text(
+                          "HELP IS ON THE WAY",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 22,
+                            letterSpacing: 1.0,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -577,9 +581,12 @@ class _EmergencyPageState extends State<EmergencyPage> {
               const SizedBox(height: 20),
 
               // 📞 HELPLINES
-              Text("Emergency Helplines",
-                  style: theme.textTheme.titleMedium?.copyWith(
-                      color: textColor, fontWeight: FontWeight.bold)),
+              Semantics(
+                header: true,
+                child: Text("Emergency Helplines",
+                    style: theme.textTheme.titleMedium?.copyWith(
+                        color: textColor, fontWeight: FontWeight.bold)),
+              ),
 
               const SizedBox(height: 12),
 
@@ -638,9 +645,12 @@ class _EmergencyPageState extends State<EmergencyPage> {
               const SizedBox(height: 24),
 
               // 🟡 SAFETY TIPS
-              Text("Emergency Guidance",
-                  style: theme.textTheme.titleMedium?.copyWith(
-                      color: textColor, fontWeight: FontWeight.bold)),
+              Semantics(
+                header: true,
+                child: Text("Emergency Guidance",
+                    style: theme.textTheme.titleMedium?.copyWith(
+                        color: textColor, fontWeight: FontWeight.bold)),
+              ),
 
               const SizedBox(height: 12),
 
@@ -653,11 +663,14 @@ class _EmergencyPageState extends State<EmergencyPage> {
               const SizedBox(height: 24),
 
               // 📜 SOS HISTORY (W2-3)
-              Text(
-                "SOS History",
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: textColor,
-                  fontWeight: FontWeight.bold,
+              Semantics(
+                header: true,
+                child: Text(
+                  "SOS History",
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: textColor,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
 
@@ -931,17 +944,22 @@ class _EmergencyPageState extends State<EmergencyPage> {
     required VoidCallback onTap,
     String? semanticsLabel,
   }) {
-    return Semantics(
-      button: true,
-      label: semanticsLabel ?? title,
-      child: GestureDetector(
-        onTap: () {
-          try {
-            HapticFeedback.lightImpact();
-          } catch (_) {}
-          onTap();
-        },
-        behavior: HitTestBehavior.opaque,
+    final effectiveLabel = semanticsLabel == null ||
+            semanticsLabel.toLowerCase() == title.toLowerCase()
+        ? "$title. $subtitle"
+        : "$semanticsLabel — $title. $subtitle";
+    return GestureDetector(
+      onTap: () {
+        try {
+          HapticFeedback.lightImpact();
+        } catch (_) {}
+        onTap();
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Semantics(
+        button: true,
+        excludeSemantics: true,
+        label: effectiveLabel,
         child: Container(
           constraints: const BoxConstraints(minHeight: 64),
           padding: const EdgeInsets.all(18),
@@ -985,17 +1003,22 @@ class _EmergencyPageState extends State<EmergencyPage> {
     VoidCallback onTap, {
     String? semanticsLabel,
   }) {
-    return Semantics(
-      button: true,
-      label: semanticsLabel ?? title,
-      child: GestureDetector(
-        onTap: () {
-          try {
-            HapticFeedback.lightImpact();
-          } catch (_) {}
-          onTap();
-        },
-        behavior: HitTestBehavior.opaque,
+    final effectiveLabel = semanticsLabel == null ||
+            semanticsLabel.toLowerCase() == title.toLowerCase()
+        ? "$title. $subtitle"
+        : "$semanticsLabel — $title. $subtitle";
+    return GestureDetector(
+      onTap: () {
+        try {
+          HapticFeedback.lightImpact();
+        } catch (_) {}
+        onTap();
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Semantics(
+        button: true,
+        excludeSemantics: true,
+        label: effectiveLabel,
         child: Container(
           constraints: const BoxConstraints(minHeight: 64),
           padding: const EdgeInsets.all(16),
@@ -1034,7 +1057,8 @@ class _EmergencyPageState extends State<EmergencyPage> {
       onTap: () => _makeCall(context, number),
       child: Semantics(
         button: true,
-        label: "Call $title $number",
+        excludeSemantics: true,
+        label: "Call $title, $number",
         child: Container(
           constraints: const BoxConstraints(minHeight: 64),
           margin: const EdgeInsets.only(bottom: 10),

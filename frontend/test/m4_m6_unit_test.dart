@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SemanticsAction;
 import 'package:flutter_test/flutter_test.dart';
 
 import '../lib/data/auth_state.dart';
+import '../lib/pages/emergency_page.dart';
 import '../lib/pages/home_page.dart';
 import '../lib/services/auth_service.dart';
 import '../lib/services/gesture_service.dart';
@@ -328,6 +330,44 @@ void main() {
 
       gs.stopListening(ctxA);
       expect(gs.isListening, isFalse);
+    });
+
+    testWidgets('TalkBack semantics expose drawer tooltip, single-label SOS hero/FAB, and Emergency headings', (WidgetTester tester) async {
+      final storage = _InMemoryStorage();
+      final authState = AuthState(authService: AuthService(baseUrl: 'http://127.0.0.1:1', storage: storage));
+      await authState.setDiscreetMode(false);
+
+      final semanticsHandle = tester.ensureSemantics();
+      try {
+        await tester.pumpWidget(const MaterialApp(home: HomePage()));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+
+        expect(find.byTooltip('Open navigation menu'), findsOneWidget);
+        expect(find.bySemanticsLabel('Emergency SOS. Press for immediate help'), findsOneWidget);
+        expect(find.bySemanticsLabel('Trigger emergency SOS'), findsOneWidget);
+        expect(
+          tester.getSemantics(find.bySemanticsLabel('Trigger emergency SOS')).getSemanticsData().hasAction(SemanticsAction.tap),
+          isTrue,
+        );
+
+        await tester.pumpWidget(const MaterialApp(home: EmergencyPage()));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+
+        expect(find.bySemanticsLabel('Call National Emergency, 112'), findsOneWidget);
+        expect(find.bySemanticsLabel('Call Emergency. Dial 112 for immediate help'), findsNothing);
+        expect(find.bySemanticsLabel('Call 112 — Call Emergency. Dial 112 for immediate help'), findsOneWidget);
+        expect(
+          tester.getSemantics(find.bySemanticsLabel('Call 112 — Call Emergency. Dial 112 for immediate help')).getSemanticsData().hasAction(SemanticsAction.tap),
+          isTrue,
+        );
+        expect(find.bySemanticsLabel('Emergency Helplines'), findsOneWidget);
+        expect(find.bySemanticsLabel('Emergency Guidance'), findsOneWidget);
+        expect(find.bySemanticsLabel('SOS History'), findsOneWidget);
+      } finally {
+        semanticsHandle.dispose();
+      }
     });
   });
 }

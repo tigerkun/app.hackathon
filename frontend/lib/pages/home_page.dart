@@ -225,6 +225,7 @@ class _HomePageState extends State<HomePage> {
         leading: Builder(
           builder: (context) => IconButton(
             icon: const Icon(Icons.menu),
+            tooltip: "Open navigation menu",
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
@@ -238,36 +239,41 @@ class _HomePageState extends State<HomePage> {
             );
           },
           borderRadius: BorderRadius.circular(20),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.07),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white12),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  LocationService.instance.isManualOverride
-                      ? Icons.edit_location_alt
-                      : (_userLat != null ? Icons.location_on : Icons.location_off_outlined),
-                  size: 15,
-                  color: LocationService.instance.isManualOverride
-                      ? AppColors.blue
-                      : (_userLat != null ? AppColors.teal : AppColors.amber),
-                ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    _locationLabel,
-                    style: const TextStyle(fontSize: 12, color: Colors.white70),
-                    overflow: TextOverflow.ellipsis,
+          child: Semantics(
+            button: true,
+            excludeSemantics: true,
+            label: "Current location: $_locationLabel. Tap to change",
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    LocationService.instance.isManualOverride
+                        ? Icons.edit_location_alt
+                        : (_userLat != null ? Icons.location_on : Icons.location_off_outlined),
+                    size: 15,
+                    color: LocationService.instance.isManualOverride
+                        ? AppColors.blue
+                        : (_userLat != null ? AppColors.teal : AppColors.amber),
                   ),
-                ),
-                const SizedBox(width: 4),
-                const Icon(Icons.arrow_drop_down, size: 16, color: Colors.white54),
-              ],
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      _locationLabel,
+                      style: const TextStyle(fontSize: 12, color: Colors.white70),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.arrow_drop_down, size: 16, color: Colors.white54),
+                ],
+              ),
             ),
           ),
         ),
@@ -286,7 +292,9 @@ class _HomePageState extends State<HomePage> {
       ),
       floatingActionButton: Semantics(
         button: true,
-        label: "Trigger emergency SOS",
+        excludeSemantics: true,
+        onTap: () => Navigator.pushNamed(context, '/emergency'),
+        label: discreet ? "Safety options" : "Trigger emergency SOS",
         child: FloatingActionButton.extended(
           heroTag: 'home_fab_sos',
           backgroundColor: discreet ? const Color(0xFF334155) : const Color(0xFFDC2626),
@@ -304,7 +312,6 @@ class _HomePageState extends State<HomePage> {
               letterSpacing: 1.1,
             ),
           ),
-          tooltip: "Immediate Emergency SOS",
           onPressed: () {
             Navigator.pushNamed(context, '/emergency');
           },
@@ -324,7 +331,10 @@ class _HomePageState extends State<HomePage> {
               onTap: () => Navigator.pushNamed(context, '/emergency'),
               child: Semantics(
                 button: true,
-                label: "Trigger emergency SOS now",
+                excludeSemantics: true,
+                label: discreet
+                    ? "Safety check. Discreet mode active. Tap for options"
+                    : "Emergency SOS. Press for immediate help",
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 20),
                   width: double.infinity,
@@ -596,9 +606,12 @@ class _HomePageState extends State<HomePage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  "Recent Local Activity",
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                Semantics(
+                  header: true,
+                  child: const Text(
+                    "Recent Local Activity",
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                 ),
                 if (_isLoading)
                   const SizedBox(
