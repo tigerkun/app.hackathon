@@ -303,7 +303,8 @@ Search `TODO(REAL_` for the live list. Current stubs:
 | `NOTE:` markers | `frontend/lib/services/auth_service.dart` (register, login, OTP send, OTP verify, PIN verify) | Converted from stale `TODO(REAL_BACKEND)`; endpoints verified live on backend | DONE |
 | `AI Assistant (Groq)` | `backend/src/services/aiService.js`, `backend/src/controllers/aiController.js`, `frontend/lib/pages/ai_assistant_page.dart` | `POST /api/v1/ai/chat` (Groq; key via `GROQ_API_KEY` env only), optionalAuth + 10/min `aiLimiter`, sanitized history (12 turns), honest 503 `AI_NOT_CONFIGURED` fallback to offline guides | DONE |
 | `Hardening Wave (audit)` | `alertController.js`, `authMiddleware.js`, `validation.js`, `rateLimiter.js`, `config/index.js`, `auth_service.dart` | Guest SOS identity stripping (body identity ignored), optionalAuth + requireAuth session-revocation gates (missing/invalid session ⇒ guest/rejected), dedicated 10/min `otpLimiter` on `/otp/send`+`/otp/verify`, input caps (SOS notes 500 / alertType 40 / report description 2000 / location 200 / coords validated / direct `photoUrl` rejected), env fail-closed (unknown `NODE_ENV` ⇒ production hygiene, incl. inside `validateJwtSecretHygiene`), offline SOS queue 24h TTL with `_queuedAt` stamps | DONE |
-| `SMS Gateway (Fast2SMS)` | `backend/src/services/smsGatewayService.js`, `otpService.js`, `sosService.js` | Real SMS delivery via dual providers (`SMS_PROVIDER` env): **fast2sms** (Smart OTP needs DLT template; Quick route ₹7/SMS needs ₹100 top-up) and **textlocal** (10 free credits, no DLT — chosen zero-money demo path; signup must be done in a full browser — the site does not render in embedded webviews). Failed dispatches fail honestly (`502 OTP_DISPATCH_FAILED`). MSG91 was abandoned — its login pipeline is broken. | Adapter DONE — awaiting Textlocal API hash from owner |
+| `Email OTP (Resend)` | `backend/src/services/emailOtpService.js`, `otpService.js`, `authController.js`, `register_page.dart`, `phone_otp_page.dart` | Zero-cost primary OTP delivery via `https://api.resend.com/emails` (`RESEND_API_KEY`, optional `OTP_FROM_EMAIL`, free tier 100/day & 3,000/month), per-email 5/day limit (`email_otp_limits` table) + 60s cooldown; omits `devOtp` in prod & when delivered, fails closed (`502 OTP_DISPATCH_FAILED`) in prod on outage | DONE |
+| `SMS Gateway (Fast2SMS)` | `backend/src/services/smsGatewayService.js`, `otpService.js`, `sosService.js` | Legacy/future paid DLT SMS adapter (`fast2sms` / `textlocal`); SMS & WhatsApp OTP remain paid-DLT paths (`contactsNotified` stays honest `0` when unconfigured) | DEFERRED (DLT paid path) |
 | `Maps key` | `frontend/lib/services/map_config.dart` | Google Maps & CARTO keyless abandoned (CARTO now requires API key and watermarks tiles) — Safety Map runs on `flutter_map` + standard OpenStreetMap raster tiles with client-side dark-mode filter, zero key/card; optional MapTiler key via dart-define | DONE (free tier) |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/services/auth_service.dart` (`verifyBiometrics`) | Real biometric scan via `local_auth` wired with hardware check and fallback | DONE |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/pages/home_page.dart`, `emergency_page.dart` | Volume button / hardware panic intercept requires native plugin, fallback F4-2-alt shipped | DEFERRED |
@@ -328,13 +329,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 
 ## Known limitations
 
-- **No SMS gateway.** ~~OTP delivery and emergency-contact SMS are not
-  implemented~~ → **DONE via Fast2SMS**: with `SMS_API_KEY` set, login OTPs are
-  really delivered (pre-approved route, no DLT needed) and SOS triggers
-  dispatch to emergency contacts (Quick route, ₹7/SMS). Without the key the
-  old honest no-delivery behavior applies. DLT-registered sender IDs and
-  templates are still required for custom-branded SMS beyond Fast2SMS's
-  pre-approved templates.
+- **OTP & SMS delivery.** Email OTP via Resend (`RESEND_API_KEY` env, `OTP_FROM_EMAIL`) is the primary free OTP delivery channel (100/day, 3,000/month, per-email 5/day limit). Without `RESEND_API_KEY`, non-production falls back to `devOtp`; production omits the code and fails honestly (`502 OTP_DISPATCH_FAILED`) if Resend is unreachable. SMS & WhatsApp OTPs remain paid/DLT-gated paths (`smsGatewayService.js` still supports `fast2sms` / `textlocal` when paid/DLT credentials are set).
 - **Snapshot persistence is single-instance.** The Supabase Storage snapshot
   mode keeps one Render instance durable (same as a persistent disk); it does
   not enable horizontal scaling. Data loss window ≤ one snapshot interval
