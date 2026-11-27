@@ -182,7 +182,7 @@ class _ReportPageState extends State<ReportPage> {
           id: backendReport['id'] as String? ??
               "rep_${DateTime.now().millisecondsSinceEpoch}_${_localReportSeq++}",
           type: selectedType,
-          location: _locationTag,
+          location: locationPayload,
           description: description,
           time: DateTime.now(),
           photoUrl: _photoBase64,

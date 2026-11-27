@@ -457,84 +457,180 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
-        title: Row(
-          children: [
-            Icon(_typeIcon(type), color: _severityColor(type)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                "$type Report",
-                style: const TextStyle(color: Colors.white, fontSize: 18),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final isMine = report['isMine'] == true;
+          final upvotes = report['upvotes'] ?? 0;
+          final downvotes = report['downvotes'] ?? 0;
+          final myVote = report['myVote'] as String?;
+
+          Future<void> castModalVote(String vote) async {
+            final messenger = ScaffoldMessenger.of(context);
+            final result = await AuthService.instance.voteReport(
+              reportId: id,
+              vote: vote,
+            );
+            if (!mounted) return;
+            if (result != null) {
+              final data = result['data'] is Map<String, dynamic>
+                  ? result['data'] as Map<String, dynamic>
+                  : result;
+              setDialogState(() {
+                report['upvotes'] = data['upvotes'] ?? report['upvotes'];
+                report['downvotes'] = data['downvotes'] ?? report['downvotes'];
+                report['myVote'] = data['myVote'] ?? vote;
+              });
+              await _fetchRealCommunityAlerts();
+            } else {
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text(
+                      "Vote could not be recorded — check your connection or account status."),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            }
+          }
+
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1E293B),
+            title: Row(
+              children: [
+                Icon(_typeIcon(type), color: _severityColor(type)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    "$type Report",
+                    style: const TextStyle(color: Colors.white, fontSize: 18),
+                  ),
+                ),
+                _statusBadge(status),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // F5-4: show photo in detail dialog if present
+                  if (photoUrl != null && photoUrl.isNotEmpty) ...[
+                    _buildPhotoThumbnail(photoUrl),
+                    const SizedBox(height: 12),
+                  ],
+                  Text(
+                    description,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(color: Colors.white12),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_outlined, size: 14, color: Colors.white60),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          location,
+                          style: const TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (lat != null && lon != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      "GPS: $lat, $lon",
+                      style: const TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.access_time, size: 14, color: Colors.white60),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          "Reported ${_formatTime(createdAt)}",
+                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "ID: $id",
+                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
+                  if (AuthService.instance.currentUser != null) ...[
+                    const SizedBox(height: 12),
+                    const Divider(color: Colors.white12),
+                    const SizedBox(height: 8),
+                    if (isMine)
+                      const Text(
+                        "Your report — voting on your own report isn't allowed",
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          ActionChip(
+                            avatar: const Icon(Icons.thumb_up, size: 14, color: Colors.teal),
+                            label: Text(
+                              "Confirm $upvotes",
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.teal,
+                                fontWeight: myVote == 'confirm' ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                            backgroundColor: myVote == 'confirm'
+                                ? Colors.teal.withValues(alpha: 0.22)
+                                : Colors.teal.withValues(alpha: 0.08),
+                            side: BorderSide(
+                              color: Colors.teal,
+                              width: myVote == 'confirm' ? 1.5 : 0.8,
+                            ),
+                            onPressed: () => castModalVote('confirm'),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.thumb_down, size: 14, color: Colors.redAccent),
+                            label: Text(
+                              "Decline $downvotes",
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.redAccent,
+                                fontWeight: myVote == 'decline' ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                            backgroundColor: myVote == 'decline'
+                                ? Colors.redAccent.withValues(alpha: 0.22)
+                                : Colors.redAccent.withValues(alpha: 0.08),
+                            side: BorderSide(
+                              color: Colors.redAccent,
+                              width: myVote == 'decline' ? 1.5 : 0.8,
+                            ),
+                            onPressed: () => castModalVote('decline'),
+                          ),
+                        ],
+                      ),
+                  ],
+                ],
               ),
             ),
-            _statusBadge(status),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // F5-4: show photo in detail dialog if present
-              if (photoUrl != null && photoUrl.isNotEmpty) ...[
-                _buildPhotoThumbnail(photoUrl),
-                const SizedBox(height: 12),
-              ],
-              Text(
-                description,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-              ),
-              const SizedBox(height: 16),
-              const Divider(color: Colors.white12),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.location_on_outlined, size: 14, color: Colors.white60),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      location,
-                      style: const TextStyle(color: Colors.white70, fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-              if (lat != null && lon != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  "GPS: $lat, $lon",
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
-                ),
-              ],
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.access_time, size: 14, color: Colors.white60),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      "Reported ${_formatTime(createdAt)}",
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                "ID: $id",
-                style: const TextStyle(color: Colors.white38, fontSize: 11),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text("Close", style: TextStyle(color: AppColors.teal)),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Close", style: TextStyle(color: AppColors.teal)),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -679,11 +775,22 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     required String label,
     required Color color,
   }) {
+    final isSelected = report['myVote'] == vote;
     return ActionChip(
       avatar: Icon(icon, size: 14, color: color),
-      label: Text(label, style: TextStyle(fontSize: 11, color: color)),
-      backgroundColor: color.withOpacity(0.08),
-      side: BorderSide(color: color.withOpacity(0.4)),
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          color: color,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      backgroundColor: color.withOpacity(isSelected ? 0.22 : 0.08),
+      side: BorderSide(
+        color: color.withOpacity(isSelected ? 0.9 : 0.4),
+        width: isSelected ? 1.5 : 1.0,
+      ),
       onPressed: () async {
         final messenger = ScaffoldMessenger.of(context);
         final authService = AuthService.instance;
