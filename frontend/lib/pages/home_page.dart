@@ -2,6 +2,7 @@
 // via sensors_plus) with honest gating, intermediate confirmation, and mandatory 5s countdown dialog.
 
 import 'package:flutter/material.dart';
+import '../data/auth_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/app_drawer.dart';
@@ -65,7 +66,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     LocationService.instance.removeListener(_onLocationServiceChanged);
-    GestureService.instance.stopListening();
+    GestureService.instance.stopListening(context);
     super.dispose();
   }
 
@@ -212,7 +213,11 @@ class _HomePageState extends State<HomePage> {
       return true;
     }).take(3).toList();
 
-    return Scaffold(
+    return ListenableBuilder(
+      listenable: AuthState(),
+      builder: (context, _) {
+        final discreet = AuthState().isDiscreetMode;
+        return Scaffold(
       drawer: const AppDrawer(),
       appBar: AppBar(
         elevation: 0,
@@ -284,11 +289,15 @@ class _HomePageState extends State<HomePage> {
         label: "Trigger emergency SOS",
         child: FloatingActionButton.extended(
           heroTag: 'home_fab_sos',
-          backgroundColor: const Color(0xFFDC2626),
-          icon: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 22),
-          label: const Text(
-            "EMERGENCY SOS",
-            style: TextStyle(
+          backgroundColor: discreet ? const Color(0xFF334155) : const Color(0xFFDC2626),
+          icon: Icon(
+            discreet ? Icons.shield_outlined : Icons.warning_amber_rounded,
+            color: Colors.white,
+            size: 22,
+          ),
+          label: Text(
+            discreet ? "SAFETY OPTIONS" : "EMERGENCY SOS",
+            style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,
               fontSize: 13,
@@ -321,19 +330,26 @@ class _HomePageState extends State<HomePage> {
                   width: double.infinity,
                   height: (MediaQuery.of(context).size.height * 0.32).clamp(200.0, 260.0),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFE11D48), Color(0xFFDC2626), Color(0xFF991B1B)],
+                    gradient: LinearGradient(
+                      colors: discreet
+                          ? const [Color(0xFF1E293B), Color(0xFF0F172A)]
+                          : const [Color(0xFFE11D48), Color(0xFFDC2626), Color(0xFF991B1B)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 1.5),
+                    border: Border.all(
+                      color: discreet ? Colors.white24 : Colors.white.withValues(alpha: 0.3),
+                      width: 1.5,
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFFDC2626).withValues(alpha: 0.38),
-                        blurRadius: 22,
+                        color: discreet
+                            ? Colors.black.withValues(alpha: 0.25)
+                            : const Color(0xFFDC2626).withValues(alpha: 0.38),
+                        blurRadius: discreet ? 12 : 22,
                         offset: const Offset(0, 6),
-                        spreadRadius: 2,
+                        spreadRadius: discreet ? 0 : 2,
                       ),
                     ],
                   ),
@@ -344,20 +360,23 @@ class _HomePageState extends State<HomePage> {
                         width: 64,
                         height: 64,
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.16),
+                          color: Colors.white.withValues(alpha: discreet ? 0.08 : 0.16),
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1.5),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: discreet ? 0.2 : 0.35),
+                            width: 1.5,
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.warning_amber_rounded,
+                        child: Icon(
+                          discreet ? Icons.shield_outlined : Icons.warning_amber_rounded,
                           color: Colors.white,
                           size: 38,
                         ),
                       ),
                       const SizedBox(height: 12),
-                      const Text(
-                        "EMERGENCY SOS",
-                        style: TextStyle(
+                      Text(
+                        discreet ? "SAFETY CHECK" : "EMERGENCY SOS",
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 26,
                           fontWeight: FontWeight.w900,
@@ -365,9 +384,11 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        "Press for immediate help",
-                        style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
+                      Text(
+                        discreet
+                            ? "Discreet mode active — tap for options"
+                            : "Press for immediate help",
+                        style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
                       ),
                       const SizedBox(height: 10),
                       Container(
@@ -377,20 +398,20 @@ class _HomePageState extends State<HomePage> {
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: Colors.white24, width: 1),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              "GET HELP NOW",
-                              style: TextStyle(
+                              discreet ? "OPEN OPTIONS" : "GET HELP NOW",
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 1.2,
                               ),
                             ),
-                            SizedBox(width: 4),
-                            Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 10),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 10),
                           ],
                         ),
                       ),
@@ -718,6 +739,8 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ),
+    );
+      },
     );
   }
 }

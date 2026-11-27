@@ -69,7 +69,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
 
   @override
   void dispose() {
-    GestureService.instance.stopListening();
+    GestureService.instance.stopListening(context);
     _sosPollTimer?.cancel();
     _teardownChat(updateUi: false);
     _chatController.dispose();

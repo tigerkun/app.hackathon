@@ -181,10 +181,11 @@ class AppDrawer extends StatelessWidget {
                   leading: const Icon(Icons.logout, color: AppColors.red),
                   title: const Text('Logout', style: TextStyle(color: AppColors.red)),
                   onTap: () async {
+                    final hostContext = Navigator.of(context).context;
                     Navigator.pop(context);
                     await authState.logout();
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    if (!hostContext.mounted) return;
+                    ScaffoldMessenger.of(hostContext).showSnackBar(
                       const SnackBar(content: Text('Logged out from SafeSphere.')),
                     );
                   },
