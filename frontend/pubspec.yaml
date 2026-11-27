@@ -31,8 +31,8 @@ dependencies:
   flutter:
     sdk: flutter
   lottie: ^3.1.0
-  # TODO(BUILD): share_plus ^10.0.0 and sensors_plus ^6.1.1 emit a Flutter KGP deprecation warning on AGP 9.3.1;
-  # major bumps (share_plus 13.x / sensors_plus 7.x) have breaking API changes — upgrade when migrating off KGP.
+  # TODO(BUILD): share_plus ^10.0.0 (locked 10.1.4) and sensors_plus ^6.1.1 (locked 6.1.2) emit a Flutter KGP deprecation warning on AGP 9.3.1;
+  # verified via `flutter pub outdated` that no non-breaking minor/patch releases migrate off KGP — only breaking majors (share_plus 13.x / sensors_plus 7.x).
   share_plus: ^10.0.0
   url_launcher: ^6.3.0
   geolocator: ^13.0.0
