@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'theme/app_theme.dart';
 import 'data/auth_state.dart';
@@ -63,6 +64,7 @@ class _MyAppState extends State<MyApp> {
     super.initState();
     _authState = AuthState();
     _authState.initialize();
+    unawaited(_authState.authService.warmUpBackend());
   }
 
   @override

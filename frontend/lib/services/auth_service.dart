@@ -178,9 +178,10 @@ class AuthService {
     Map<String, dynamic>? body,
     String? token,
     bool retryOn401 = true,
+    Duration requestTimeout = const Duration(seconds: 45),
   }) async {
     final client = HttpClient();
-    client.connectionTimeout = const Duration(seconds: 8);
+    client.connectionTimeout = const Duration(seconds: 15);
     try {
       final uri = Uri.parse('$baseUrl$path');
 
@@ -203,10 +204,10 @@ class AuthService {
         request.write(jsonStr);
       }
 
-      final response = await request.close().timeout(const Duration(seconds: 15));
+      final response = await request.close().timeout(requestTimeout);
       final statusCode = response.statusCode;
       final responseBody = await response.transform(utf8.decoder).join()
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 15));
 
       Map<String, dynamic>? decoded;
       if (responseBody.isNotEmpty) {
@@ -269,6 +270,27 @@ class AuthService {
       token: token,
     );
     return resp.data;
+  }
+
+  /// Best-effort background wake-up for cold-starting cloud deployments (e.g. Render free tier).
+  /// Skips loopback/emulator local URLs so tests and local dev have zero extra traffic/timers.
+  Future<void> warmUpBackend() async {
+    final uri = Uri.tryParse(baseUrl);
+    if (uri == null) return;
+    final host = uri.host.toLowerCase();
+    if (host == '127.0.0.1' || host == 'localhost' || host == '10.0.2.2' || host.isEmpty) {
+      return;
+    }
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 15);
+    try {
+      final request = await client.getUrl(Uri.parse('$baseUrl/healthz'));
+      final response = await request.close().timeout(const Duration(seconds: 50));
+      await response.drain<void>();
+    } catch (_) {
+    } finally {
+      client.close(force: true);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -782,6 +804,7 @@ class AuthService {
       path: '/api/v1/sos/trigger',
       body: body,
       token: token,
+      requestTimeout: const Duration(seconds: 12),
     );
 
     if (res.isSuccess && res.data != null && res.data!['success'] == true) {
