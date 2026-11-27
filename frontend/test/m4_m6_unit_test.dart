@@ -1,9 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../lib/data/auth_state.dart';
+import '../lib/pages/home_page.dart';
 import '../lib/services/auth_service.dart';
+import '../lib/services/gesture_service.dart';
 import '../lib/services/movement_analyzer.dart';
 import '../lib/services/storage_service.dart';
 
@@ -239,6 +243,91 @@ void main() {
       final auth = AuthService(baseUrl: 'http://127.0.0.1:1', storage: storage);
 
       expect(await auth.getSosResolveToken('sos_legacy'), 'legacy_tok');
+    });
+  });
+
+  group('Hardening Regression Tests (PIN reset, Discreet Home, Gesture stack)', () {
+    test('unlockPin after applyPinReset marks session unauthenticated instead of split-brain authenticated', () async {
+      final storage = _InMemoryStorage();
+      await storage.setString(AuthService.keyToken, 'tok_old');
+      await storage.setString(AuthService.keyRefreshToken, 'rtok_old');
+      await storage.setString(AuthService.keyUser, jsonEncode({
+        'id': 'u1',
+        'name': 'Test User',
+        'email': 'u1@example.com',
+        'phone': '9999999999',
+      }));
+      final auth = AuthService(baseUrl: 'http://127.0.0.1:1', storage: storage);
+      await auth.setPin('1234');
+      await auth.getProfile();
+
+      final authState = AuthState(authService: auth);
+      await authState.initialize();
+      expect(authState.isPinLocked, isTrue);
+
+      await auth.applyPinReset('5678');
+      expect(await auth.verifyPin('1234'), isFalse);
+      expect(await authState.unlockPin('5678'), isTrue);
+      expect(authState.isAuthenticated, isFalse);
+      expect(authState.status, AuthStatus.unauthenticated);
+      expect(authState.currentUser, isNull);
+    });
+
+    testWidgets('HomePage mutes SOS hero and FAB visuals when Discreet Mode is active', (WidgetTester tester) async {
+      final storage = _InMemoryStorage();
+      final authState = AuthState(authService: AuthService(baseUrl: 'http://127.0.0.1:1', storage: storage));
+      await authState.setDiscreetMode(false);
+
+      await tester.pumpWidget(const MaterialApp(home: HomePage()));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('EMERGENCY SOS'), findsNWidgets(2));
+      expect(find.text('SAFETY CHECK'), findsNothing);
+
+      await authState.setDiscreetMode(true);
+      await tester.pump();
+
+      expect(find.text('SAFETY CHECK'), findsOneWidget);
+      expect(find.text('SAFETY OPTIONS'), findsOneWidget);
+      expect(find.text('EMERGENCY SOS'), findsNothing);
+
+      await authState.setDiscreetMode(false);
+    });
+
+    testWidgets('GestureService LIFO stack keeps parent listening after child route disposes', (WidgetTester tester) async {
+      late BuildContext ctxA;
+      late BuildContext ctxB;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Column(
+            children: [
+              Builder(builder: (c) {
+                ctxA = c;
+                return const SizedBox.shrink();
+              }),
+              Builder(builder: (c) {
+                ctxB = c;
+                return const SizedBox.shrink();
+              }),
+            ],
+          ),
+        ),
+      );
+
+      final gs = GestureService.instance;
+      gs.stopListening();
+      gs.startListening(ctxA, onSosConfirmed: () async {});
+      expect(gs.isListening, isTrue);
+
+      gs.startListening(ctxB, onSosConfirmed: () async {});
+      expect(gs.isListening, isTrue);
+
+      gs.stopListening(ctxB);
+      expect(gs.isListening, isTrue);
+
+      gs.stopListening(ctxA);
+      expect(gs.isListening, isFalse);
     });
   });
 }
