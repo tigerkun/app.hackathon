@@ -265,7 +265,16 @@ class AuthState extends ChangeNotifier {
     _errorMessage = null;
     final valid = await authService.verifyPin(pin);
     if (valid) {
-      _status = AuthStatus.authenticated;
+      final token = await authService.storage.getString(AuthService.keyToken);
+      if (authService.currentUser != null && token != null && token.isNotEmpty) {
+        _currentUser = authService.currentUser;
+        _status = AuthStatus.authenticated;
+      } else {
+        // Post-PIN-reset sessions are revoked on the backend; do not leave
+        // AuthState pretending to be authenticated without a token.
+        _currentUser = null;
+        _status = AuthStatus.unauthenticated;
+      }
       notifyListeners();
       return true;
     } else {
@@ -279,7 +288,14 @@ class AuthState extends ChangeNotifier {
     _errorMessage = null;
     final valid = await authService.verifyBiometrics();
     if (valid) {
-      _status = AuthStatus.authenticated;
+      final token = await authService.storage.getString(AuthService.keyToken);
+      if (authService.currentUser != null && token != null && token.isNotEmpty) {
+        _currentUser = authService.currentUser;
+        _status = AuthStatus.authenticated;
+      } else {
+        _currentUser = null;
+        _status = AuthStatus.unauthenticated;
+      }
       notifyListeners();
       return true;
     } else {

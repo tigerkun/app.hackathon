@@ -136,13 +136,23 @@ class _PinLockPageState extends State<PinLockPage> with SingleTickerProviderStat
     if (!mounted) return;
 
     if (valid) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('PIN verified. Access granted.'),
-          backgroundColor: Colors.teal,
-        ),
-      );
-      Navigator.pushReplacementNamed(context, AppRoutes.home);
+      if (authState.isAuthenticated) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PIN verified. Access granted.'),
+            backgroundColor: Colors.teal,
+          ),
+        );
+        Navigator.pushReplacementNamed(context, AppRoutes.home);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PIN verified. Please sign in to restore your session.'),
+            backgroundColor: Colors.teal,
+          ),
+        );
+        Navigator.pushReplacementNamed(context, AppRoutes.login);
+      }
     } else {
       _shakeController.forward(from: 0.0);
       _failedAttempts++;
@@ -342,7 +352,10 @@ class _PinLockPageState extends State<PinLockPage> with SingleTickerProviderStat
                         final success = await authState.unlockBiometrics();
                         if (!mounted) return;
                         if (success) {
-                          Navigator.pushReplacementNamed(context, AppRoutes.home);
+                          Navigator.pushReplacementNamed(
+                            context,
+                            authState.isAuthenticated ? AppRoutes.home : AppRoutes.login,
+                          );
                         }
                       },
                     ),
