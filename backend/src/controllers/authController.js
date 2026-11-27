@@ -94,19 +94,27 @@ async function loginPin(req, res, next) {
 
 async function sendOtp(req, res, next) {
   try {
-    const { phone, purpose } = req.body;
-    const result = await otpService.sendOtp(phone, purpose);
+    const { phone, purpose, email } = req.body;
+    const result = await otpService.sendOtp(phone, purpose, email);
 
-    // Honest delivery copy (invariant #3): only claim "sent" when the SMS
-    // gateway actually dispatched. Without SMS_API_KEY + an OTP template the
-    // code is merely generated and cannot reach the user.
-    const message = result.smsDispatched
-      ? `OTP sent successfully to ${result.phone}`
-      : `OTP generated for ${result.phone} — SMS delivery is not configured on this deployment, so the code cannot reach you. Use password or PIN login instead.`;
+    // Honest delivery copy (invariant #3): state the real channel used.
+    let message;
+    if (result.emailDispatched) {
+      message = `Verification code emailed to ${result.maskedEmail}`;
+    } else if (result.smsDispatched) {
+      message = `OTP sent successfully to ${result.phone}`;
+    } else if (result.devOtp) {
+      message = `OTP generated for ${result.phone} — email/SMS delivery is not active (${result.fallbackReason || 'unconfigured'}), using development verification code.`;
+    } else {
+      message = `OTP generated for ${result.phone} — email/SMS delivery is unavailable for this request. Use password or PIN login instead.`;
+    }
 
     res.status(200).json({
       success: true,
       message,
+      channel: result.channel,
+      emailDispatched: Boolean(result.emailDispatched),
+      maskedEmail: result.maskedEmail || null,
       smsDelivery: result.smsDispatched ? 'dispatched' : 'unavailable',
       data: result,
       phone: result.phone,

@@ -138,6 +138,12 @@ class DataStore {
         createdAt INTEGER NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS email_otp_limits (
+        email TEXT PRIMARY KEY,
+        day TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0
+      );
+
       CREATE TABLE IF NOT EXISTS tracking_sessions (
         id TEXT PRIMARY KEY,
         userId TEXT,
@@ -453,6 +459,7 @@ class DataStore {
         DELETE FROM markers;
         DELETE FROM alerts;
         DELETE FROM otps;
+        DELETE FROM email_otp_limits;
         DELETE FROM tracking_sessions;
         DELETE FROM sos_messages;
       `);
@@ -928,6 +935,13 @@ class DataStore {
 
   deleteUser(id) {
     if (!id) return false;
+    const existing = this.findUserById(id);
+    if (existing && existing.email) {
+      this.db.prepare('DELETE FROM email_otp_limits WHERE email = ?').run(String(existing.email).trim().toLowerCase());
+    }
+    if (existing && existing.phone) {
+      this.db.prepare('DELETE FROM otps WHERE phone = ?').run(normalizePhone(existing.phone));
+    }
     this.db.prepare('DELETE FROM sessions WHERE userId = ?').run(id);
     this.db.prepare('DELETE FROM sos_messages WHERE senderId = ? OR alertId IN (SELECT id FROM alerts WHERE userId = ?)').run(id, id);
     this.db.prepare('DELETE FROM alerts WHERE userId = ?').run(id);
@@ -1495,6 +1509,29 @@ class DataStore {
     const normalized = normalizePhone(phone);
     const res = this.db.prepare('DELETE FROM otps WHERE phone = ?').run(normalized);
     return res.changes > 0;
+  }
+
+  getEmailOtpCount(email, day) {
+    if (!email || !day) return 0;
+    const cleanEmail = String(email).trim().toLowerCase();
+    const row = this.db.prepare('SELECT day, count FROM email_otp_limits WHERE email = ? LIMIT 1').get(cleanEmail);
+    if (!row || row.day !== day) return 0;
+    return Number(row.count) || 0;
+  }
+
+  incrementEmailOtpCount(email, day) {
+    if (!email || !day) return 0;
+    const cleanEmail = String(email).trim().toLowerCase();
+    const current = this.getEmailOtpCount(cleanEmail, day);
+    const next = current + 1;
+    this.db.prepare(`
+      INSERT INTO email_otp_limits (email, day, count)
+      VALUES (?, ?, ?)
+      ON CONFLICT(email) DO UPDATE SET
+        day = excluded.day,
+        count = excluded.count
+    `).run(cleanEmail, day, next);
+    return next;
   }
 
   // ==========================================

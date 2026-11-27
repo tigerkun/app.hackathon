@@ -98,11 +98,19 @@ function validateLoginPin(req, res, next) {
 }
 
 function validateOtpSend(req, res, next) {
-  const { phone } = req.body || {};
+  const { phone, email } = req.body || {};
   const issues = [];
 
   if (!phone || typeof phone !== 'string' || !PHONE_REGEX.test(phone.trim())) {
     issues.push({ field: 'phone', issue: 'A valid phone number is required to send an OTP.' });
+  }
+
+  if (email !== undefined && email !== null && String(email).trim() !== '') {
+    if (typeof email !== 'string' || !EMAIL_REGEX.test(email.trim())) {
+      issues.push({ field: 'email', issue: 'A valid email address is required if provided.' });
+    } else {
+      req.body.email = email.trim();
+    }
   }
 
   if (issues.length > 0) {
