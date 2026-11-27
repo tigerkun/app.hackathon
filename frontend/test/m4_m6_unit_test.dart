@@ -6,6 +6,8 @@ import 'package:flutter/rendering.dart' show SemanticsAction;
 import 'package:flutter_test/flutter_test.dart';
 
 import '../lib/data/auth_state.dart';
+import '../lib/pages/auth/phone_otp_page.dart';
+import '../lib/pages/auth/register_page.dart';
 import '../lib/pages/emergency_page.dart';
 import '../lib/pages/home_page.dart';
 import '../lib/services/auth_service.dart';
@@ -368,6 +370,28 @@ void main() {
       } finally {
         semanticsHandle.dispose();
       }
+    });
+
+    testWidgets('RegisterPage requires email and PhoneOtpPage shows email-accurate verification copy', (WidgetTester tester) async {
+      final storage = _InMemoryStorage();
+      final authState = AuthState(authService: AuthService(baseUrl: 'http://127.0.0.1:1', storage: storage));
+
+      await tester.pumpWidget(const MaterialApp(home: RegisterPage()));
+      await tester.pump();
+      expect(find.text('Email Address *'), findsOneWidget);
+      expect(find.text('Email Address (Optional)'), findsNothing);
+
+      await tester.ensureVisible(find.text('Register & Send Verification Code'));
+      await tester.tap(find.text('Register & Send Verification Code'));
+      await tester.pump();
+      expect(find.text('Valid email address is required for verification'), findsOneWidget);
+
+      expect(authState.lastOtpChannel, isNull);
+      await tester.pumpWidget(const MaterialApp(home: PhoneOtpPage(phone: '+919876543210')));
+      await tester.pump();
+      expect(find.text('Account Verification'), findsOneWidget);
+      expect(find.textContaining('sent to your email'), findsOneWidget);
+      expect(find.textContaining('Code sent via SMS'), findsNothing);
     });
   });
 }
