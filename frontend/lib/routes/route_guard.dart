@@ -20,56 +20,65 @@ import '../pages/my_circle_page.dart';
 import '../pages/privacy_hub_page.dart';
 
 class RouteGuard {
+  static Route<dynamic> _buildAnimatedRoute(WidgetBuilder builder, RouteSettings settings) {
+    return PageRouteBuilder(
+      settings: settings,
+      transitionDuration: const Duration(milliseconds: 220),
+      reverseTransitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        final disable = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+        if (disable) return child;
+        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.03, 0),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
   static Route<dynamic> generateRoute(RouteSettings settings, AuthState authState) {
     final String routeName = settings.name ?? AppRoutes.home;
 
     // 1. Invariant Emergency Bypass (routes /emergency and /share NEVER blocked)
     if (routeName == AppRoutes.emergency || routeName == AppRoutes.shareLocation) {
-      return MaterialPageRoute(
-        builder: (_) => _resolveEmergencyPage(routeName),
-        settings: settings,
+      return _buildAnimatedRoute(
+        (_) => _resolveEmergencyPage(routeName),
+        settings,
       );
     }
 
     // 2. PIN Lock Barrier (redirects to /pin-lock if isPinLocked)
     if (authState.isPinLocked && routeName != AppRoutes.login) {
-      return MaterialPageRoute(
-        builder: (_) => const PinLockPage(),
-        settings: settings,
+      return _buildAnimatedRoute(
+        (_) => const PinLockPage(),
+        settings,
       );
     }
 
     // 3. Auth Routes
     if (routeName == AppRoutes.login) {
-      return MaterialPageRoute(
-        builder: (_) => const LoginPage(),
-        settings: settings,
-      );
+      return _buildAnimatedRoute((_) => const LoginPage(), settings);
     }
     if (routeName == AppRoutes.register) {
-      return MaterialPageRoute(
-        builder: (_) => const RegisterPage(),
-        settings: settings,
-      );
+      return _buildAnimatedRoute((_) => const RegisterPage(), settings);
     }
     if (routeName == AppRoutes.otp) {
       final phone = settings.arguments is String ? settings.arguments as String : authState.pendingPhone;
-      return MaterialPageRoute(
-        builder: (_) => PhoneOtpPage(phone: phone),
-        settings: settings,
-      );
+      return _buildAnimatedRoute((_) => PhoneOtpPage(phone: phone), settings);
     }
     if (routeName == AppRoutes.pinLock) {
-      return MaterialPageRoute(
-        builder: (_) => const PinLockPage(),
-        settings: settings,
-      );
+      return _buildAnimatedRoute((_) => const PinLockPage(), settings);
     }
     if (routeName == AppRoutes.onboarding) {
-      return MaterialPageRoute(
-        builder: (_) => const OnboardingPage(),
-        settings: settings,
-      );
+      return _buildAnimatedRoute((_) => const OnboardingPage(), settings);
     }
 
     // 4. Protected Routes (/profile, /contacts, /circle, /privacy-hub)
@@ -78,53 +87,35 @@ class RouteGuard {
         routeName == AppRoutes.circle ||
         routeName == AppRoutes.privacyHub) {
       if (!authState.isAuthenticated) {
-        return MaterialPageRoute(
-          builder: (_) => LoginPage(redirectRoute: routeName),
-          settings: settings,
-        );
+        return _buildAnimatedRoute((_) => LoginPage(redirectRoute: routeName), settings);
       }
       if (routeName == AppRoutes.circle) {
-        return MaterialPageRoute(
-          builder: (_) => const MyCirclePage(),
-          settings: settings,
-        );
+        return _buildAnimatedRoute((_) => const MyCirclePage(), settings);
       }
       if (routeName == AppRoutes.privacyHub) {
-        return MaterialPageRoute(
-          builder: (_) => const PrivacyHubPage(),
-          settings: settings,
-        );
+        return _buildAnimatedRoute((_) => const PrivacyHubPage(), settings);
       }
     }
 
     // Review Markers (Admin / Responder only)
     if (routeName == AppRoutes.reviewMarkers) {
       if (!authState.isAuthenticated || !authState.isPrivileged) {
-        return MaterialPageRoute(
-          builder: (_) => const HomePage(),
-          settings: settings,
-        );
+        return _buildAnimatedRoute((_) => const HomePage(), settings);
       }
-      return MaterialPageRoute(
-        builder: (_) => const ReviewMarkersPage(),
-        settings: settings,
-      );
+      return _buildAnimatedRoute((_) => const ReviewMarkersPage(), settings);
     }
 
     // 5. Protected Route (/report)
     if (routeName == AppRoutes.report) {
       // Allowed for authenticated and guests with emergency reporting
-      return MaterialPageRoute(
-        builder: (_) => const ReportPage(),
-        settings: settings,
-      );
+      return _buildAnimatedRoute((_) => const ReportPage(), settings);
     }
 
     // 6. Guest Fallback & Standard Route Resolution
     // (allows guest browsing of /home, /safety-map, /alerts, /ai-assistant, /about)
-    return MaterialPageRoute(
-      builder: (_) => _resolveStandardPage(routeName, isOnboarded: authState.isOnboarded),
-      settings: settings,
+    return _buildAnimatedRoute(
+      (_) => _resolveStandardPage(routeName, isOnboarded: authState.isOnboarded),
+      settings,
     );
   }
 

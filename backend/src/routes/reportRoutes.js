@@ -14,6 +14,9 @@ const router = express.Router();
 router.get('/', optionalAuth, reportController.list);
 router.post('/', requireAuth, rejectBanned, reportLimiter, validateReportCreate, reportController.create);
 router.post('/:id/vote', requireAuth, rejectBanned, reportController.vote);
+router.get('/:id/comments', optionalAuth, reportController.listComments);
+router.post('/:id/comments', requireAuth, rejectBanned, reportLimiter, reportController.createComment);
+router.post('/:id/comments/:commentId/vote', requireAuth, rejectBanned, reportController.voteComment);
 router.get('/:id', optionalAuth, reportController.getById);
 router.post('/:id/status', requireAuth, reportController.updateStatus);
 

@@ -1578,6 +1578,72 @@ class AuthService {
   }
 
   // ---------------------------------------------------------------------------
+  // Reddit-style Community Comments & Comment Votes
+  // ---------------------------------------------------------------------------
+  String? _lastCommentError;
+  String? get lastCommentError => _lastCommentError;
+
+  Future<List<Map<String, dynamic>>> fetchReportComments(String reportId) async {
+    final token = await storage.getString(keyToken);
+    final res = await _requestDetailed(
+      method: 'GET',
+      path: '/api/v1/reports/$reportId/comments',
+      token: token,
+    );
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      final list = res.data!['data'];
+      if (list is List) {
+        return list.whereType<Map<String, dynamic>>().toList();
+      }
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>?> createReportComment({
+    required String reportId,
+    required String body,
+    String? parentId,
+  }) async {
+    _lastCommentError = null;
+    final token = await storage.getString(keyToken);
+    final payload = <String, dynamic>{'body': body};
+    if (parentId != null && parentId.isNotEmpty) {
+      payload['parentId'] = parentId;
+    }
+    final res = await _requestDetailed(
+      method: 'POST',
+      path: '/api/v1/reports/$reportId/comments',
+      body: payload,
+      token: token,
+    );
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      return res.data!['data'] as Map<String, dynamic>?;
+    }
+    _lastCommentError = res.error ?? 'Could not post comment.';
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> voteReportComment({
+    required String reportId,
+    required String commentId,
+    required String vote,
+  }) async {
+    final token = await storage.getString(keyToken);
+    final res = await _requestDetailed(
+      method: 'POST',
+      path: '/api/v1/reports/$reportId/comments/$commentId/vote',
+      body: {'vote': vote},
+      token: token,
+    );
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      return res.data!['data'] is Map<String, dynamic>
+          ? res.data!['data'] as Map<String, dynamic>
+          : null;
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
   // M2.2: Aadhaar-lite abuse-prevention link (POST /api/v1/auth/aadhaar/link)
   // ---------------------------------------------------------------------------
   /// Links the last 4 digits of Aadhaar as a salted SHA-256 hash (server-side).

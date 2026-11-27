@@ -11,8 +11,10 @@ import '../lib/main.dart';
 import '../lib/pages/about_page.dart';
 import '../lib/pages/auth/phone_otp_page.dart';
 import '../lib/pages/auth/register_page.dart';
+import '../lib/pages/community_alerts_page.dart';
 import '../lib/pages/emergency_page.dart';
 import '../lib/pages/home_page.dart';
+import '../lib/pages/report_page.dart';
 import '../lib/services/auth_service.dart';
 import '../lib/services/gesture_service.dart';
 import '../lib/services/movement_analyzer.dart';
@@ -498,6 +500,32 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       expect(calls, contains('requestPinWidget'));
+    });
+
+    testWidgets('ReportPage exposes crime & infrastructure categories, GPS refresh, and optional photo picker', (WidgetTester tester) async {
+      await tester.pumpWidget(const MaterialApp(home: ReportPage()));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('Category (Crimes & Infrastructure)'), findsOneWidget);
+      expect(find.text('Theft'), findsOneWidget);
+      expect(find.text('Harassment'), findsOneWidget);
+      expect(find.text('Assault'), findsOneWidget);
+      expect(find.text('Dark Area'), findsOneWidget);
+      expect(find.byTooltip('Refresh live GPS'), findsOneWidget);
+      expect(find.text('Attach Photo (Optional, ≤500KB)'), findsOneWidget);
+      expect(find.textContaining('Anonymous per thread'), findsOneWidget);
+    });
+
+    testWidgets('CommunityAlertsPage exposes Reddit-style crime/infra category chips & Verified filter', (WidgetTester tester) async {
+      await tester.pumpWidget(const MaterialApp(home: CommunityAlertsPage()));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('Crimes'), findsOneWidget);
+      expect(find.text('Infrastructure'), findsOneWidget);
+      expect(find.text('Dark Area'), findsOneWidget);
+      expect(find.text('Verified only'), findsOneWidget);
     });
   });
 }

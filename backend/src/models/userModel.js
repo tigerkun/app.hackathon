@@ -53,6 +53,9 @@ function createUser({
   aadhaarLast4Salt = null,
   aadhaarLast4Hash = null,
   phoneVerified = false,
+  lastKnownLat = null,
+  lastKnownLng = null,
+  lastSeenAt = null,
   safeId = generateSafeId(),
   createdAt = new Date().toISOString(),
   updatedAt = new Date().toISOString()
@@ -78,6 +81,9 @@ function createUser({
     aadhaarLast4Salt,
     aadhaarLast4Hash,
     phoneVerified: Boolean(phoneVerified),
+    lastKnownLat: lastKnownLat !== null && lastKnownLat !== undefined ? Number(lastKnownLat) : null,
+    lastKnownLng: lastKnownLng !== null && lastKnownLng !== undefined ? Number(lastKnownLng) : null,
+    lastSeenAt: lastSeenAt ?? null,
     createdAt,
     updatedAt
   };

@@ -31,6 +31,7 @@ dependencies:
   flutter:
     sdk: flutter
   lottie: ^3.1.0
+  image_picker: ^1.1.2
   # TODO(BUILD): share_plus ^10.0.0 (locked 10.1.4) and sensors_plus ^6.1.1 (locked 6.1.2) emit a Flutter KGP deprecation warning on AGP 9.3.1;
   # verified via `flutter pub outdated` that no non-breaking minor/patch releases migrate off KGP — only breaking majors (share_plus 13.x / sensors_plus 7.x).
   share_plus: ^10.0.0

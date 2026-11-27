@@ -3,6 +3,8 @@
  * Handles incident reporting, listing, filtering, and retrieval.
  */
 
+const crypto = require('crypto');
+const config = require('../config');
 const { db } = require('../data/store');
 const { createReport, toSafeReport, VALID_REPORT_STATUSES } = require('../models/reportModel');
 const { findNearby } = require('../services/geoService');
@@ -11,6 +13,106 @@ const { findNearby } = require('../services/geoService');
 // auto-archive off the live feed instead of lingering for a day.
 const REPORT_FRESHNESS_WINDOW_MS = 24 * 60 * 60 * 1000;
 const UNVERIFIED_STATUSES = new Set(['pending', 'under_investigation']);
+const CONSENSUS_VERIFY_RATIO = 0.7;
+const CONSENSUS_REJECT_RATIO = 0.3;
+const MIN_CONSENSUS_QUORUM = 5;
+const MAX_CONSENSUS_QUORUM = 25;
+
+function deriveThreadTag(reportId, userId) {
+  if (!userId) return 'Anonymous';
+  const secret = config.jwtSecret || 'safesphere_thread_tag_salt';
+  const hex = crypto
+    .createHmac('sha256', String(secret))
+    .update(`${reportId}:${userId}`)
+    .digest('hex')
+    .slice(0, 4)
+    .toUpperCase();
+  return `Citizen #${hex}`;
+}
+
+function computeAreaQuorum(report) {
+  if (!report || report.latitude === null || report.longitude === null) {
+    return MIN_CONSENSUS_QUORUM;
+  }
+  const nearbyUsers = db.countNearbyActiveUsers(report.latitude, report.longitude, 15);
+  return Math.max(
+    MIN_CONSENSUS_QUORUM,
+    Math.min(MAX_CONSENSUS_QUORUM, Math.ceil(nearbyUsers * 0.25))
+  );
+}
+
+function recordPassiveUserLocation(user, lat, lng) {
+  if (!user || !user.id) return;
+  const nLat = Number(lat);
+  const nLng = Number(lng);
+  if (!Number.isFinite(nLat) || !Number.isFinite(nLng)) return;
+  if (nLat < -90 || nLat > 90 || nLng < -180 || nLng > 180) return;
+  db.updateUser(user.id, {
+    lastKnownLat: nLat,
+    lastKnownLng: nLng,
+    lastSeenAt: new Date().toISOString()
+  });
+}
+
+function decorateReportForViewer(report, viewerUser) {
+  const isPrivileged = Boolean(
+    viewerUser && (viewerUser.role === 'admin' || viewerUser.role === 'first_responder' || viewerUser.role === 'responder')
+  );
+  const myId = viewerUser ? viewerUser.id : null;
+  const isOwner = Boolean(myId && report.reportedBy === myId);
+
+  const safe = toSafeReport(report);
+  const tally = db.getReportVoteTally(report.id);
+  const upvotes = tally.upvotes;
+  const downvotes = tally.downvotes;
+  const totalVotes = upvotes + downvotes;
+  const quorum = computeAreaQuorum(report);
+  const reporter = report.reportedBy ? db.findUserById(report.reportedBy) : null;
+
+  safe.upvotes = upvotes;
+  safe.downvotes = downvotes;
+  safe.quorumRequired = quorum;
+  safe.consensusRatio = totalVotes > 0 ? Math.round((upvotes / totalVotes) * 100) / 100 : 0;
+  safe.verificationSource = report.verificationSource || (report.status === 'verified' ? 'moderator' : 'pending');
+  safe.authorTag = deriveThreadTag(report.id, report.reportedBy);
+  safe.authorKarma = reporter ? Number(reporter.reputationScore || 0) : 0;
+  safe.commentCount = db.countReportComments(report.id);
+  safe.expired = isReportExpired(report);
+  safe.isMine = isOwner;
+  // Anonymity invariant: never leak raw reportedBy user ID to unrelated citizens.
+  safe.reportedBy = (isOwner || isPrivileged) ? (report.reportedBy ?? null) : null;
+
+  const myVote = myId ? db.getUserReportVote(report.id, myId) : null;
+  safe.myVote = myVote ? myVote.vote : null;
+  return safe;
+}
+
+function applyVerdictKarma(report, targetStatus) {
+  if (!report || !report.reportedBy || report.karmaAwarded) return false;
+  const reporter = db.findUserById(report.reportedBy);
+  if (!reporter) return false;
+
+  let reputation = Number(reporter.reputationScore || 0);
+  let strikes = Number(reporter.strikes || 0);
+  let banned = Boolean(reporter.banned);
+
+  if (targetStatus === 'verified') {
+    reputation += 10;
+  } else if (targetStatus === 'rejected') {
+    reputation -= 20;
+    strikes += 1;
+    if (strikes >= 3) banned = true;
+  } else {
+    return false;
+  }
+
+  db.updateUser(reporter.id, {
+    reputationScore: reputation,
+    strikes,
+    banned
+  });
+  return true;
+}
 
 // Expiry instant: persisted expiresAt wins; fall back to createdAt + window
 // for rows written before the column existed.
@@ -50,17 +152,11 @@ function list(req, res, next) {
     const lngParam = req.query.longitude ?? req.query.lng ?? req.query.lon;
     const radiusParam = req.query.radiusKm ?? req.query.radius;
 
-    const decorate = (reports) => reports.map((r) => {
-      const safe = toSafeReport(r);
-      const tally = db.getReportVoteTally(r.id);
-      safe.upvotes = tally.upvotes;
-      safe.downvotes = tally.downvotes;
-      safe.expired = isReportExpired(r);
-      safe.isMine = Boolean(myId && r.reportedBy === myId);
-      const myVote = myId ? db.getUserReportVote(r.id, myId) : null;
-      safe.myVote = myVote ? myVote.vote : null;
-      return safe;
-    });
+    const decorate = (reports) => reports.map((r) => decorateReportForViewer(r, req.user));
+
+    if (req.user && latParam !== undefined && lngParam !== undefined && latParam !== '' && lngParam !== '') {
+      recordPassiveUserLocation(req.user, latParam, lngParam);
+    }
 
     // M2.4 freshness: expired unverified reports drop out of the default feed
     const isFreshEnough = (r) => !isReportExpired(r);
@@ -153,6 +249,10 @@ function create(req, res, next) {
     const { type, description, location, latitude, longitude, attachments, photoUrl } = req.body;
     const reportedBy = req.user.id;
 
+    if (latitude !== undefined && latitude !== null && longitude !== undefined && longitude !== null) {
+      recordPassiveUserLocation(req.user, latitude, longitude);
+    }
+
     const report = createReport({
       type,
       description,
@@ -163,6 +263,7 @@ function create(req, res, next) {
       attachments,
       photoUrl: photoUrl || null
     });
+    report.quorumRequired = computeAreaQuorum(report);
 
     // M2.4: unverified reports expire 24h after creation — stale unverified
     // reports auto-archive so old incidents don't linger on the live feed.
@@ -172,7 +273,7 @@ function create(req, res, next) {
     ).toISOString();
 
     const saved = db.saveReport(report);
-    const safeReport = toSafeReport(saved);
+    const safeReport = decorateReportForViewer(saved, req.user);
 
     res.status(201).json({
       success: true,
@@ -264,7 +365,6 @@ function vote(req, res, next) {
       });
     }
 
-    const crypto = require('crypto');
     const voteRecord = {
       id: `vte_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
       reportId: id,
@@ -275,10 +375,36 @@ function vote(req, res, next) {
     db.saveReportVote(voteRecord);
 
     const tally = db.getReportVoteTally(id);
-    db.updateReport(id, {
+    const totalVotes = tally.upvotes + tally.downvotes;
+    const confirmRatio = totalVotes > 0 ? tally.upvotes / totalVotes : 0;
+    const quorum = computeAreaQuorum(report);
+
+    const updates = {
       upvotes: tally.upvotes,
-      downvotes: tally.downvotes
-    });
+      downvotes: tally.downvotes,
+      quorumRequired: quorum
+    };
+
+    // Dynamic 7:3 consensus evaluation for unverified reports once area quorum is met
+    if (UNVERIFIED_STATUSES.has(report.status) && totalVotes >= quorum) {
+      if (confirmRatio >= CONSENSUS_VERIFY_RATIO) {
+        updates.status = 'verified';
+        updates.verificationSource = 'community_consensus';
+        updates.expiresAt = null;
+        if (!report.karmaAwarded && applyVerdictKarma(report, 'verified')) {
+          updates.karmaAwarded = true;
+        }
+      } else if (confirmRatio < CONSENSUS_REJECT_RATIO) {
+        updates.status = 'rejected';
+        updates.verificationSource = 'community_rejected';
+        if (!report.karmaAwarded && applyVerdictKarma(report, 'rejected')) {
+          updates.karmaAwarded = true;
+        }
+      }
+    }
+
+    const updated = db.updateReport(id, updates);
+    const reporter = updated.reportedBy ? db.findUserById(updated.reportedBy) : null;
 
     res.status(200).json({
       success: true,
@@ -287,7 +413,12 @@ function vote(req, res, next) {
         reportId: id,
         myVote: vote,
         upvotes: tally.upvotes,
-        downvotes: tally.downvotes
+        downvotes: tally.downvotes,
+        status: updated.status,
+        verificationSource: updated.verificationSource,
+        quorumRequired: quorum,
+        consensusRatio: totalVotes > 0 ? Math.round((tally.upvotes / totalVotes) * 100) / 100 : 0,
+        authorKarma: reporter ? Number(reporter.reputationScore || 0) : 0
       }
     });
   } catch (err) {
@@ -333,15 +464,7 @@ function getById(req, res, next) {
       }
     }
 
-    const safeReport = toSafeReport(report);
-    const tally = db.getReportVoteTally(report.id);
-    safeReport.upvotes = tally.upvotes;
-    safeReport.downvotes = tally.downvotes;
-    safeReport.expired = isReportExpired(report);
-    const viewerId = req.user ? req.user.id : null;
-    safeReport.isMine = Boolean(viewerId && report.reportedBy === viewerId);
-    const myVote = viewerId ? db.getUserReportVote(report.id, viewerId) : null;
-    safeReport.myVote = myVote ? myVote.vote : null;
+    const safeReport = decorateReportForViewer(report, req.user);
     res.status(200).json({
       success: true,
       data: safeReport,
@@ -396,49 +519,28 @@ function updateStatus(req, res, next) {
     }
 
     // M2.5: verified reports persist — clear the freshness expiry on verdicts
-    const updates = { status };
+    const updates = {
+      status,
+      verificationSource: (status === 'verified' || status === 'rejected' || status === 'resolved')
+        ? 'moderator'
+        : existing.verificationSource
+    };
     if (status === 'verified' || status === 'resolved') updates.expiresAt = null;
-    const updated = db.updateReport(id, updates);
-    const safeReport = toSafeReport(updated);
 
     // M2.5/M2.6: moderator verdicts drive reporter reputation, strikes, and
-    // bans. 'verified' = accurate report (+10, expiry cleared — verified
-    // reports persist); 'rejected' = false report (-20, +1 strike, 3 strikes
-    // = banned from community submissions). SOS/tracking/chat/dialer are
-    // NEVER gated by any of this (safety invariants are absolute).
-    //
-    // Effects apply ONLY on the first terminal verdict: re-issuing the same
-    // status or flip-flopping verified↔rejected must not farm reputation or
-    // stack strikes. Moderators also get no reputation for verdicts on their
-    // OWN reports (self-verdict farming).
+    // bans. 'verified' = +10; 'rejected' = -20 + 1 strike (3 strikes = banned).
+    // Apply once per report (!karmaAwarded) on the first terminal verdict so
+    // consensus & moderator verdicts or status flip-flops never stack karma/strikes.
     const isFirstVerdict = !['verified', 'rejected', 'resolved'].includes(existing.status);
-    const isSelfVerdict = Boolean(updated.reportedBy) && updated.reportedBy === req.user.id;
-    if (updated.reportedBy && isFirstVerdict && !isSelfVerdict) {
-      const reporter = db.findUserById(updated.reportedBy);
-      if (reporter) {
-        let reputation = Number(reporter.reputationScore || 0);
-        let strikes = Number(reporter.strikes || 0);
-        let banned = Boolean(reporter.banned);
-
-        if (status === 'verified') {
-          reputation += 10;
-        } else if (status === 'rejected') {
-          reputation -= 20;
-          strikes += 1;
-          if (strikes >= 3) banned = true;
-        }
-
-        if (reputation !== Number(reporter.reputationScore || 0) ||
-            strikes !== Number(reporter.strikes || 0) ||
-            banned !== Boolean(reporter.banned)) {
-          db.updateUser(reporter.id, {
-            reputationScore: reputation,
-            strikes,
-            banned
-          });
-        }
+    const isSelfVerdict = Boolean(existing.reportedBy) && existing.reportedBy === req.user.id;
+    if (existing.reportedBy && isFirstVerdict && !isSelfVerdict && !existing.karmaAwarded) {
+      if (applyVerdictKarma(existing, status)) {
+        updates.karmaAwarded = true;
       }
     }
+
+    const updated = db.updateReport(id, updates);
+    const safeReport = decorateReportForViewer(updated, req.user);
 
     res.status(200).json({
       success: true,
@@ -451,10 +553,231 @@ function updateStatus(req, res, next) {
   }
 }
 
+function decorateCommentForViewer(comment, report, viewerUser) {
+  const myId = viewerUser ? viewerUser.id : null;
+  const author = comment.userId ? db.findUserById(comment.userId) : null;
+  const tally = db.getCommentVoteTally(comment.id);
+  const myVote = myId ? db.getUserCommentVote(comment.id, myId) : null;
+  return {
+    id: comment.id,
+    reportId: comment.reportId,
+    parentId: comment.parentId ?? null,
+    body: comment.body,
+    authorTag: deriveThreadTag(report.id, comment.userId),
+    authorKarma: author ? Number(author.reputationScore || 0) : 0,
+    isOp: Boolean(report.reportedBy && comment.userId && report.reportedBy === comment.userId),
+    isMine: Boolean(myId && comment.userId === myId),
+    upvotes: tally.upvotes,
+    downvotes: tally.downvotes,
+    myVote: myVote ? myVote.vote : null,
+    createdAt: comment.createdAt
+  };
+}
+
+function listComments(req, res, next) {
+  try {
+    const { id } = req.params;
+    const report = db.findReportById(id);
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'REPORT_NOT_FOUND', message: `Report with ID ${id} not found`, details: [] }
+      });
+    }
+
+    if (isReportExpired(report)) {
+      const viewerId = req.user ? req.user.id : null;
+      const viewerPrivileged = Boolean(
+        req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
+      );
+      if (!(viewerId && report.reportedBy === viewerId) && !viewerPrivileged) {
+        return res.status(404).json({
+          success: false,
+          error: { code: 'REPORT_NOT_FOUND', message: `Report with ID ${id} not found`, details: [] }
+        });
+      }
+    }
+
+    const comments = db.getReportComments(id).map((c) => decorateCommentForViewer(c, report, req.user));
+    res.status(200).json({
+      success: true,
+      count: comments.length,
+      data: comments
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function createComment(req, res, next) {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Sign in to comment on reports.', details: [] }
+      });
+    }
+    if (req.user.banned) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'INSUFFICIENT_REPUTATION',
+          message: 'This account is banned from community interactions after repeated false reports.',
+          details: []
+        }
+      });
+    }
+    if (!req.user.phoneVerified) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PHONE_NOT_VERIFIED',
+          message: 'Verify your account with the OTP sent at sign-up before commenting.',
+          details: []
+        }
+      });
+    }
+
+    const { id } = req.params;
+    const report = db.findReportById(id);
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'REPORT_NOT_FOUND', message: `Report with ID ${id} not found`, details: [] }
+      });
+    }
+
+    const rawBody = req.body?.body ?? req.body?.text;
+    const parentId = req.body?.parentId ? String(req.body.parentId).trim() : null;
+    if (!rawBody || typeof rawBody !== 'string' || !rawBody.trim() || rawBody.trim().length > 1000) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Comment must be between 1 and 1000 characters.',
+          details: [{ field: 'body', issue: 'Comment body must be 1..1000 characters.' }]
+        }
+      });
+    }
+
+    if (parentId) {
+      const parent = db.findReportCommentById(parentId);
+      if (!parent || parent.reportId !== id) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Parent comment not found on this report.',
+            details: [{ field: 'parentId', issue: 'Invalid parentId for this report.' }]
+          }
+        });
+      }
+    }
+
+    const commentId = `cmt_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const saved = db.saveReportComment({
+      id: commentId,
+      reportId: id,
+      userId: req.user.id,
+      parentId,
+      body: rawBody.trim()
+    });
+
+    const decorated = decorateCommentForViewer(saved, report, req.user);
+    res.status(201).json({
+      success: true,
+      message: 'Comment posted anonymously',
+      data: decorated
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function voteComment(req, res, next) {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Sign in to vote on comments.', details: [] }
+      });
+    }
+    if (req.user.banned) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'INSUFFICIENT_REPUTATION',
+          message: 'This account is banned from community voting after repeated false reports.',
+          details: []
+        }
+      });
+    }
+    if (!req.user.phoneVerified) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PHONE_NOT_VERIFIED',
+          message: 'Verify your account before voting on comments.',
+          details: []
+        }
+      });
+    }
+
+    const { id, commentId } = req.params;
+    const { vote } = req.body || {};
+    if (vote !== 'confirm' && vote !== 'decline') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'vote must be "confirm" or "decline".', details: [] }
+      });
+    }
+
+    const comment = db.findReportCommentById(commentId);
+    if (!comment || comment.reportId !== id) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'COMMENT_NOT_FOUND', message: `Comment ${commentId} not found`, details: [] }
+      });
+    }
+
+    if (comment.userId && comment.userId === req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'CANNOT_VOTE_OWN_COMMENT', message: 'You cannot vote on your own comment.', details: [] }
+      });
+    }
+
+    db.saveCommentVote({
+      id: `cmv_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      commentId,
+      userId: req.user.id,
+      vote,
+      createdAt: new Date().toISOString()
+    });
+
+    const tally = db.getCommentVoteTally(commentId);
+    res.status(200).json({
+      success: true,
+      message: `Comment vote recorded: ${vote}`,
+      data: {
+        commentId,
+        myVote: vote,
+        upvotes: tally.upvotes,
+        downvotes: tally.downvotes
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   create,
   getById,
   updateStatus,
-  vote
+  vote,
+  listComments,
+  createComment,
+  voteComment
 };

@@ -248,6 +248,28 @@ class AppDrawer extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             const Icon(Icons.verified, color: AppColors.teal, size: 16),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: user.reputationScore < 0
+                    ? Colors.redAccent.withValues(alpha: 0.2)
+                    : AppColors.teal.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: user.reputationScore < 0 ? Colors.redAccent : AppColors.teal,
+                  width: 0.8,
+                ),
+              ),
+              child: Text(
+                'Karma ${user.reputationScore > 0 ? '+' : ''}${user.reputationScore}',
+                style: TextStyle(
+                  color: user.reputationScore < 0 ? Colors.redAccent : AppColors.teal,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
           ],
         ),
         accountEmail: FittedBox(

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
 import '../services/map_config.dart';
 import '../theme/app_colors.dart';
+import '../widgets/animated_widgets.dart';
 import '../widgets/app_drawer.dart';
 
 class CommunityAlertsPage extends StatefulWidget {
@@ -89,12 +90,21 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     }
   }
 
+  static const Set<String> _crimeTypes = {'theft', 'harassment', 'assault', 'suspicious'};
+  static const Set<String> _infraTypes = {'dark area', 'road hazard', 'flooding', 'transit issue', 'accident', 'other'};
+
   /// Map backend report type → severity display
   String _severityLabel(String type) {
     switch (type.toLowerCase()) {
       case 'theft':
       case 'harassment':
-        return 'Warning';
+      case 'assault':
+        return 'Threat';
+      case 'dark area':
+      case 'road hazard':
+      case 'flooding':
+      case 'transit issue':
+        return 'Infra';
       case 'accident':
         return 'Caution';
       default:
@@ -106,7 +116,14 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     switch (type.toLowerCase()) {
       case 'theft':
       case 'harassment':
+      case 'assault':
         return Colors.redAccent;
+      case 'dark area':
+        return Colors.amberAccent;
+      case 'road hazard':
+      case 'flooding':
+      case 'transit issue':
+        return AppColors.purple;
       case 'accident':
         return Colors.orangeAccent;
       default:
@@ -120,10 +137,20 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
         return Icons.shopping_bag_outlined;
       case 'harassment':
         return Icons.person_off_outlined;
+      case 'assault':
+        return Icons.gpp_bad_outlined;
       case 'accident':
         return Icons.car_crash_outlined;
       case 'suspicious':
         return Icons.visibility_outlined;
+      case 'dark area':
+        return Icons.lightbulb_outline;
+      case 'road hazard':
+        return Icons.construction_outlined;
+      case 'flooding':
+        return Icons.water_drop_outlined;
+      case 'transit issue':
+        return Icons.directions_bus_outlined;
       default:
         return Icons.warning_amber_rounded;
     }
@@ -144,7 +171,15 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
 
   List<Map<String, dynamic>> get _filteredReports {
     var reports = _rawReports;
-    if (selectedFilter != 'All') {
+    if (selectedFilter == 'Crimes') {
+      reports = reports
+          .where((r) => _crimeTypes.contains((r['type'] as String? ?? '').toLowerCase()))
+          .toList();
+    } else if (selectedFilter == 'Infrastructure') {
+      reports = reports
+          .where((r) => _infraTypes.contains((r['type'] as String? ?? '').toLowerCase()))
+          .toList();
+    } else if (selectedFilter != 'All') {
       reports = reports
           .where((r) => (r['type'] as String? ?? '').toLowerCase() == selectedFilter.toLowerCase())
           .toList();
@@ -286,42 +321,59 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
 
             const SizedBox(height: 10),
 
-            // Filter chips
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                ...['All', 'Theft', 'Harassment', 'Accident', 'Suspicious'].map((filter) {
-                  return ChoiceChip(
-                    label: Text(filter),
-                    selected: selectedFilter == filter,
-                    onSelected: (_) {
+            // Filter chips (grouped Reddit-like topic filters)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ...[
+                    'All',
+                    'Crimes',
+                    'Infrastructure',
+                    'Theft',
+                    'Harassment',
+                    'Assault',
+                    'Suspicious',
+                    'Dark Area',
+                    'Road Hazard',
+                    'Flooding',
+                    'Transit Issue',
+                    'Accident',
+                  ].map((filter) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        label: Text(filter, style: const TextStyle(fontSize: 12)),
+                        selected: selectedFilter == filter,
+                        onSelected: (_) {
+                          try {
+                            HapticFeedback.selectionClick();
+                          } catch (_) {}
+                          setState(() => selectedFilter = filter);
+                        },
+                      ),
+                    );
+                  }),
+                  FilterChip(
+                    avatar: Icon(
+                      Icons.verified_outlined,
+                      size: 16,
+                      color: _verifiedOnly ? Colors.white : AppColors.teal,
+                    ),
+                    label: const Text("Verified only", style: TextStyle(fontSize: 12)),
+                    selected: _verifiedOnly,
+                    selectedColor: AppColors.teal,
+                    onSelected: (val) {
                       try {
                         HapticFeedback.selectionClick();
                       } catch (_) {}
-                      setState(() => selectedFilter = filter);
+                      setState(() {
+                        _verifiedOnly = val;
+                      });
                     },
-                  );
-                }),
-                FilterChip(
-                  avatar: Icon(
-                    Icons.verified_outlined,
-                    size: 16,
-                    color: _verifiedOnly ? Colors.white : AppColors.teal,
                   ),
-                  label: const Text("Verified only"),
-                  selected: _verifiedOnly,
-                  selectedColor: AppColors.teal,
-                  onSelected: (val) {
-                    try {
-                      HapticFeedback.selectionClick();
-                    } catch (_) {}
-                    setState(() {
-                      _verifiedOnly = val;
-                    });
-                  },
-                ),
-              ],
+                ],
+              ),
             ),
 
             const SizedBox(height: 16),
@@ -364,7 +416,10 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
                               onRefresh: _fetchRealCommunityAlerts,
                               child: ListView.builder(
                                 itemCount: filtered.length,
-                                itemBuilder: (context, index) => _alertCard(filtered[index]),
+                                itemBuilder: (context, index) => FadeSlideEntrance(
+                                  index: index,
+                                  child: _alertCard(filtered[index]),
+                                ),
                               ),
                             ),
             ),
@@ -380,35 +435,63 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     );
   }
 
-  Widget _statusBadge(String status) {
+  Widget _karmaBadge(int karma) {
+    final bool isPos = karma > 0;
+    final bool isNeg = karma < 0;
+    final Color fg = isPos
+        ? AppColors.teal
+        : isNeg
+            ? Colors.redAccent
+            : Colors.white70;
+    final Color bg = isPos
+        ? AppColors.teal.withValues(alpha: 0.14)
+        : isNeg
+            ? Colors.redAccent.withValues(alpha: 0.16)
+            : Colors.white10;
+    final String sign = isPos ? '+' : '';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: fg.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        "Karma $sign$karma",
+        style: TextStyle(color: fg, fontSize: 10, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+
+  Widget _statusBadge(String status, {String verificationSource = 'pending'}) {
     Color bg;
     Color fg;
     String label;
 
     switch (status.toLowerCase()) {
       case 'verified':
-        bg = AppColors.teal.withOpacity(0.18);
+        bg = AppColors.teal.withValues(alpha: 0.18);
         fg = AppColors.teal;
-        label = 'Verified';
+        label = verificationSource == 'community_consensus' ? 'Reported (7:3)' : 'Mod Verified';
         break;
       case 'under_investigation':
-        bg = Colors.blue.withOpacity(0.18);
+        bg = Colors.blue.withValues(alpha: 0.18);
         fg = Colors.lightBlueAccent;
         label = 'Investigating';
         break;
       case 'resolved':
-        bg = Colors.green.withOpacity(0.18);
+        bg = Colors.green.withValues(alpha: 0.18);
         fg = Colors.greenAccent;
         label = 'Resolved';
         break;
       case 'rejected':
-        bg = Colors.red.withOpacity(0.18);
+        bg = Colors.red.withValues(alpha: 0.18);
         fg = Colors.redAccent;
-        label = 'Rejected';
+        label = 'Disputed';
         break;
       case 'pending':
       default:
-        bg = Colors.amber.withOpacity(0.18);
+        bg = Colors.amber.withValues(alpha: 0.18);
         fg = Colors.amberAccent;
         label = 'Pending';
         break;
@@ -419,7 +502,7 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: fg.withOpacity(0.4)),
+        border: Border.all(color: fg.withValues(alpha: 0.4)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -447,192 +530,475 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     final type = report['type'] as String? ?? 'Other';
     final description = report['description'] as String? ?? 'No details provided';
     final location = report['location'] as String? ?? 'Unknown area';
-    final status = report['status'] as String? ?? 'pending';
     final createdAt = report['createdAt'] as String? ?? report['reportedAt'] as String? ?? 'Unknown';
     final id = report['id'] as String? ?? 'N/A';
     final lat = report['latitude'];
     final lon = report['longitude'];
-    // F5-4: photo attachment in detail view
     final photoUrl = report['photoUrl'] as String?;
+    final authorTag = report['authorTag'] as String? ?? 'Anonymous';
+    final authorKarma = (report['authorKarma'] as num?)?.toInt() ?? 0;
 
-    showDialog(
+    final commentController = TextEditingController();
+    List<Map<String, dynamic>> comments = [];
+    bool loadingComments = true;
+    bool postingComment = false;
+    bool startedFetch = false;
+
+    showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.bgDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        side: BorderSide(color: AppColors.border),
+      ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
+        builder: (ctx, setSheetState) {
+          Future<void> loadComments() async {
+            final loaded = await AuthService.instance.fetchReportComments(id);
+            if (!ctx.mounted) return;
+            setSheetState(() {
+              comments = loaded;
+              loadingComments = false;
+            });
+          }
+
+          if (!startedFetch) {
+            startedFetch = true;
+            Future.microtask(loadComments);
+          }
+
           final isMine = report['isMine'] == true;
-          final upvotes = report['upvotes'] ?? 0;
-          final downvotes = report['downvotes'] ?? 0;
+          final upvotes = (report['upvotes'] as num?)?.toInt() ?? 0;
+          final downvotes = (report['downvotes'] as num?)?.toInt() ?? 0;
+          final totalVotes = upvotes + downvotes;
+          final quorum = (report['quorumRequired'] as num?)?.toInt() ?? 5;
+          final ratioPct = totalVotes > 0 ? ((upvotes / totalVotes) * 100).round() : 0;
+          final status = report['status'] as String? ?? 'pending';
+          final source = report['verificationSource'] as String? ?? 'pending';
           final myVote = report['myVote'] as String?;
 
           Future<void> castModalVote(String vote) async {
             final messenger = ScaffoldMessenger.of(context);
-            final result = await AuthService.instance.voteReport(
-              reportId: id,
-              vote: vote,
-            );
-            if (!mounted) return;
+            final result = await AuthService.instance.voteReport(reportId: id, vote: vote);
+            if (!mounted || !ctx.mounted) return;
             if (result != null) {
-              final data = result['data'] is Map<String, dynamic>
-                  ? result['data'] as Map<String, dynamic>
-                  : result;
-              setDialogState(() {
-                report['upvotes'] = data['upvotes'] ?? report['upvotes'];
-                report['downvotes'] = data['downvotes'] ?? report['downvotes'];
-                report['myVote'] = data['myVote'] ?? vote;
+              setSheetState(() {
+                report['upvotes'] = result['upvotes'] ?? report['upvotes'];
+                report['downvotes'] = result['downvotes'] ?? report['downvotes'];
+                report['myVote'] = result['myVote'] ?? vote;
+                if (result['status'] != null) report['status'] = result['status'];
+                if (result['verificationSource'] != null) {
+                  report['verificationSource'] = result['verificationSource'];
+                }
+                if (result['authorKarma'] != null) {
+                  report['authorKarma'] = result['authorKarma'];
+                }
               });
               await _fetchRealCommunityAlerts();
             } else {
               messenger.showSnackBar(
                 const SnackBar(
-                  content: Text(
-                      "Vote could not be recorded — check your connection or account status."),
+                  content: Text("Vote could not be recorded — verify your account or connection."),
                   backgroundColor: Colors.redAccent,
                 ),
               );
             }
           }
 
-          return AlertDialog(
-            backgroundColor: const Color(0xFF1E293B),
-            title: Row(
-              children: [
-                Icon(_typeIcon(type), color: _severityColor(type)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    "$type Report",
-                    style: const TextStyle(color: Colors.white, fontSize: 18),
-                  ),
+          Future<void> submitComment() async {
+            final text = commentController.text.trim();
+            if (text.isEmpty) return;
+            setSheetState(() => postingComment = true);
+            final created = await AuthService.instance.createReportComment(
+              reportId: id,
+              body: text,
+            );
+            if (!ctx.mounted) return;
+            setSheetState(() => postingComment = false);
+            if (created != null) {
+              commentController.clear();
+              setSheetState(() {
+                comments = [...comments, created];
+                report['commentCount'] = ((report['commentCount'] as num?)?.toInt() ?? 0) + 1;
+              });
+              if (mounted) setState(() {});
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(AuthService.instance.lastCommentError ?? 'Sign in with verified account to comment.'),
+                  backgroundColor: Colors.redAccent,
                 ),
-                _statusBadge(status),
-              ],
-            ),
-            content: SingleChildScrollView(
+              );
+            }
+          }
+
+          Future<void> voteOnComment(Map<String, dynamic> c, String vote) async {
+            final commentId = c['id'] as String?;
+            if (commentId == null) return;
+            final res = await AuthService.instance.voteReportComment(
+              reportId: id,
+              commentId: commentId,
+              vote: vote,
+            );
+            if (!ctx.mounted || res == null) return;
+            setSheetState(() {
+              c['upvotes'] = res['upvotes'] ?? c['upvotes'];
+              c['downvotes'] = res['downvotes'] ?? c['downvotes'];
+              c['myVote'] = res['myVote'] ?? vote;
+            });
+          }
+
+          return DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.85,
+            minChildSize: 0.5,
+            maxChildSize: 0.95,
+            builder: (ctx, scrollController) => Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 12,
+                bottom: 12 + MediaQuery.of(ctx).viewInsets.bottom,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // F5-4: show photo in detail dialog if present
-                  if (photoUrl != null && photoUrl.isNotEmpty) ...[
-                    _buildPhotoThumbnail(photoUrl),
-                    const SizedBox(height: 12),
-                  ],
-                  Text(
-                    description,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(4)),
+                    ),
                   ),
-                  const SizedBox(height: 16),
-                  const Divider(color: Colors.white12),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
-                      const Icon(Icons.location_on_outlined, size: 14, color: Colors.white60),
-                      const SizedBox(width: 6),
+                      Icon(_typeIcon(type), color: _severityColor(type)),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          location,
-                          style: const TextStyle(color: Colors.white70, fontSize: 13),
+                          "$type Thread",
+                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                       ),
-                    ],
-                  ),
-                  if (lat != null && lon != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      "GPS: $lat, $lon",
-                      style: const TextStyle(color: Colors.white38, fontSize: 12),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.access_time, size: 14, color: Colors.white60),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          "Reported ${_formatTime(createdAt)}",
-                          style: const TextStyle(color: Colors.white70, fontSize: 12),
-                        ),
+                      _statusBadge(status, verificationSource: source),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white60),
+                        onPressed: () => Navigator.pop(ctx),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    "ID: $id",
-                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  Row(
+                    children: [
+                      Text(
+                        "Posted anonymously as $authorTag",
+                        style: const TextStyle(color: Colors.white60, fontSize: 12),
+                      ),
+                      const SizedBox(width: 8),
+                      _karmaBadge((report['authorKarma'] as num?)?.toInt() ?? authorKarma),
+                    ],
                   ),
-                  if (AuthService.instance.currentUser != null) ...[
-                    const SizedBox(height: 12),
-                    const Divider(color: Colors.white12),
-                    const SizedBox(height: 8),
-                    if (isMine)
-                      const Text(
-                        "Your report — voting on your own report isn't allowed",
-                        style: TextStyle(
-                          color: Colors.white54,
-                          fontSize: 12,
-                          fontStyle: FontStyle.italic,
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      children: [
+                        if (photoUrl != null && photoUrl.isNotEmpty) ...[
+                          _buildPhotoThumbnail(photoUrl),
+                          const SizedBox(height: 12),
+                        ],
+                        Text(description, style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4)),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on_outlined, size: 14, color: AppColors.teal),
+                            const SizedBox(width: 6),
+                            Expanded(child: Text(location, style: const TextStyle(color: Colors.white70, fontSize: 12.5))),
+                          ],
                         ),
-                      )
-                    else
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          ActionChip(
-                            avatar: const Icon(Icons.thumb_up, size: 14, color: Colors.teal),
-                            label: Text(
-                              "Confirm $upvotes",
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.teal,
-                                fontWeight: myVote == 'confirm' ? FontWeight.bold : FontWeight.normal,
-                              ),
-                            ),
-                            backgroundColor: myVote == 'confirm'
-                                ? Colors.teal.withValues(alpha: 0.22)
-                                : Colors.teal.withValues(alpha: 0.08),
-                            side: BorderSide(
-                              color: Colors.teal,
-                              width: myVote == 'confirm' ? 1.5 : 0.8,
-                            ),
-                            onPressed: () => castModalVote('confirm'),
+                        if (lat != null && lon != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text("GPS: $lat, $lon • ${_formatTime(createdAt)}",
+                                style: const TextStyle(color: Colors.white54, fontSize: 11.5)),
                           ),
-                          ActionChip(
-                            avatar: const Icon(Icons.thumb_down, size: 14, color: Colors.redAccent),
-                            label: Text(
-                              "Decline $downvotes",
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.redAccent,
-                                fontWeight: myVote == 'decline' ? FontWeight.bold : FontWeight.normal,
+                        const SizedBox(height: 12),
+                        // 7:3 Consensus Meter
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.glass,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    totalVotes == 0
+                                        ? "Needs $quorum area votes (7:3 ratio)"
+                                        : "$upvotes up • $downvotes down ($ratioPct% confirm)",
+                                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                                  ),
+                                  Text(
+                                    "$totalVotes/$quorum quorum",
+                                    style: const TextStyle(color: AppColors.teal, fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: LinearProgressIndicator(
+                                  value: (totalVotes / quorum).clamp(0.0, 1.0),
+                                  minHeight: 6,
+                                  backgroundColor: Colors.white12,
+                                  color: ratioPct >= 70 ? AppColors.teal : AppColors.amber,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        if (AuthService.instance.currentUser != null)
+                          isMine
+                              ? const Text(
+                                  "Your anonymous post — voting on your own report isn't allowed.",
+                                  style: TextStyle(color: Colors.white54, fontSize: 12, fontStyle: FontStyle.italic),
+                                )
+                              : Wrap(
+                                  spacing: 8,
+                                  children: [
+                                    ScaleTapPop(
+                                      onTap: () => castModalVote('confirm'),
+                                      child: ActionChip(
+                                        avatar: const Icon(Icons.arrow_upward_rounded, size: 16, color: AppColors.teal),
+                                        label: AnimatedMetricText(
+                                          "Upvote ($upvotes)",
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.teal,
+                                            fontWeight: myVote == 'confirm' ? FontWeight.bold : FontWeight.normal,
+                                          ),
+                                        ),
+                                        backgroundColor: myVote == 'confirm'
+                                            ? AppColors.teal.withValues(alpha: 0.22)
+                                            : AppColors.teal.withValues(alpha: 0.08),
+                                        side: BorderSide(color: AppColors.teal, width: myVote == 'confirm' ? 1.5 : 0.8),
+                                        onPressed: () => castModalVote('confirm'),
+                                      ),
+                                    ),
+                                    ScaleTapPop(
+                                      onTap: () => castModalVote('decline'),
+                                      child: ActionChip(
+                                        avatar: const Icon(Icons.arrow_downward_rounded, size: 16, color: Colors.redAccent),
+                                        label: AnimatedMetricText(
+                                          "Downvote ($downvotes)",
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.redAccent,
+                                            fontWeight: myVote == 'decline' ? FontWeight.bold : FontWeight.normal,
+                                          ),
+                                        ),
+                                        backgroundColor: myVote == 'decline'
+                                            ? Colors.redAccent.withValues(alpha: 0.22)
+                                            : Colors.redAccent.withValues(alpha: 0.08),
+                                        side: BorderSide(color: Colors.redAccent, width: myVote == 'decline' ? 1.5 : 0.8),
+                                        onPressed: () => castModalVote('decline'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        const SizedBox(height: 14),
+                        const Divider(color: Colors.white12),
+                        Text(
+                          "Public Comments (${comments.length})",
+                          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        if (loadingComments)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        else if (comments.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Text(
+                              "No comments yet. Share what you saw nearby anonymously.",
+                              style: TextStyle(color: Colors.white54, fontSize: 13),
+                            ),
+                          )
+                        else
+                          for (int i = 0; i < comments.length; i++)
+                            FadeSlideEntrance(
+                              index: i,
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: AppColors.glass,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.white12),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          comments[i]['authorTag'] as String? ?? 'Anonymous',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        if (comments[i]['isOp'] == true) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.amber.withValues(alpha: 0.2),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: const Text("OP", style: TextStyle(color: AppColors.amber, fontSize: 9, fontWeight: FontWeight.bold)),
+                                          ),
+                                        ],
+                                        const SizedBox(width: 6),
+                                        _karmaBadge((comments[i]['authorKarma'] as num?)?.toInt() ?? 0),
+                                        const Spacer(),
+                                        Text(
+                                          _formatTime(comments[i]['createdAt'] as String?),
+                                          style: const TextStyle(color: Colors.white54, fontSize: 10),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      comments[i]['body'] as String? ?? '',
+                                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                                    ),
+                                    if (AuthService.instance.currentUser != null && comments[i]['isMine'] != true) ...[
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          InkWell(
+                                            onTap: () => voteOnComment(comments[i], 'confirm'),
+                                            child: Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              child: Row(
+                                                children: [
+                                                  Icon(
+                                                    Icons.arrow_upward_rounded,
+                                                    size: 14,
+                                                    color: comments[i]['myVote'] == 'confirm' ? AppColors.teal : Colors.white54,
+                                                  ),
+                                                  const SizedBox(width: 3),
+                                                  Text(
+                                                    "${comments[i]['upvotes'] ?? 0}",
+                                                    style: TextStyle(
+                                                      color: comments[i]['myVote'] == 'confirm' ? AppColors.teal : Colors.white70,
+                                                      fontSize: 11,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          InkWell(
+                                            onTap: () => voteOnComment(comments[i], 'decline'),
+                                            child: Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              child: Row(
+                                                children: [
+                                                  Icon(
+                                                    Icons.arrow_downward_rounded,
+                                                    size: 14,
+                                                    color: comments[i]['myVote'] == 'decline' ? Colors.redAccent : Colors.white54,
+                                                  ),
+                                                  const SizedBox(width: 3),
+                                                  Text(
+                                                    "${comments[i]['downvotes'] ?? 0}",
+                                                    style: TextStyle(
+                                                      color: comments[i]['myVote'] == 'decline' ? Colors.redAccent : Colors.white70,
+                                                      fontSize: 11,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ),
                             ),
-                            backgroundColor: myVote == 'decline'
-                                ? Colors.redAccent.withValues(alpha: 0.22)
-                                : Colors.redAccent.withValues(alpha: 0.08),
-                            side: BorderSide(
-                              color: Colors.redAccent,
-                              width: myVote == 'decline' ? 1.5 : 0.8,
+                      ],
+                    ),
+                  ),
+                  if (AuthService.instance.currentUser != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: commentController,
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                              decoration: InputDecoration(
+                                hintText: "Comment anonymously...",
+                                hintStyle: const TextStyle(color: Colors.white54, fontSize: 13),
+                                filled: true,
+                                fillColor: Colors.white10,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
                             ),
-                            onPressed: () => castModalVote('decline'),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton.filled(
+                            style: IconButton.styleFrom(backgroundColor: AppColors.teal),
+                            onPressed: postingComment ? null : submitComment,
+                            icon: postingComment
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                                  )
+                                : const Icon(Icons.send_rounded, color: Colors.black, size: 18),
                           ),
                         ],
                       ),
-                  ],
+                    )
+                  else
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        "Sign in with a verified account to upvote or comment.",
+                        style: TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                    ),
                 ],
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text("Close", style: TextStyle(color: AppColors.teal)),
-              ),
-            ],
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      Future<void>.delayed(const Duration(milliseconds: 400), commentController.dispose);
+    });
   }
 
   Widget _alertCard(Map<String, dynamic> report) {
@@ -645,7 +1011,14 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
     final color = _severityColor(type);
     final icon = _typeIcon(type);
     final status = report['status'] as String? ?? 'pending';
-    // F5-4: photo attachment thumbnail
+    final verificationSource = report['verificationSource'] as String? ?? 'pending';
+    final authorTag = report['authorTag'] as String? ?? 'Anonymous';
+    final authorKarma = (report['authorKarma'] as num?)?.toInt() ?? 0;
+    final commentCount = (report['commentCount'] as num?)?.toInt() ?? 0;
+    final upvotes = (report['upvotes'] as num?)?.toInt() ?? 0;
+    final downvotes = (report['downvotes'] as num?)?.toInt() ?? 0;
+    final totalVotes = upvotes + downvotes;
+    final quorum = (report['quorumRequired'] as num?)?.toInt() ?? 5;
     final photoUrl = report['photoUrl'] as String?;
 
     return Card(
@@ -660,39 +1033,47 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
             children: [
               Row(
                 children: [
-                  Icon(icon, color: color),
-                  const SizedBox(width: 8),
+                  Icon(icon, color: color, size: 20),
+                  const SizedBox(width: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.12),
+                      color: color.withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      severity,
-                      style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.blueGrey.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      type,
-                      style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
+                      "$severity • $type",
+                      style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 11),
                     ),
                   ),
                   const Spacer(),
-                  _statusBadge(status),
+                  _statusBadge(status, verificationSource: verificationSource),
+                ],
+              ),
+
+              const SizedBox(height: 6),
+
+              Row(
+                children: [
+                  Text(authorTag, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w500)),
+                  const SizedBox(width: 6),
+                  _karmaBadge(authorKarma),
+                  const Spacer(),
+                  if (totalVotes > 0)
+                    Text(
+                      "$upvotes/$totalVotes (${((upvotes / totalVotes) * 100).round()}% confirm)",
+                      style: const TextStyle(color: Colors.white54, fontSize: 11),
+                    )
+                  else
+                    Text(
+                      "0/$quorum votes",
+                      style: const TextStyle(color: Colors.white54, fontSize: 11),
+                    ),
                 ],
               ),
 
               const SizedBox(height: 8),
 
-              // F5-4: render photo thumbnail if present
               if (photoUrl != null && photoUrl.isNotEmpty) ...[
                 _buildPhotoThumbnail(photoUrl),
                 const SizedBox(height: 8),
@@ -700,45 +1081,46 @@ class _CommunityAlertsPageState extends State<CommunityAlertsPage> {
 
               Text(description, style: const TextStyle(fontSize: 14)),
 
-              // M2.3: community vote chips — confirm/decline for authed users.
-              // Optimistic UI with honest rollback on failure.
-              // Self-vote guard: the backend 403s CANNOT_VOTE_OWN_REPORT, but
-              // the UI must not OFFER voting on your own report — hide the
-              // chips entirely and show an honest "your report" note instead.
-              if (AuthService.instance.currentUser != null) ...[
-                const SizedBox(height: 8),
-                if (report['isMine'] == true)
-                  Row(
-                    children: [
-                      const Icon(Icons.person, size: 14, color: Colors.white54),
-                      const SizedBox(width: 6),
-                      Text(
-                        "Your report — voting on your own report isn't allowed",
-                        style: TextStyle(fontSize: 11, color: Colors.white54, fontStyle: FontStyle.italic),
-                      ),
-                    ],
-                  )
-                else
-                  Row(
-                    children: [
-                      _voteChip(
-                        report,
-                        vote: 'confirm',
-                        icon: Icons.thumb_up,
-                        label: "Confirm ${report['upvotes'] ?? 0}",
-                        color: Colors.teal,
-                      ),
-                      const SizedBox(width: 8),
-                      _voteChip(
-                        report,
-                        vote: 'decline',
-                        icon: Icons.thumb_down,
-                        label: "Decline ${report['downvotes'] ?? 0}",
-                        color: Colors.redAccent,
-                      ),
-                    ],
+              const SizedBox(height: 8),
+
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (AuthService.instance.currentUser != null && report['isMine'] != true) ...[
+                    _voteChip(
+                      report,
+                      vote: 'confirm',
+                      icon: Icons.arrow_upward_rounded,
+                      label: "Upvote $upvotes",
+                      color: Colors.teal,
+                    ),
+                    _voteChip(
+                      report,
+                      vote: 'decline',
+                      icon: Icons.arrow_downward_rounded,
+                      label: "Downvote $downvotes",
+                      color: Colors.redAccent,
+                    ),
+                  ] else if (report['isMine'] == true) ...[
+                    const Text(
+                      "Your post (↑↓ disabled)",
+                      style: TextStyle(fontSize: 11, color: Colors.white54, fontStyle: FontStyle.italic),
+                    ),
+                  ],
+                  ActionChip(
+                    avatar: const Icon(Icons.chat_bubble_outline, size: 14, color: Colors.white70),
+                    label: Text(
+                      "Comments ($commentCount)",
+                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                    ),
+                    backgroundColor: Colors.white.withValues(alpha: 0.06),
+                    side: const BorderSide(color: Colors.white12),
+                    onPressed: () => _showReportDetails(context, report),
                   ),
-              ],
+                ],
+              ),
 
               const SizedBox(height: 8),
 

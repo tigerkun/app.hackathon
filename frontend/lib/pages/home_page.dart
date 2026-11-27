@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import '../data/auth_state.dart';
 import '../theme/app_colors.dart';
+import '../widgets/animated_widgets.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/app_drawer.dart';
 import '../services/auth_service.dart';
@@ -192,8 +193,12 @@ class _HomePageState extends State<HomePage> {
     final t = (type ?? '').toLowerCase();
     if (t.contains('theft')) return Icons.report_problem;
     if (t.contains('harass')) return Icons.visibility;
+    if (t.contains('assault')) return Icons.gpp_bad_outlined;
     if (t.contains('accident')) return Icons.car_crash;
     if (t.contains('light') || t.contains('dark')) return Icons.lightbulb_outline;
+    if (t.contains('road') || t.contains('hazard')) return Icons.construction_outlined;
+    if (t.contains('flood') || t.contains('drain')) return Icons.water_drop_outlined;
+    if (t.contains('transit')) return Icons.directions_bus_outlined;
     return Icons.warning_amber_rounded;
   }
 
@@ -327,18 +332,22 @@ class _HomePageState extends State<HomePage> {
             /// 🆘 SOS-FIRST HERO (M1.1): the dominant first-paint element.
             /// Minimum 40% of viewport, high-contrast red, one-handed reach.
             /// Everything else on this page is secondary.
-            GestureDetector(
-              onTap: () => Navigator.pushNamed(context, '/emergency'),
-              child: Semantics(
-                button: true,
-                excludeSemantics: true,
-                label: discreet
-                    ? "Safety check. Discreet mode active. Tap for options"
-                    : "Emergency SOS. Press for immediate help",
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 20),
-                  width: double.infinity,
-                  height: (MediaQuery.of(context).size.height * 0.32).clamp(200.0, 260.0),
+            FadeSlideEntrance(
+              index: 0,
+              child: GestureDetector(
+                onTap: () => Navigator.pushNamed(context, '/emergency'),
+                child: Semantics(
+                  button: true,
+                  excludeSemantics: true,
+                  label: discreet
+                      ? "Safety check. Discreet mode active. Tap for options"
+                      : "Emergency SOS. Press for immediate help",
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 280),
+                    curve: Curves.easeOutCubic,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    width: double.infinity,
+                    height: (MediaQuery.of(context).size.height * 0.32).clamp(200.0, 260.0),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: discreet
@@ -430,6 +439,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
+          ),
 
             /// ⏳ QUEUED-SOS HONEST BANNER (M1.7): pending offline alerts
             /// tell the truth about their state and auto-send on signal.

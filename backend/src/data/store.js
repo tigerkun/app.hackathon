@@ -189,6 +189,28 @@ class DataStore {
       CREATE INDEX IF NOT EXISTS idx_report_votes_report ON report_votes(reportId, vote);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_report_votes_unique ON report_votes(reportId, userId);
 
+      -- Community threads: comments & per-comment votes
+      CREATE TABLE IF NOT EXISTS report_comments (
+        id TEXT PRIMARY KEY,
+        reportId TEXT NOT NULL,
+        userId TEXT,
+        parentId TEXT,
+        body TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_report_comments_report ON report_comments(reportId, createdAt);
+
+      CREATE TABLE IF NOT EXISTS comment_votes (
+        id TEXT PRIMARY KEY,
+        commentId TEXT NOT NULL,
+        userId TEXT NOT NULL,
+        vote TEXT NOT NULL CHECK (vote IN ('confirm', 'decline')),
+        createdAt TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_comment_votes_unique ON comment_votes(commentId, userId);
+      CREATE INDEX IF NOT EXISTS idx_comment_votes_comment ON comment_votes(commentId, vote);
+
       -- M3 Connections: consent-based trusted circle (replaces share-links)
       CREATE TABLE IF NOT EXISTS connections (
         id TEXT PRIMARY KEY,
@@ -301,6 +323,24 @@ class DataStore {
     } catch (_) {}
     try {
       this.db.exec("ALTER TABLE reports ADD COLUMN downvotes INTEGER NOT NULL DEFAULT 0");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE reports ADD COLUMN verificationSource TEXT NOT NULL DEFAULT 'pending'");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE reports ADD COLUMN karmaAwarded INTEGER NOT NULL DEFAULT 0");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE reports ADD COLUMN quorumRequired INTEGER NOT NULL DEFAULT 5");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE users ADD COLUMN lastKnownLat REAL");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE users ADD COLUMN lastKnownLng REAL");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE users ADD COLUMN lastSeenAt TEXT");
     } catch (_) {}
     // M3 backfill: users created before Safe IDs existed get one now so that
     // connection requests work for every account (unique index prevents dupes).
@@ -462,6 +502,9 @@ class DataStore {
         DELETE FROM email_otp_limits;
         DELETE FROM tracking_sessions;
         DELETE FROM sos_messages;
+        DELETE FROM report_votes;
+        DELETE FROM report_comments;
+        DELETE FROM comment_votes;
       `);
 
       const seed = getSeedData();
@@ -709,6 +752,126 @@ class DataStore {
     };
   }
 
+  // ==========================================
+  // Community Comments & Votes Repository
+  // ==========================================
+
+  saveReportComment({ id, reportId, userId, parentId = null, body, createdAt = null }) {
+    const now = createdAt || new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO report_comments (id, reportId, userId, parentId, body, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, reportId, userId ?? null, parentId ?? null, String(body || '').trim(), now, now);
+    return this.findReportCommentById(id);
+  }
+
+  findReportCommentById(commentId) {
+    if (!commentId) return null;
+    const row = this.db.prepare('SELECT * FROM report_comments WHERE id = ? LIMIT 1').get(commentId);
+    if (!row) return null;
+    return {
+      id: row.id,
+      reportId: row.reportId,
+      userId: row.userId ?? null,
+      parentId: row.parentId ?? null,
+      body: row.body,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
+  }
+
+  getReportComments(reportId, limit = 100) {
+    if (!reportId) return [];
+    const clamped = Math.min(Math.max(1, parseInt(limit, 10) || 100), 200);
+    const rows = this.db.prepare(`
+      SELECT * FROM report_comments
+      WHERE reportId = ?
+      ORDER BY createdAt ASC, id ASC
+      LIMIT ?
+    `).all(reportId, clamped);
+    return rows.map((r) => ({
+      id: r.id,
+      reportId: r.reportId,
+      userId: r.userId ?? null,
+      parentId: r.parentId ?? null,
+      body: r.body,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }));
+  }
+
+  countReportComments(reportId) {
+    if (!reportId) return 0;
+    const row = this.db.prepare('SELECT COUNT(*) AS c FROM report_comments WHERE reportId = ?').get(reportId);
+    return Number(row?.c || 0);
+  }
+
+  saveCommentVote({ id, commentId, userId, vote, createdAt }) {
+    this.db.prepare(`
+      INSERT INTO comment_votes (id, commentId, userId, vote, createdAt)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(commentId, userId) DO UPDATE SET
+        vote = excluded.vote,
+        createdAt = excluded.createdAt
+    `).run(id, commentId, userId, vote, createdAt || new Date().toISOString());
+  }
+
+  getUserCommentVote(commentId, userId) {
+    if (!commentId || !userId) return null;
+    return this.db
+      .prepare('SELECT * FROM comment_votes WHERE commentId = ? AND userId = ? LIMIT 1')
+      .get(commentId, userId);
+  }
+
+  getCommentVoteTally(commentId) {
+    const row = this.db.prepare(`
+      SELECT
+        SUM(CASE WHEN vote = 'confirm' THEN 1 ELSE 0 END) AS upvotes,
+        SUM(CASE WHEN vote = 'decline' THEN 1 ELSE 0 END) AS downvotes
+      FROM comment_votes WHERE commentId = ?
+    `).get(commentId);
+    return {
+      upvotes: Number(row?.upvotes || 0),
+      downvotes: Number(row?.downvotes || 0)
+    };
+  }
+
+  /**
+   * Estimates active distinct non-banned community participants within radiusKm
+   * of (lat, lng) using known user locations, nearby reporters, voters, and
+   * active tracking users — used to scale dynamic 7:3 quorum so small friend
+   * cliques in busy areas cannot brigade a report to "verified".
+   */
+  countNearbyActiveUsers(lat, lng, radiusKm = 15) {
+    const tLat = Number(lat);
+    const tLng = Number(lng);
+    if (!Number.isFinite(tLat) || !Number.isFinite(tLng)) return 0;
+    const { calculateDistance } = require('../services/geoService');
+    const seen = new Set();
+
+    // 1. Users with recorded lastKnownLat/lastKnownLng within radius
+    const locUsers = this.db.prepare(
+      'SELECT id, lastKnownLat, lastKnownLng FROM users WHERE banned = 0 AND isActive = 1 AND lastKnownLat IS NOT NULL AND lastKnownLng IS NOT NULL'
+    ).all();
+    for (const u of locUsers) {
+      if (calculateDistance(tLat, tLng, Number(u.lastKnownLat), Number(u.lastKnownLng)) <= radiusKm) {
+        seen.add(u.id);
+      }
+    }
+
+    // 2. Active reporters on nearby reports within radius
+    const reportsWithCoords = this.db.prepare(
+      'SELECT id, reportedBy, latitude, longitude FROM reports WHERE latitude IS NOT NULL AND longitude IS NOT NULL'
+    ).all();
+    for (const r of reportsWithCoords) {
+      if (calculateDistance(tLat, tLng, Number(r.latitude), Number(r.longitude)) <= radiusKm) {
+        if (r.reportedBy) seen.add(r.reportedBy);
+      }
+    }
+
+    return seen.size;
+  }
+
   close() {
     if (this.db) {
       try {
@@ -794,6 +957,9 @@ class DataStore {
       aadhaarLast4Salt: row.aadhaarLast4Salt ?? null,
       aadhaarLast4Hash: row.aadhaarLast4Hash ?? null,
       phoneVerified: Boolean(row.phoneVerified),
+      lastKnownLat: row.lastKnownLat !== null && row.lastKnownLat !== undefined ? Number(row.lastKnownLat) : null,
+      lastKnownLng: row.lastKnownLng !== null && row.lastKnownLng !== undefined ? Number(row.lastKnownLng) : null,
+      lastSeenAt: row.lastSeenAt ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt
     };
@@ -871,8 +1037,8 @@ class DataStore {
         id, name, email, phone, role, passwordHash, pin, pinHash, biometricToken,
         biometricsEnabled, emergencyContacts, isActive, createdAt, updatedAt,
         reputationScore, strikes, banned, aadhaarLast4Salt, aadhaarLast4Hash, safeId,
-        phoneVerified
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        phoneVerified, lastKnownLat, lastKnownLng, lastSeenAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         email = excluded.email,
@@ -893,7 +1059,10 @@ class DataStore {
         aadhaarLast4Salt = excluded.aadhaarLast4Salt,
         aadhaarLast4Hash = excluded.aadhaarLast4Hash,
         safeId = excluded.safeId,
-        phoneVerified = excluded.phoneVerified
+        phoneVerified = excluded.phoneVerified,
+        lastKnownLat = excluded.lastKnownLat,
+        lastKnownLng = excluded.lastKnownLng,
+        lastSeenAt = excluded.lastSeenAt
     `).run(
       user.id,
       user.name ?? '',
@@ -915,7 +1084,10 @@ class DataStore {
       user.aadhaarLast4Salt ?? null,
       user.aadhaarLast4Hash ?? null,
       user.safeId ?? null,
-      user.phoneVerified ? 1 : 0
+      user.phoneVerified ? 1 : 0,
+      user.lastKnownLat !== undefined && user.lastKnownLat !== null ? Number(user.lastKnownLat) : null,
+      user.lastKnownLng !== undefined && user.lastKnownLng !== null ? Number(user.lastKnownLng) : null,
+      user.lastSeenAt ?? null
     );
 
     return this.findUserById(user.id);
@@ -949,6 +1121,8 @@ class DataStore {
     this.db.prepare('DELETE FROM connection_locations WHERE connectionId IN (SELECT id FROM connections WHERE ownerId = ? OR granteeId = ?)').run(id, id);
     this.db.prepare('DELETE FROM connection_checkins WHERE fromUserId = ? OR connectionId IN (SELECT id FROM connections WHERE ownerId = ? OR granteeId = ?)').run(id, id, id);
     this.db.prepare('DELETE FROM connections WHERE ownerId = ? OR granteeId = ?').run(id, id);
+    this.db.prepare('DELETE FROM comment_votes WHERE userId = ?').run(id);
+    this.db.prepare('UPDATE report_comments SET userId = NULL WHERE userId = ?').run(id);
     this.db.prepare('DELETE FROM report_votes WHERE userId = ?').run(id);
     this.db.prepare('UPDATE reports SET reportedBy = NULL WHERE reportedBy = ?').run(id);
     const res = this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
@@ -1092,6 +1266,9 @@ class DataStore {
       longitude: row.longitude !== null && row.longitude !== undefined ? Number(row.longitude) : null,
       status: row.status,
       reportedBy: row.reportedBy ?? null,
+      verificationSource: row.verificationSource || (row.status === 'verified' ? 'moderator' : 'pending'),
+      karmaAwarded: Boolean(row.karmaAwarded),
+      quorumRequired: Math.max(5, Number(row.quorumRequired || 5)),
       attachments: Array.isArray(attachments) ? attachments.map((a) => (typeof a === 'object' && a !== null ? { ...a } : a)) : [],
       photoUrl: row.photoUrl ?? null,
       expiresAt: row.expiresAt ?? null,
@@ -1150,8 +1327,8 @@ class DataStore {
       INSERT INTO reports (
         id, type, description, location, latitude, longitude,
         status, reportedBy, attachments, photoUrl, createdAt, updatedAt,
-        expiresAt, upvotes, downvotes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        expiresAt, upvotes, downvotes, verificationSource, karmaAwarded, quorumRequired
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         type = excluded.type,
         description = excluded.description,
@@ -1166,7 +1343,10 @@ class DataStore {
         updatedAt = excluded.updatedAt,
         expiresAt = excluded.expiresAt,
         upvotes = excluded.upvotes,
-        downvotes = excluded.downvotes
+        downvotes = excluded.downvotes,
+        verificationSource = excluded.verificationSource,
+        karmaAwarded = excluded.karmaAwarded,
+        quorumRequired = excluded.quorumRequired
     `).run(
       report.id,
       report.type ?? '',
@@ -1182,7 +1362,10 @@ class DataStore {
       updatedAt,
       report.expiresAt ?? null,
       report.upvotes !== undefined && report.upvotes !== null ? Number(report.upvotes) : 0,
-      report.downvotes !== undefined && report.downvotes !== null ? Number(report.downvotes) : 0
+      report.downvotes !== undefined && report.downvotes !== null ? Number(report.downvotes) : 0,
+      report.verificationSource || (report.status === 'verified' ? 'moderator' : 'pending'),
+      report.karmaAwarded ? 1 : 0,
+      Math.max(5, Number(report.quorumRequired || 5))
     );
 
     return this.findReportById(report.id);

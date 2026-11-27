@@ -20,6 +20,7 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
   bool _isLocating = false;
   bool _isLoading = false;
   bool _isListView = false;
+  bool _showPendingIncidents = false;
   String? _errorMessage;
 
   double _userLat = SafeSphereMapConfig.defaultLatitude;
@@ -112,7 +113,12 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
           longitude: _userLng,
           radiusKm: 10,
         ),
-        AuthService.instance.fetchReports(limit: 50),
+        AuthService.instance.fetchReports(
+          limit: 50,
+          latitude: _hasGpsFix ? _userLat : null,
+          longitude: _hasGpsFix ? _userLng : null,
+          radiusKm: _hasGpsFix ? 50 : null,
+        ),
       ]);
 
       if (!mounted) return;
@@ -227,11 +233,19 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
       }
     }
 
-    // 2. Process community hazard reports
+    // 2. Process community hazard & infrastructure reports
     if (!applyFilter || _selectedFilter == "All" || _selectedFilter == "Hazards") {
       for (final r in _reports) {
+        final String status = (r['status'] ?? 'pending').toString().toLowerCase();
+        if (status == 'rejected' || status == 'resolved') continue;
+        final bool isVerified = status == 'verified';
+        if (!isVerified && !_showPendingIncidents) {
+          // Default map shows ONLY admin-verified or 7:3 consensus-verified reports.
+          continue;
+        }
+
         final String type = (r['type'] ?? 'Hazard').toString();
-        final String desc = (r['description'] ?? 'Community hazard report').toString();
+        final String desc = (r['description'] ?? 'Community incident report').toString();
         final String location = (r['location'] ?? 'Nearby').toString();
         final rawLat = r['latitude'];
         final rawLng = r['longitude'];
@@ -243,20 +257,33 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
         final double distanceKm = _hasGpsFix
             ? Geolocator.distanceBetween(_userLat, _userLng, lat, lng) / 1000.0
             : -1;
-        final bool isVerified = (r['status'] == 'verified');
+        final int upvotes = (r['upvotes'] as num?)?.toInt() ?? 0;
+        final int downvotes = (r['downvotes'] as num?)?.toInt() ?? 0;
+        final String source = (r['verificationSource'] ?? 'pending').toString();
+        final String authorTag = (r['authorTag'] ?? 'Anonymous').toString();
+        final int authorKarma = (r['authorKarma'] as num?)?.toInt() ?? 0;
+        final String karmaStr = authorKarma > 0 ? '+$authorKarma' : '$authorKarma';
+
+        final (IconData rIcon, Color rColor) = _incidentPinStyle(type, isVerified);
+        final String statusLabel = !isVerified
+            ? 'Pending Votes'
+            : (source == 'community_consensus' ? 'Reported (7:3)' : 'Mod Verified');
+        final String headline = "$type • $statusLabel ($upvotes up)";
 
         items.add(_MapPinItem(
           id: (r['id'] ?? desc).toString(),
-          name: "$type Incident",
+          name: headline,
           category: type,
           latitude: lat,
           longitude: lng,
           distanceKm: distanceKm,
-          address: "$location — $desc",
+          address: "$location — $desc\n$upvotes people upvoted • $downvotes downvoted • By $authorTag (Karma $karmaStr)",
           isVerified: isVerified,
           isHazardReport: true,
-          icon: Icons.warning_amber_rounded,
-          color: isVerified ? AppColors.amber : Colors.orange,
+          icon: rIcon,
+          color: rColor,
+          upvotes: upvotes,
+          downvotes: downvotes,
         ));
       }
     }
@@ -675,7 +702,33 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
                       _filterChip("Hospitals"),
                       _filterChip("Stores"),
                       _filterChip("Safe Zones"),
-                      _filterChip("Hazards", count: _reports.length),
+                      _filterChip(
+                        "Hazards",
+                        count: _reports.where((r) => _showPendingIncidents || r['status'] == 'verified').length,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          avatar: Icon(
+                            Icons.how_to_vote_outlined,
+                            size: 14,
+                            color: _showPendingIncidents ? Colors.black : Colors.orangeAccent,
+                          ),
+                          label: const Text("Show Pending"),
+                          selected: _showPendingIncidents,
+                          onSelected: (val) => setState(() => _showPendingIncidents = val),
+                          backgroundColor: const Color(0xFF101A33),
+                          selectedColor: Colors.orangeAccent,
+                          labelStyle: TextStyle(
+                            color: _showPendingIncidents ? Colors.black : Colors.white70,
+                            fontWeight: _showPendingIncidents ? FontWeight.bold : FontWeight.normal,
+                            fontSize: 12,
+                          ),
+                          side: BorderSide(
+                            color: _showPendingIncidents ? Colors.orangeAccent : Colors.white12,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1343,17 +1396,40 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  icon: const Icon(Icons.directions, size: 16),
-                  label: const Text("Directions", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  icon: Icon(item.isHazardReport ? Icons.forum_outlined : Icons.directions, size: 16),
+                  label: Text(
+                    item.isHazardReport ? "Community Thread" : "Directions",
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.teal,
                     foregroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  onPressed: () => _openExternalDirections(item.latitude, item.longitude),
+                  onPressed: () {
+                    if (item.isHazardReport) {
+                      Navigator.pushNamed(context, '/alerts');
+                    } else {
+                      _openExternalDirections(item.latitude, item.longitude);
+                    }
+                  },
                 ),
               ),
+              if (item.isHazardReport) ...[
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.directions, size: 16),
+                  label: const Text("Map", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: item.color,
+                    side: BorderSide(color: item.color),
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () => _openExternalDirections(item.latitude, item.longitude),
+                ),
+              ],
               if (isPolice || isHospital) ...[
                 const SizedBox(width: 8),
                 Expanded(
@@ -1378,6 +1454,38 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
         ],
       ),
     );
+  }
+
+  static (IconData, Color) _incidentPinStyle(String type, bool isVerified) {
+    final lower = type.toLowerCase();
+    IconData icon;
+    if (lower == 'dark area') {
+      icon = Icons.lightbulb_outline;
+    } else if (lower == 'road hazard') {
+      icon = Icons.construction;
+    } else if (lower == 'flooding') {
+      icon = Icons.water_drop_outlined;
+    } else if (lower == 'transit issue') {
+      icon = Icons.directions_bus_outlined;
+    } else if (lower == 'assault') {
+      icon = Icons.gpp_bad_outlined;
+    } else if (lower == 'theft') {
+      icon = Icons.shopping_bag_outlined;
+    } else if (lower == 'harassment') {
+      icon = Icons.person_off_outlined;
+    } else if (lower == 'accident') {
+      icon = Icons.car_crash_outlined;
+    } else {
+      icon = Icons.warning_amber_rounded;
+    }
+    final Color color = !isVerified
+        ? Colors.orange
+        : (lower == 'theft' || lower == 'harassment' || lower == 'assault')
+            ? AppColors.red
+            : (lower == 'dark area' || lower == 'road hazard' || lower == 'flooding' || lower == 'transit issue')
+                ? AppColors.purple
+                : AppColors.amber;
+    return (icon, color);
   }
 
   Widget _filterChip(String label, {int? count}) {
@@ -1414,6 +1522,8 @@ class _MapPinItem {
   final bool isHazardReport;
   final IconData icon;
   final Color color;
+  final int upvotes;
+  final int downvotes;
 
   const _MapPinItem({
     required this.id,
@@ -1427,6 +1537,8 @@ class _MapPinItem {
     required this.isHazardReport,
     required this.icon,
     required this.color,
+    this.upvotes = 0,
+    this.downvotes = 0,
   });
 }
 

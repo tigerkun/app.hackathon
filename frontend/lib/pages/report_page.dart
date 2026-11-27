@@ -1,9 +1,13 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import '../data/report_store.dart';
 import '../models/report_model.dart';
 import '../services/auth_service.dart';
 import '../services/map_config.dart';
+import '../widgets/animated_widgets.dart';
 import '../widgets/map_placeholder.dart';
 import '../widgets/glass_container.dart';
 import '../theme/app_colors.dart';
@@ -27,14 +31,25 @@ class _ReportPageState extends State<ReportPage> {
   double? _latitude;
   double? _longitude;
   bool _isSubmitting = false;
+  bool _isLocating = false;
   bool _aadhaarPrompted = false;
   String? _photoBase64;
+  Uint8List? _photoBytes;
+  final ImagePicker _imagePicker = ImagePicker();
 
-  final incidents = const [
-    {"label": "Theft", "icon": Icons.shopping_bag},
-    {"label": "Harassment", "icon": Icons.person_off},
-    {"label": "Accident", "icon": Icons.car_crash},
-    {"label": "Suspicious", "icon": Icons.visibility},
+  final List<Map<String, dynamic>> incidents = const [
+    // Crime & Threats
+    {"label": "Theft", "icon": Icons.shopping_bag, "group": "Crime"},
+    {"label": "Harassment", "icon": Icons.person_off, "group": "Crime"},
+    {"label": "Assault", "icon": Icons.gpp_bad, "group": "Crime"},
+    {"label": "Suspicious", "icon": Icons.visibility, "group": "Crime"},
+    // Infrastructure & Hazards
+    {"label": "Dark Area", "icon": Icons.lightbulb_outline, "group": "Infra"},
+    {"label": "Road Hazard", "icon": Icons.construction, "group": "Infra"},
+    {"label": "Flooding", "icon": Icons.water_drop_outlined, "group": "Infra"},
+    {"label": "Transit Issue", "icon": Icons.directions_bus_outlined, "group": "Infra"},
+    {"label": "Accident", "icon": Icons.car_crash, "group": "Infra"},
+    {"label": "Other", "icon": Icons.warning_amber_rounded, "group": "Infra"},
   ];
 
   @override
@@ -43,14 +58,16 @@ class _ReportPageState extends State<ReportPage> {
     _detectLocation();
   }
 
-  Future<void> _detectLocation() async {
+  Future<void> _detectLocation({bool forceFreshGps = false}) async {
+    if (mounted) setState(() => _isLocating = true);
     final loc = LocationService.instance;
-    if (loc.isManualOverride || loc.hasLiveGps) {
+    if (!forceFreshGps && (loc.isManualOverride || loc.hasLiveGps)) {
       if (mounted) {
         setState(() {
           _latitude = loc.currentLat;
           _longitude = loc.currentLng;
           _locationTag = "${loc.locationLabel} (${loc.currentLat.toStringAsFixed(4)}, ${loc.currentLng.toStringAsFixed(4)})";
+          _isLocating = false;
         });
       }
       return;
@@ -62,6 +79,7 @@ class _ReportPageState extends State<ReportPage> {
         _latitude = loc.currentLat;
         _longitude = loc.currentLng;
         _locationTag = "${loc.locationLabel} (${loc.currentLat.toStringAsFixed(4)}, ${loc.currentLng.toStringAsFixed(4)})";
+        _isLocating = false;
       });
       return;
     }
@@ -73,18 +91,114 @@ class _ReportPageState extends State<ReportPage> {
           _latitude = last.latitude;
           _longitude = last.longitude;
           _locationTag = "${last.latitude.toStringAsFixed(5)}, ${last.longitude.toStringAsFixed(5)} (Last Known GPS)";
+          _isLocating = false;
         });
       } else if (mounted) {
         setState(() {
-          _locationTag = "Tap to choose location";
+          _locationTag = loc.lastLocationError ?? "GPS unavailable — tap to choose location";
+          _isLocating = false;
         });
       }
     } catch (_) {
       if (mounted) {
         setState(() {
-          _locationTag = "Tap to choose location";
+          _locationTag = loc.lastLocationError ?? "GPS unavailable — tap to choose location";
+          _isLocating = false;
         });
       }
+    }
+  }
+
+  Future<void> _showPhotoSourceSheet() async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.bgDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        side: BorderSide(color: AppColors.border),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.photo_camera, color: AppColors.teal),
+              title: const Text("Take Photo with Camera", style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickPhoto(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined, color: AppColors.amber),
+              title: const Text("Choose Photo from Gallery", style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickPhoto(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickPhoto(ImageSource source) async {
+    try {
+      XFile? picked = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 70,
+      );
+      if (picked == null || !mounted) return;
+      Uint8List bytes = await picked.readAsBytes();
+      if (bytes.length > 500 * 1024) {
+        // Retry with smaller dimensions/quality if original JPEG still >500KB
+        picked = await _imagePicker.pickImage(
+          source: source,
+          maxWidth: 720,
+          maxHeight: 720,
+          imageQuality: 50,
+        );
+        if (picked != null) {
+          bytes = await picked.readAsBytes();
+        }
+      }
+      if (!mounted) return;
+      if (bytes.length > 500 * 1024) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Image exceeds 500KB limit after compression. Please pick a smaller image."),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+      final lowerName = (picked?.name ?? '').toLowerCase();
+      final mime = lowerName.endsWith('.png') ? 'png' : 'jpeg';
+      setState(() {
+        _photoBytes = bytes;
+        _photoBase64 = 'data:image/$mime;base64,${base64Encode(bytes)}';
+      });
+    } on MissingPluginException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Photo picker unavailable on this platform — you can still submit without a photo."),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Could not attach photo (${e.message ?? e.code})."),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
   }
 
@@ -143,14 +257,21 @@ class _ReportPageState extends State<ReportPage> {
     setState(() => _isSubmitting = true);
     final messenger = ScaffoldMessenger.of(context);
 
-    // Backend requires a non-empty location. With no GPS fix the user must
-    // type a landmark/area — previously an empty string was sent, the API
-    // returned 400, and the UI still claimed "backend unreachable".
+    // Combine landmark detail + live GPS coordinates so every report has a
+    // human-readable place tag alongside precise pin coordinates.
     final hasGpsFix = _latitude != null && _longitude != null;
     final manualLocation = _manualLocationController.text.trim();
-    final locationPayload = hasGpsFix
-        ? "${_latitude!.toStringAsFixed(5)}, ${_longitude!.toStringAsFixed(5)}"
-        : manualLocation;
+    final String locationPayload;
+    if (hasGpsFix && manualLocation.isNotEmpty) {
+      final raw = "$manualLocation (${_latitude!.toStringAsFixed(4)}, ${_longitude!.toStringAsFixed(4)})";
+      locationPayload = raw.length > 200 ? raw.substring(0, 200) : raw;
+    } else if (hasGpsFix) {
+      final areaLabel = LocationService.instance.locationLabel;
+      final raw = "$areaLabel (${_latitude!.toStringAsFixed(5)}, ${_longitude!.toStringAsFixed(5)})";
+      locationPayload = raw.length > 200 ? raw.substring(0, 200) : raw;
+    } else {
+      locationPayload = manualLocation;
+    }
     if (locationPayload.isEmpty) {
       setState(() => _isSubmitting = false);
       messenger.showSnackBar(
@@ -290,27 +411,33 @@ class _ReportPageState extends State<ReportPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          "Incident Type",
+                          "Category (Crimes & Infrastructure)",
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 6),
+                        const Text(
+                          "Anonymous per thread • >=70% votes or Admin verified: +10 Karma | Rejected: -20 Karma",
+                          style: TextStyle(color: AppColors.teal, fontSize: 11),
+                        ),
+                        const SizedBox(height: 10),
 
                         /// INCIDENT SELECTOR
                         SizedBox(
-                          height: 54,
+                          height: 50,
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             itemCount: incidents.length,
-                            separatorBuilder: (_, __) =>
-                            const SizedBox(width: 10),
+                            separatorBuilder: (_, __) => const SizedBox(width: 8),
                             itemBuilder: (context, index) {
                               final item = incidents[index];
-                              final bool active =
-                                  selectedType == item["label"];
+                              final bool active = selectedType == item["label"];
+                              final Color chipAccent = item["group"] == "Crime"
+                                  ? AppColors.amber
+                                  : AppColors.teal;
 
                               return GestureDetector(
                                 onTap: () {
@@ -319,36 +446,34 @@ class _ReportPageState extends State<ReportPage> {
                                   });
                                 },
                                 child: AnimatedContainer(
-                                  duration:
-                                  const Duration(milliseconds: 200),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 14),
+                                  duration: const Duration(milliseconds: 200),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12),
                                   decoration: BoxDecoration(
                                     color: active
-                                        ? AppColors.amber
-                                        .withValues(alpha: 0.18)
+                                        ? chipAccent.withValues(alpha: 0.22)
                                         : Colors.transparent,
                                     borderRadius: BorderRadius.circular(14),
                                     border: Border.all(
-                                      color: active
-                                          ? AppColors.amber
-                                          : Colors.white24,
+                                      color: active ? chipAccent : Colors.white24,
+                                      width: active ? 1.5 : 1.0,
                                     ),
                                   ),
                                   child: Row(
                                     children: [
                                       Icon(
                                         item["icon"] as IconData,
-                                        color: AppColors.amber,
-                                        size: 20,
+                                        color: chipAccent,
+                                        size: 18,
                                       ),
                                       const SizedBox(width: 6),
                                       Text(
                                         item["label"] as String,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           color: Colors.white,
+                                          fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                                          fontSize: 13,
                                         ),
-                                      )
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -383,80 +508,95 @@ class _ReportPageState extends State<ReportPage> {
 
                         const SizedBox(height: 14),
 
-                        /// LOCATION INFO (tappable to change via LocationService)
-                        InkWell(
-                          onTap: () {
-                            LocationService.showLocationPickerSheet(
-                              context,
-                              onLocationChanged: () {
-                                final loc = LocationService.instance;
-                                setState(() {
-                                  _latitude = loc.currentLat;
-                                  _longitude = loc.currentLng;
-                                  _locationTag = "${loc.locationLabel} (${loc.currentLat.toStringAsFixed(4)}, ${loc.currentLng.toStringAsFixed(4)})";
-                                });
-                              },
-                            );
-                          },
-                          borderRadius: BorderRadius.circular(8),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _latitude != null ? Icons.gps_fixed : Icons.edit_location_alt,
-                                  color: AppColors.teal,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    "Tagged: $_locationTag",
-                                    style: const TextStyle(
-                                        color: AppColors.textSecondary,
-                                        fontSize: 12),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
+                        /// LOCATION INFO (tappable to change or refresh live GPS)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  LocationService.showLocationPickerSheet(
+                                    context,
+                                    onLocationChanged: () {
+                                      final loc = LocationService.instance;
+                                      setState(() {
+                                        _latitude = loc.currentLat;
+                                        _longitude = loc.currentLng;
+                                        _locationTag = "${loc.locationLabel} (${loc.currentLat.toStringAsFixed(4)}, ${loc.currentLng.toStringAsFixed(4)})";
+                                      });
+                                    },
+                                  );
+                                },
+                                borderRadius: BorderRadius.circular(8),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        _latitude != null ? Icons.gps_fixed : Icons.edit_location_alt,
+                                        color: _latitude != null ? AppColors.teal : AppColors.amber,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          "Tagged: $_locationTag",
+                                          style: const TextStyle(
+                                              color: AppColors.textSecondary,
+                                              fontSize: 12),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.teal.withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(color: AppColors.teal.withValues(alpha: 0.4)),
+                                        ),
+                                        child: const Text(
+                                          "Change",
+                                          style: TextStyle(color: AppColors.teal, fontSize: 10, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.teal.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: AppColors.teal.withValues(alpha: 0.4)),
-                                  ),
-                                  child: const Text(
-                                    "Change",
-                                    style: TextStyle(color: AppColors.teal, fontSize: 10, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: _isLocating
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.teal),
+                                    )
+                                  : const Icon(Icons.my_location, color: AppColors.teal, size: 18),
+                              tooltip: "Refresh live GPS",
+                              onPressed: _isLocating ? null : () => _detectLocation(forceFreshGps: true),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _manualLocationController,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: _latitude == null
+                                ? "Landmark / area name *"
+                                : "Street / landmark detail (optional)",
+                            hintText: "e.g. MG Road near City Mall, dark underpass",
+                            labelStyle: const TextStyle(color: Colors.white60, fontSize: 13),
+                            enabledBorder: const OutlineInputBorder(
+                              borderSide: BorderSide(color: Colors.white24),
+                            ),
+                            focusedBorder: const OutlineInputBorder(
+                              borderSide: BorderSide(color: AppColors.teal),
                             ),
                           ),
                         ),
-
-                        // GPS unavailable → manual landmark is REQUIRED by the
-                        // backend (location field is mandatory).
-                        if (_latitude == null) ...[
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: _manualLocationController,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: const InputDecoration(
-                              labelText: "Landmark / area name *",
-                              hintText: "e.g. MG Road, near City Mall",
-                              labelStyle: TextStyle(color: Colors.white60),
-                              enabledBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: Colors.white24),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: AppColors.teal),
-                              ),
-                            ),
-                          ),
-                        ],
 
                         const SizedBox(height: 14),
 
@@ -470,18 +610,8 @@ class _ReportPageState extends State<ReportPage> {
                               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                             ),
                             icon: const Icon(Icons.add_a_photo_outlined, size: 20),
-                            label: const Text("Add Photo (Optional, ≤500KB)"),
-                            onPressed: () {
-                              // TODO(REAL_HARDWARE): Native gallery/camera pick requires
-                              // image_picker or file_picker in pubspec. Until then we must
-                              // NEVER submit a synthetic/placeholder image as evidence.
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("Photo attachment isn't available in this build yet — submit without a photo."),
-                                  backgroundColor: Colors.orange,
-                                ),
-                              );
-                            },
+                            label: const Text("Attach Photo (Optional, ≤500KB)"),
+                            onPressed: _showPhotoSourceSheet,
                           )
                         else
                           Container(
@@ -493,19 +623,35 @@ class _ReportPageState extends State<ReportPage> {
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.check_circle, color: AppColors.teal, size: 20),
-                                const SizedBox(width: 8),
-                                const Expanded(
+                                if (_photoBytes != null)
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.memory(
+                                      _photoBytes!,
+                                      width: 44,
+                                      height: 44,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  )
+                                else
+                                  const Icon(Icons.check_circle, color: AppColors.teal, size: 20),
+                                const SizedBox(width: 10),
+                                Expanded(
                                   child: Text(
-                                    "Photo attached (JPEG, ≤500KB)",
-                                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+                                    _photoBytes != null
+                                        ? "Photo attached (${(_photoBytes!.length / 1024).toStringAsFixed(0)} KB)"
+                                        : "Photo attached (≤500KB)",
+                                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
                                   ),
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.close, color: Colors.white70, size: 18),
                                   tooltip: "Remove photo",
                                   onPressed: () {
-                                    setState(() => _photoBase64 = null);
+                                    setState(() {
+                                      _photoBase64 = null;
+                                      _photoBytes = null;
+                                    });
                                   },
                                 ),
                               ],

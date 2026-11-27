@@ -80,6 +80,7 @@ class LocationService extends ChangeNotifier {
   bool _hasLiveGps = false;
   bool _isManualOverride = false;
   bool _isDetecting = false;
+  String? _lastLocationError;
 
   double get currentLat => _currentLat;
   double get currentLng => _currentLng;
@@ -87,6 +88,7 @@ class LocationService extends ChangeNotifier {
   bool get hasLiveGps => _hasLiveGps;
   bool get isManualOverride => _isManualOverride;
   bool get isDetecting => _isDetecting;
+  String? get lastLocationError => _lastLocationError;
 
   static const List<LocationPreset> presets = [
     LocationPreset(
@@ -171,30 +173,60 @@ class LocationService extends ChangeNotifier {
     ),
   ];
 
-  /// Detects real device/emulator GPS position
+  /// Detects real device/emulator GPS position (prefers fresh GPS fix, falls
+  /// back to last known position if current fix times out).
   Future<bool> detectLiveGps() async {
     _isDetecting = true;
+    _lastLocationError = null;
     notifyListeners();
 
     try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _lastLocationError = "Device Location / GPS is turned off.";
+        _isDetecting = false;
+        notifyListeners();
+        return false;
+      }
+
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
 
+      if (permission == LocationPermission.deniedForever) {
+        _lastLocationError = "Location permission permanently denied. Enable in app settings.";
+        _isDetecting = false;
+        notifyListeners();
+        return false;
+      }
+
       if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
-        Position? pos = await Geolocator.getLastKnownPosition();
-        pos ??= await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.medium,
-            timeLimit: Duration(seconds: 4),
-          ),
-        ).timeout(const Duration(seconds: 4));
+        Position? pos;
+        try {
+          pos = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              timeLimit: Duration(seconds: 6),
+            ),
+          ).timeout(const Duration(seconds: 6));
+        } catch (_) {
+          // Fresh fix unavailable/timed out; try cached last-known position
+          pos = await Geolocator.getLastKnownPosition();
+        }
+
+        if (pos == null) {
+          _lastLocationError = "Waiting for GPS satellite fix — try outdoors or pick a location.";
+          _isDetecting = false;
+          notifyListeners();
+          return false;
+        }
 
         _currentLat = pos.latitude;
         _currentLng = pos.longitude;
         _hasLiveGps = true;
         _isManualOverride = false;
+        _lastLocationError = null;
 
         // Format label with readable city or live coordinates
         if ((_currentLat - 23.1967).abs() < 0.1 && (_currentLng - 77.0819).abs() < 0.1) {
@@ -206,9 +238,11 @@ class LocationService extends ChangeNotifier {
         _isDetecting = false;
         notifyListeners();
         return true;
+      } else {
+        _lastLocationError = "Location permission denied.";
       }
     } catch (_) {
-      // Keep previous or default location if GPS fix times out
+      _lastLocationError = "Unable to acquire GPS fix right now.";
     }
 
     _isDetecting = false;
