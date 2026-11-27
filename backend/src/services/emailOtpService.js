@@ -1,13 +1,17 @@
 /**
- * Email OTP Service (Resend)
+ * Email OTP Service (Resend primary, Brevo fallback)
  *
  * Primary zero-cost OTP delivery channel via Resend's REST API
- * (https://api.resend.com/emails — 100 emails/day, 3,000/month free tier).
+ * (https://api.resend.com/emails — 100 emails/day, 3,000/month free tier),
+ * with automatic fallback to Brevo (https://api.brevo.com/v3/smtp/email)
+ * when BREVO_API_KEY is configured instead.
  * Uses Node's built-in fetch with no extra SDK dependency.
  *
  * Configuration (env only — keys are never logged or returned):
- *   RESEND_API_KEY       Resend API bearer token
+ *   RESEND_API_KEY       Resend API bearer token (preferred when set)
  *   OTP_FROM_EMAIL       Verified sender address (default onboarding@resend.dev)
+ *   BREVO_API_KEY        Optional Brevo v3 SMTP API key fallback
+ *   BREVO_SENDER_EMAIL   Sender email for Brevo (or falls back to OTP_FROM_EMAIL)
  *   EMAIL_OTP_DAILY_CAP  Optional per-email daily cap override (default 5)
  *
  * Honesty rules (AGENTS.md invariant #3): returns delivered: true ONLY on HTTP 2xx.
@@ -16,17 +20,35 @@
 const { db } = require('../data/store');
 
 const RESEND_API_URL = 'https://api.resend.com/emails';
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 const REQUEST_TIMEOUT_MS = 10000;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_DAILY_CAP = 5;
 
-function getApiKey() {
+function getResendApiKey() {
   return (process.env.RESEND_API_KEY || '').trim();
+}
+
+function getBrevoApiKey() {
+  return (process.env.BREVO_API_KEY || '').trim();
+}
+
+function getProvider() {
+  if (getResendApiKey().length > 0) return 'resend';
+  if (getBrevoApiKey().length > 0 && getBrevoFromEmail()) return 'brevo';
+  return null;
 }
 
 function getFromEmail() {
   const configured = (process.env.OTP_FROM_EMAIL || '').trim();
   return configured || 'SafeSphere <onboarding@resend.dev>';
+}
+
+function getBrevoFromEmail() {
+  const raw = (process.env.BREVO_SENDER_EMAIL || process.env.OTP_FROM_EMAIL || '').trim();
+  const match = raw.match(/<([^>]+)>/);
+  const extracted = match ? match[1].trim() : raw;
+  return normalizeEmail(extracted);
 }
 
 function getDailyCap() {
@@ -35,7 +57,7 @@ function getDailyCap() {
 }
 
 function isConfigured() {
-  return getApiKey().length > 0;
+  return getProvider() !== null;
 }
 
 function normalizeEmail(rawEmail) {
@@ -111,16 +133,17 @@ function buildOtpEmailContent({ otp }) {
 }
 
 /**
- * Dispatches a 6-digit OTP email through Resend.
- * @returns {Promise<{delivered: boolean, id?: string, maskedEmail?: string, error?: string, skipped?: boolean}>}
+ * Dispatches a 6-digit OTP email through Resend (primary) or Brevo (fallback).
+ * @returns {Promise<{delivered: boolean, provider?: string, id?: string, maskedEmail?: string, error?: string, skipped?: boolean}>}
  */
 async function sendOtpEmail({ to, otp }) {
   const email = normalizeEmail(to);
   if (!email) {
     return { delivered: false, skipped: true, error: 'Valid recipient email is required' };
   }
-  if (!isConfigured()) {
-    return { delivered: false, skipped: true, maskedEmail: maskEmail(email), error: 'RESEND_API_KEY not configured' };
+  const provider = getProvider();
+  if (!provider) {
+    return { delivered: false, skipped: true, maskedEmail: maskEmail(email), error: 'Email OTP provider not configured' };
   }
 
   checkDailyLimit(email);
@@ -130,21 +153,40 @@ async function sendOtpEmail({ to, otp }) {
   const { subject, text, html } = buildOtpEmailContent({ otp });
 
   try {
-    const res = await fetch(RESEND_API_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${getApiKey()}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        from: getFromEmail(),
-        to: [email],
-        subject,
-        text,
-        html
-      }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-    });
+    let res;
+    if (provider === 'resend') {
+      res = await fetch(RESEND_API_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${getResendApiKey()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: getFromEmail(),
+          to: [email],
+          subject,
+          text,
+          html
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      });
+    } else {
+      res = await fetch(BREVO_API_URL, {
+        method: 'POST',
+        headers: {
+          'api-key': getBrevoApiKey(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: { name: 'SafeSphere', email: getBrevoFromEmail() },
+          to: [{ email }],
+          subject,
+          textContent: text,
+          htmlContent: html
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      });
+    }
 
     let decoded = null;
     try { decoded = await res.json(); } catch (_) { decoded = null; }
@@ -152,27 +194,31 @@ async function sendOtpEmail({ to, otp }) {
     if (!res.ok) {
       return {
         delivered: false,
+        provider,
         maskedEmail: maskEmail(email),
-        error: `resend dispatch failed (HTTP ${res.status})`
+        error: `${provider} dispatch failed (HTTP ${res.status})`
       };
     }
 
     return {
       delivered: true,
-      id: decoded && decoded.id ? String(decoded.id) : undefined,
+      provider,
+      id: decoded && (decoded.id || decoded.messageId) ? String(decoded.id || decoded.messageId) : undefined,
       maskedEmail: maskEmail(email)
     };
   } catch (_) {
     return {
       delivered: false,
+      provider,
       maskedEmail: maskEmail(email),
-      error: 'resend network failure'
+      error: `${provider} network failure`
     };
   }
 }
 
 module.exports = {
   isConfigured,
+  getProvider,
   normalizeEmail,
   maskEmail,
   checkDailyLimit,

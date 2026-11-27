@@ -34,6 +34,7 @@ describe('Email OTP Service (Resend)', () => {
 
   let t;
   let resendCalls = [];
+  let brevoCalls = [];
   let resendFail = false;
   let resendStatus = 500;
 
@@ -41,6 +42,8 @@ describe('Email OTP Service (Resend)', () => {
     process.env.NODE_ENV = 'test';
     delete process.env.SMS_API_KEY;
     delete process.env.SMS_OTP_TEMPLATE_ID;
+    delete process.env.RESEND_API_KEY;
+    delete process.env.BREVO_API_KEY;
     t = await startTestServer();
 
     global.fetch = async (input, init) => {
@@ -58,14 +61,25 @@ describe('Email OTP Service (Resend)', () => {
           { status: 200 }
         );
       }
+      if (url.includes('api.brevo.com/v3/smtp/email')) {
+        brevoCalls.push({ url, init: init || {} });
+        return new Response(
+          JSON.stringify({ messageId: `<brevo_${brevoCalls.length}@safesphere>` }),
+          { status: 201 }
+        );
+      }
       return REAL_FETCH(input, init);
     };
   });
 
   beforeEach(() => {
     resendCalls = [];
+    brevoCalls = [];
     resendFail = false;
     resendStatus = 500;
+    delete process.env.RESEND_API_KEY;
+    delete process.env.BREVO_API_KEY;
+    delete process.env.BREVO_SENDER_EMAIL;
     config.isProduction = SAVED_CONFIG.isProduction;
     config.isDev = SAVED_CONFIG.isDev;
     config.isTest = SAVED_CONFIG.isTest;
@@ -230,5 +244,26 @@ describe('Email OTP Service (Resend)', () => {
     assert.equal(db.getEmailOtpCount(targetEmail, day), 5);
     assert.equal(db.deleteUser(user.id), true);
     assert.equal(db.getEmailOtpCount(targetEmail, day), 0);
+  });
+
+  it('uses Brevo transport cleanly when RESEND_API_KEY is absent and BREVO_API_KEY + BREVO_SENDER_EMAIL are set', async () => {
+    process.env.BREVO_API_KEY = 'xkeysib-test-secret';
+    process.env.BREVO_SENDER_EMAIL = 'noreply@safesphere.app';
+
+    const res = await t.request('/api/v1/auth/otp/send', {
+      method: 'POST',
+      body: { phone: '+919811100025', email: 'brevo.citizen@example.com' }
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.emailDispatched, true);
+    assert.equal(res.body.channel, 'email');
+    assert.equal(res.body.devOtp, undefined);
+    assert.equal(resendCalls.length, 0);
+    assert.equal(brevoCalls.length, 1);
+    assert.equal(brevoCalls[0].init.headers['api-key'], 'xkeysib-test-secret');
+    const body = JSON.parse(brevoCalls[0].init.body);
+    assert.equal(body.sender.email, 'noreply@safesphere.app');
+    assert.deepEqual(body.to, [{ email: 'brevo.citizen@example.com' }]);
+    assert.match(body.textContent, /Your verification code is \d{6}/);
   });
 });
