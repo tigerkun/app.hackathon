@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:vector_map_tiles/vector_map_tiles.dart' as vmt;
 import '../widgets/app_drawer.dart';
 import '../theme/app_colors.dart';
 import '../services/map_config.dart';
@@ -945,6 +946,47 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
     );
   }
 
+  /// PRIMARY base layer: OpenFreeMap vector style (native dark, editor-grade
+  /// detail). The style is fetched ONCE per app run (lazy static — no network
+  /// cost until a map page actually builds). While loading or on failure the
+  /// raster fallback renders, so the map is never blank (invariant #1).
+  Widget _buildBaseMapLayer() {
+    if (!SafeSphereMapConfig.useVectorTiles) {
+      return _buildRasterTileLayer();
+    }
+    return FutureBuilder<vmt.Style>(
+      future: SafeSphereMapConfig.vectorStyleFuture,
+      builder: (context, snap) {
+        if (snap.hasData) {
+          return vmt.VectorTileLayer(
+            tileProviders: snap.data!.providers,
+            theme: snap.data!.theme,
+            sprites: snap.data!.sprites,
+            maximumZoom: 22,
+            layerMode: vmt.VectorTileLayerMode.vector,
+          );
+        }
+        if (snap.hasError) {
+          debugPrint(
+              '[SafetyMap] vector style unavailable — raster fallback active (${snap.error})');
+        }
+        return _buildRasterTileLayer();
+      },
+    );
+  }
+
+  /// Raster fallback layer (also the MapTiler dart-define path).
+  Widget _buildRasterTileLayer() {
+    return TileLayer(
+      urlTemplate: SafeSphereMapConfig.tileUrlTemplate,
+      userAgentPackageName: SafeSphereMapConfig.userAgentPackageName,
+      maxNativeZoom: 19,
+      // Dark-mode inversion only for non-dark raster providers; the vector
+      // primary is natively dark and never filtered.
+      tileBuilder: SafeSphereMapConfig.needsDarkFilter ? darkModeTileBuilder : null,
+    );
+  }
+
   /// Real pannable/zoomable map (flutter_map + OpenStreetMap-derived raster
   /// tiles). Free by default: no API key, no card, no billing account.
   Widget _buildLiveMap(List<_MapPinItem> items) {
@@ -967,18 +1009,12 @@ class _SafetyMapPageState extends State<SafetyMapPage> {
             },
           ),
           children: [
-            // Dark-mode color filter applied to standard OSM light tiles when
-            // no natively dark tile provider is configured. Uses flutter_map's
-            // built-in darkModeTilesContainerBuilder for container-level inversion
-            // (eliminates per-tile saveLayer performance overhead).
-            TileLayer(
-              urlTemplate: SafeSphereMapConfig.tileUrlTemplate,
-              userAgentPackageName: SafeSphereMapConfig.userAgentPackageName,
-              maxNativeZoom: 19,
-              tileBuilder: SafeSphereMapConfig.needsDarkFilter
-                  ? darkModeTileBuilder
-                  : null,
-            ),
+            // PRIMARY (M-map): OpenFreeMap VECTOR tiles — keyless, free,
+            // full OSM editor-grade detail (buildings, landuse, footpaths)
+            // rendered as crisp vectors with a NATIVE dark style. Falls back
+            // honestly to the raster TileLayer while the style loads and
+            // permanently if the style cannot be fetched (offline/blocked).
+            _buildBaseMapLayer(),
             RichAttributionWidget(
               attributions: [
                 TextSourceAttribution(

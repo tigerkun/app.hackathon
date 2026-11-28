@@ -250,7 +250,7 @@ repositories via built-in `node:sqlite` with instant `reset()` for tests).
   - Frontend `/circle` (`MyCirclePage`, drawer "My Circle (Trusted People)"): copyable Safe ID card, accept/decline incoming requests, scoped live-view bottom sheet (5s poll, honest scope-denied copy), check-in, revoke. Connection client methods in `auth_service.dart` return `{ ok, data }` / `{ ok, code, message }` so UI surfaces the real server error. Safe ID shows in the drawer header.
 - **Map Excellence & Movement Intel (M4)**:
   - **24x7 Store category** added to `VALID_MARKER_CATEGORIES` (backend `markerModel.js`) and the submit-marker dropdown; frontend maps it to `Icons.storefront` + `AppColors.green` and a "Stores" filter chip — the always-open-refuge category (cashier, lighting, footfall).
-  - **Glowing markers**: `_InteractivePin` renders two stacked category-tinted `BoxShadow` halos so refuges pop on dark tiles at night.
+  - **Glowing markers**: `_InteractivePin` renders two stacked category-tinted `BoxShadow` halos so refuges pop on the dark vector tiles at night. Base layer: OpenFreeMap vectors (native dark) with honest raster fallback (`_buildBaseMapLayer` / `_buildRasterTileLayer`).
   - **"Near me" service strip**: horizontal strip under the filter chips showing the nearest Police / Hospital / 24x7 / Safe-zone marker with distance, tappable to select on the map. Gated behind `_hasGpsFix` (never rendered against the fabricated Delhi default) and honestly shows "none loaded" for missing categories.
   - **Route guidance line**: selecting a safety marker draws a dashed teal straight-line (`Polyline` + `StrokePattern.dashed`) from the GPS fix to the pin — explicitly documented as NOT turn-by-turn; real routing stays the external directions deep link. Hazards and the user's own pin never get a line.
   - **Movement intel**: `frontend/lib/services/movement_analyzer.dart` — pure-Dart breadcrumb state machine (`unknown | stationary | moving | stalled`) with 120s stall window (F3-2 parity), GPS-jitter threshold (1.5 km/h), dwell-time computation, bogus-gap filtering (skips ≤0s or >1h segments), and heading via Haversine bearing. Summaries are telemetry-only and never claim intent ("safe", "at home"). Surfaced in `TrackSessionPage`'s "Movement" info tile; tolerant to empty/malformed input.
@@ -314,7 +314,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 | `Hardening Wave (audit)` | `alertController.js`, `authMiddleware.js`, `validation.js`, `rateLimiter.js`, `config/index.js`, `auth_service.dart` | Guest SOS identity stripping (body identity ignored), optionalAuth + requireAuth session-revocation gates (missing/invalid session ⇒ guest/rejected), dedicated 10/min `otpLimiter` on `/otp/send`+`/otp/verify`, input caps (SOS notes 500 / alertType 40 / report description 2000 / location 200 / coords validated / direct `photoUrl` rejected), env fail-closed (unknown `NODE_ENV` ⇒ production hygiene, incl. inside `validateJwtSecretHygiene`), offline SOS queue 24h TTL with `_queuedAt` stamps | DONE |
 | `Email OTP (Resend / Brevo)` | `backend/src/services/emailOtpService.js`, `otpService.js`, `authController.js`, `register_page.dart`, `phone_otp_page.dart` | Zero-cost primary OTP delivery via Resend (`RESEND_API_KEY`, optional `OTP_FROM_EMAIL`, free tier 100/day & 3,000/month) with automatic Brevo fallback (`BREVO_API_KEY` + `BREVO_SENDER_EMAIL`), per-email 5/day limit (`email_otp_limits` table) + 60s cooldown; omits `devOtp` in prod & when delivered, fails closed (`502 OTP_DISPATCH_FAILED`) in prod on outage | DONE |
 | `SMS Gateway (Fast2SMS)` | `backend/src/services/smsGatewayService.js`, `otpService.js`, `sosService.js` | Legacy/future paid DLT SMS adapter (`fast2sms` / `textlocal`); SMS & WhatsApp OTP remain paid-DLT paths (`contactsNotified` stays honest `0` when unconfigured) | DEFERRED (DLT paid path) |
-| `Maps key` | `frontend/lib/services/map_config.dart` | Google Maps & CARTO keyless abandoned (CARTO now requires API key and watermarks tiles) — Safety Map runs on `flutter_map` + standard OpenStreetMap raster tiles with client-side dark-mode filter, zero key/card; optional MapTiler key via dart-define | DONE (free tier) |
+| `Maps key` | `frontend/lib/services/map_config.dart` | Google Maps & CARTO abandoned; raster fallback retained — Safety Map now renders **OpenFreeMap VECTOR tiles** (free/keyless/unlimited) as the primary layer: native dark style, editor-grade OSM detail, crisp at every zoom; raster OSM tiles remain the honest fallback; optional MapTiler key via dart-define still honored | DONE (free tier, vectors) |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/services/auth_service.dart` (`verifyBiometrics`) | Real biometric scan via `local_auth` wired with hardware check and fallback | DONE |
 | `TODO(REAL_HARDWARE)` | `frontend/lib/pages/home_page.dart`, `emergency_page.dart` | Volume button / hardware panic intercept requires native plugin, fallback F4-2-alt shipped | DEFERRED |
 | `F3-1 (SOS Escalation)` | `backend/src/services/sosService.js`, `frontend/lib/pages/emergency_page.dart` | 60s escalation watchdog, escalationLevel cap 3, WS broadcast, active ageSeconds & badge | DONE |
@@ -352,13 +352,16 @@ Search `TODO(REAL_` for the live list. Current stubs:
   direct dependency (e.g. `geolocator`, `flutter_map`, `local_auth`, `flutter_secure_storage`). Run
   `flutter pub get` on a Flutter-equipped machine before building; do NOT edit `pubspec.lock` by hand.
 - **Maps are OSM-based via `flutter_map`** — no API key, no card, no billing
-  account. The Safety Map renders OpenStreetMap standard raster tiles with
-  flutter_map's built-in `darkModeTilesContainerBuilder` filter (OSM data) with an
-  OSM attribution (CARTO dark tiles were abandoned after CARTO began watermarking
-  keyless requests); a free MapTiler key can be passed at build time via
-  `--dart-define=SAFESPHERE_MAP_TILER_KEY=<key>` to upgrade tiles. The former
-  `google_maps_flutter` dependency was removed (it was never imported and its
-  SDK required a billing-verified Google Cloud account).
+  account. PRIMARY: **OpenFreeMap vector tiles** (openfreemap.org, free/keyless)
+  via `vector_map_tiles` — full OSM editor-grade detail (buildings, landuse,
+  footpaths) as crisp vectors with a NATIVE dark style (no color-inversion).
+  FALLBACK: standard OpenStreetMap raster tiles with the
+  `darkModeTilesContainerBuilder` filter render while the vector style loads and
+  whenever it cannot be fetched (offline/blocked). A free MapTiler key can still
+  be passed via `--dart-define=SAFESPHERE_MAP_TILER_KEY=<key>` to force the
+  raster branch to MapTiler. The former `google_maps_flutter` dependency was
+  removed (it was never imported and its SDK required a billing-verified Google
+  Cloud account).
 - **AI assistant requires `GROQ_API_KEY`.** Without it `POST /api/v1/ai/chat`
   returns an honest `503 AI_NOT_CONFIGURED` and the UI falls back to the
   offline safety guides. The key is never committed or returned to clients.

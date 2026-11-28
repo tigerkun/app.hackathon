@@ -2,17 +2,23 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:vector_map_tiles/vector_map_tiles.dart' as vmt;
 import '../theme/app_colors.dart';
 
 /// Tile provider configuration for the SafeSphere map (flutter_map).
 ///
-/// Free by default: OpenStreetMap standard raster tiles with flutter_map's
-/// built-in darkModeTilesContainerBuilder for dark-mode rendering — no account, no
-/// API key, no card.
-/// If prettier vector-style tiles are wanted later, pass a free MapTiler
-/// key (100k loads/month) at build time:
+/// PRIMARY: OpenFreeMap vector tiles (openfreemap.org) — FREE, keyless,
+/// unlimited. Renders the SAME OpenStreetMap data the openstreetmap.org
+/// editor shows (buildings, landuse, footpaths, house numbers) as crisp
+/// vectors with a NATIVE dark style — no color-inversion filter. Crisp at
+/// every zoom level instead of blurry raster upscaling.
+/// FALLBACK: standard OpenStreetMap raster tiles with flutter_map's
+/// darkModeTilesContainerBuilder — used while the vector style loads and
+/// permanently when the style cannot be fetched (offline / blocked), so the
+/// map degrades honestly instead of breaking (invariant #1).
+/// A free MapTiler key (100k loads/month) can still be passed at build time:
 ///   flutter build apk --release --dart-define=SAFESPHERE_MAP_TILER_KEY=<key>
-/// The same map code then switches providers automatically.
+/// which forces the raster branch to MapTiler's style.
 class SafeSphereMapConfig {
   /// Fallback map center (old Delhi default) used only before a real GPS fix —
   /// the UI never presents it as the user's location.
@@ -25,23 +31,36 @@ class SafeSphereMapConfig {
   /// True when a MapTiler key was provided at build time.
   static bool get isMapTilerConfigured => _mapTilerKey.isNotEmpty;
 
-  /// Raster tile URL template consumed by flutter_map's TileLayer.
-  /// Default: standard OpenStreetMap tiles (free, no key). flutter_map's
-  /// built-in darkModeTilesContainerBuilder is used to invert tiles into dark mode.
-  /// NOTE: CARTO dark_all tiles now require an API key and are no longer
-  /// used as the free default.
+  /// Vector rendering is the default experience (OpenFreeMap, keyless).
+  /// The MapTiler dart-define path keeps its raster behavior.
+  static bool get useVectorTiles => !isMapTilerConfigured;
+
+  /// OpenFreeMap hosted style — NATIVE dark, full OSM detail.
+  /// (alternatives: /styles/liberty, /styles/bright, /styles/positron)
+  static const String vectorStyleUri =
+      'https://tiles.openfreemap.org/styles/dark';
+
+  /// The vector style, fetched ONCE per app run (Dart statics are lazy — no
+  /// network cost until a map page actually builds). Future completes with
+  /// the parsed Style (theme + providers + sprites); errors surface to the
+  /// FutureBuilder which falls back to raster tiles honestly.
+  static final Future<vmt.Style> vectorStyleFuture =
+      vmt.StyleReader(uri: vectorStyleUri).read();
+
+  /// Raster tile URL template — the honest FALLBACK layer only.
+  /// Used while the vector style loads and whenever it cannot be fetched.
   static String get tileUrlTemplate => isMapTilerConfigured
       ? 'https://api.maptiler.com/maps/basic-v2/{z}/{x}/{y}.png?key=$_mapTilerKey'
       : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
-  /// True when tiles are natively dark-themed (MapTiler, etc).
-  /// When false, the map widget must apply darkModeTileBuilder.
+  /// True when the RASTER FALLBACK needs the dark-mode inversion filter.
+  /// (The vector style is natively dark and never filtered.)
   static bool get needsDarkFilter => !isMapTilerConfigured;
 
-  /// Attribution text shown on the map (required by tile usage policies).
+  /// Attribution shown on the map (required by tile usage policies).
   static String get attribution => isMapTilerConfigured
       ? '© MapTiler © OpenStreetMap contributors'
-      : '© OpenStreetMap contributors';
+      : '© OpenStreetMap contributors © OpenFreeMap';
 
   static const String attributionUrl = 'https://www.openstreetmap.org/copyright';
 

@@ -42,6 +42,12 @@ dependencies:
   # required a billing-verified Google Cloud account).
   flutter_map: ^7.0.0
   latlong2: ^0.9.1
+  # Vector map rendering via OpenFreeMap (openfreemap.org) — FREE, keyless,
+  # unlimited: full OSM detail (buildings, landuse, paths — the same data the
+  # openstreetmap.org editor renders) as crisp vectors with a NATIVE dark
+  # style (no color-inversion filter). Raster tiles remain the fallback when
+  # the vector style cannot load (offline / blocked).
+  vector_map_tiles: ^8.0.0
   # M6: direct dep for salted PIN hashing (sp1$salt$sha256 file fallback).
   # Was transitive-only before — declaring it keeps a clean `pub get` honest.
   crypto: ^3.0.3
