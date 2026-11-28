@@ -122,7 +122,25 @@ async function sendOtp(rawPhone, purpose = 'login', rawEmail = null) {
   return result;
 }
 
-function verifyOtp(rawPhone, inputCode) {
+function canonicalPurpose(purpose) {
+  const normalized = String(purpose || '').trim().toLowerCase();
+  if (!normalized) return '';
+  if (normalized === 'pin_reset' || normalized === 'pin-reset' || normalized === 'reset_pin') {
+    return 'pin_reset';
+  }
+  if (
+    normalized === 'login' ||
+    normalized === 'verify' ||
+    normalized === 'verification' ||
+    normalized === 'signup' ||
+    normalized === 'register'
+  ) {
+    return 'auth_verify';
+  }
+  return normalized;
+}
+
+function verifyOtp(rawPhone, inputCode, expectedPurpose = null) {
   const phone = normalizePhone(rawPhone);
   if (!phone || !inputCode) {
     const error = new Error('Phone and 6-digit OTP code are required');
@@ -154,7 +172,7 @@ function verifyOtp(rawPhone, inputCode) {
 
   const cleanInput = String(inputCode).trim();
 
-  // Check mismatch
+  // Check mismatch BEFORE purpose check so attackers cannot probe OTP purpose without the code
   if (record.code !== cleanInput) {
     record.attempts += 1;
     if (record.attempts >= config.otpMaxAttempts) {
@@ -174,17 +192,30 @@ function verifyOtp(rawPhone, inputCode) {
     throw error;
   }
 
+  if (expectedPurpose !== null && expectedPurpose !== undefined && String(expectedPurpose).trim() !== '') {
+    const expectedCanon = canonicalPurpose(expectedPurpose);
+    const actualCanon = canonicalPurpose(record.purpose);
+    if (!actualCanon || actualCanon !== expectedCanon) {
+      const error = new Error('This verification code was issued for a different action. Please request a new code.');
+      error.status = 400;
+      error.code = 'OTP_PURPOSE_MISMATCH';
+      throw error;
+    }
+  }
+
   // Success: consume OTP immediately
   db.deleteOtp(phone);
 
   return {
     verified: true,
-    phone
+    phone,
+    purpose: record.purpose
   };
 }
 
 module.exports = {
   sendOtp,
   verifyOtp,
-  generateOtpCode
+  generateOtpCode,
+  canonicalPurpose
 };

@@ -334,6 +334,16 @@ class DataStore {
       this.db.exec("ALTER TABLE reports ADD COLUMN quorumRequired INTEGER NOT NULL DEFAULT 5");
     } catch (_) {}
     try {
+      this.db.exec("ALTER TABLE reports ADD COLUMN karmaDelta INTEGER NOT NULL DEFAULT 0");
+    } catch (_) {}
+    try {
+      this.db.exec("ALTER TABLE reports ADD COLUMN strikeApplied INTEGER NOT NULL DEFAULT 0");
+    } catch (_) {}
+    try {
+      this.db.exec("UPDATE reports SET karmaDelta = 10 WHERE karmaAwarded = 1 AND karmaDelta = 0 AND strikeApplied = 0 AND status IN ('verified', 'resolved')");
+      this.db.exec("UPDATE reports SET karmaDelta = -20, strikeApplied = 1 WHERE karmaAwarded = 1 AND karmaDelta = 0 AND strikeApplied = 0 AND status = 'rejected'");
+    } catch (_) {}
+    try {
       this.db.exec("ALTER TABLE users ADD COLUMN lastKnownLat REAL");
     } catch (_) {}
     try {
@@ -350,6 +360,9 @@ class DataStore {
     // Phone canonicalization backfill: rows stored before normalizePhone
     // became canonical may hold '+91 …'/spaced forms; rewrite them so
     // login/OTP/PIN-reset lookups resolve regardless of input formatting.
+    try {
+      this._backfillPhoneCanonical();
+    } catch (_) {}
     // Ensure all seed markers exist
     try {
       this._seedMissingMarkers();
@@ -505,6 +518,9 @@ class DataStore {
         DELETE FROM report_votes;
         DELETE FROM report_comments;
         DELETE FROM comment_votes;
+        DELETE FROM connection_locations;
+        DELETE FROM connection_checkins;
+        DELETE FROM connections;
       `);
 
       const seed = getSeedData();
@@ -859,10 +875,16 @@ class DataStore {
       }
     }
 
-    // 2. Active reporters on nearby reports within radius
-    const reportsWithCoords = this.db.prepare(
-      'SELECT id, reportedBy, latitude, longitude FROM reports WHERE latitude IS NOT NULL AND longitude IS NOT NULL'
-    ).all();
+    // 2. Active non-banned reporters on nearby reports within radius
+    const reportsWithCoords = this.db.prepare(`
+      SELECT r.id, r.reportedBy, r.latitude, r.longitude
+      FROM reports r
+      INNER JOIN users u ON u.id = r.reportedBy
+      WHERE r.latitude IS NOT NULL
+        AND r.longitude IS NOT NULL
+        AND u.banned = 0
+        AND u.isActive = 1
+    `).all();
     for (const r of reportsWithCoords) {
       if (calculateDistance(tLat, tLng, Number(r.latitude), Number(r.longitude)) <= radiusKm) {
         if (r.reportedBy) seen.add(r.reportedBy);
@@ -1268,7 +1290,9 @@ class DataStore {
       reportedBy: row.reportedBy ?? null,
       verificationSource: row.verificationSource || (row.status === 'verified' ? 'moderator' : 'pending'),
       karmaAwarded: Boolean(row.karmaAwarded),
-      quorumRequired: Math.max(5, Number(row.quorumRequired || 5)),
+      karmaDelta: Number(row.karmaDelta || 0),
+      strikeApplied: Number(row.strikeApplied || 0),
+      quorumRequired: Math.min(25, Math.max(5, Number(row.quorumRequired || 5))),
       attachments: Array.isArray(attachments) ? attachments.map((a) => (typeof a === 'object' && a !== null ? { ...a } : a)) : [],
       photoUrl: row.photoUrl ?? null,
       expiresAt: row.expiresAt ?? null,
@@ -1294,9 +1318,13 @@ class DataStore {
     }
     if (filter.status) {
       conditions.push('status = ?');
-      params.push(filter.status);
-    } else if (!filter.includeRejected) {
+      params.push(String(filter.status).toLowerCase());
+    }
+    if (!filter.includeRejected) {
       conditions.push("(status != 'rejected' OR status IS NULL)");
+    }
+    if (filter.mapVisible) {
+      conditions.push("status = 'verified'");
     }
     if (filter.reportedBy) {
       conditions.push('reportedBy = ?');
@@ -1327,8 +1355,9 @@ class DataStore {
       INSERT INTO reports (
         id, type, description, location, latitude, longitude,
         status, reportedBy, attachments, photoUrl, createdAt, updatedAt,
-        expiresAt, upvotes, downvotes, verificationSource, karmaAwarded, quorumRequired
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        expiresAt, upvotes, downvotes, verificationSource, karmaAwarded,
+        quorumRequired, karmaDelta, strikeApplied
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         type = excluded.type,
         description = excluded.description,
@@ -1346,7 +1375,9 @@ class DataStore {
         downvotes = excluded.downvotes,
         verificationSource = excluded.verificationSource,
         karmaAwarded = excluded.karmaAwarded,
-        quorumRequired = excluded.quorumRequired
+        quorumRequired = excluded.quorumRequired,
+        karmaDelta = excluded.karmaDelta,
+        strikeApplied = excluded.strikeApplied
     `).run(
       report.id,
       report.type ?? '',
@@ -1365,7 +1396,9 @@ class DataStore {
       report.downvotes !== undefined && report.downvotes !== null ? Number(report.downvotes) : 0,
       report.verificationSource || (report.status === 'verified' ? 'moderator' : 'pending'),
       report.karmaAwarded ? 1 : 0,
-      Math.max(5, Number(report.quorumRequired || 5))
+      Math.min(25, Math.max(5, Number(report.quorumRequired || 5))),
+      report.karmaDelta !== undefined && report.karmaDelta !== null ? Math.trunc(Number(report.karmaDelta)) : 0,
+      report.strikeApplied !== undefined && report.strikeApplied !== null ? Math.max(0, Math.trunc(Number(report.strikeApplied))) : 0
     );
 
     return this.findReportById(report.id);

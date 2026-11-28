@@ -587,7 +587,9 @@ const shutdown = (callback) => {
 if (require.main === module) {
   (async () => {
     const { hydrateStoreFromSnapshot, startSnapshotPersistence } = require('./data/dbSnapshot');
+    const { bootstrapAdminIfConfigured } = require('./services/bootstrapService');
     await hydrateStoreFromSnapshot(() => db);
+    bootstrapAdminIfConfigured(db);
     startSnapshotPersistence(() => db);
 
     server.listen(config.port, '0.0.0.0', () => {

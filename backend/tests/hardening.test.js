@@ -282,7 +282,7 @@ describe('Hardening Wave', () => {
       // Request OTP for the registered phone (test env returns devOtp)
       const send = await t.request('/api/v1/auth/otp/send', {
         method: 'POST',
-        body: { phone, purpose: 'login' }
+        body: { phone, purpose: 'pin_reset' }
       });
       assert.equal(send.status, 200);
       const devOtp = send.body.devOtp;
@@ -309,6 +309,29 @@ describe('Hardening Wave', () => {
       assert.equal(newLogin.status, 200);
     });
 
+    it('rejects a login-purpose OTP on /pin/reset with 400 OTP_PURPOSE_MISMATCH', async () => {
+      const email = 'pin.reset.mismatch@safesphere.test';
+      const phone = '+918811223349';
+      const reg = await t.request('/api/v1/auth/register', {
+        method: 'POST',
+        body: { name: 'Pin Reset Mismatch', email, phone, password: 'Str0ngPass!23', pin: '1111' }
+      });
+      assert.equal(reg.status, 201);
+
+      const send = await t.request('/api/v1/auth/otp/send', {
+        method: 'POST',
+        body: { phone, purpose: 'login' }
+      });
+      assert.equal(send.status, 200);
+
+      const reset = await t.request('/api/v1/auth/pin/reset', {
+        method: 'POST',
+        body: { phone, otp: send.body.devOtp, newPin: '998877' }
+      });
+      assert.equal(reset.status, 400);
+      assert.equal(reset.body.error.code, 'OTP_PURPOSE_MISMATCH');
+    });
+
     it('rejects a wrong OTP with 401 INVALID_OTP', async () => {
       const email = 'pin.reset2@safesphere.test';
       const phone = '+918811223355';
@@ -321,7 +344,7 @@ describe('Hardening Wave', () => {
       // An OTP must exist first — otherwise verifyOtp 400s on the missing record
       const send = await t.request('/api/v1/auth/otp/send', {
         method: 'POST',
-        body: { phone, purpose: 'login' }
+        body: { phone, purpose: 'pin_reset' }
       });
       assert.equal(send.status, 200);
 
@@ -342,7 +365,7 @@ describe('Hardening Wave', () => {
       });
       const send = await t.request('/api/v1/auth/otp/send', {
         method: 'POST',
-        body: { phone, purpose: 'login' }
+        body: { phone, purpose: 'pin_reset' }
       });
       assert.equal(send.status, 200);
       const devOtp = send.body.devOtp;

@@ -17,6 +17,7 @@
  * Honesty rules (AGENTS.md invariant #3): returns delivered: true ONLY on HTTP 2xx.
  */
 
+const config = require('../config');
 const { db } = require('../data/store');
 
 const RESEND_API_URL = 'https://api.resend.com/emails';
@@ -33,22 +34,42 @@ function getBrevoApiKey() {
   return (process.env.BREVO_API_KEY || '').trim();
 }
 
-function getProvider() {
-  if (getResendApiKey().length > 0) return 'resend';
-  if (getBrevoApiKey().length > 0 && getBrevoFromEmail()) return 'brevo';
-  return null;
-}
-
 function getFromEmail() {
   const configured = (process.env.OTP_FROM_EMAIL || '').trim();
   return configured || 'SafeSphere <onboarding@resend.dev>';
 }
 
 function getBrevoFromEmail() {
-  const raw = (process.env.BREVO_SENDER_EMAIL || process.env.OTP_FROM_EMAIL || '').trim();
+  const explicit = (process.env.BREVO_SENDER_EMAIL || '').trim();
+  const fallback = (process.env.OTP_FROM_EMAIL || '').trim();
+  const raw = explicit || fallback;
+  if (!raw) return null;
   const match = raw.match(/<([^>]+)>/);
   const extracted = match ? match[1].trim() : raw;
-  return normalizeEmail(extracted);
+  const normalized = normalizeEmail(extracted);
+  if (!explicit && normalized === 'onboarding@resend.dev') {
+    return null;
+  }
+  return normalized;
+}
+
+function isResendConfigured() {
+  return getResendApiKey().length > 0;
+}
+
+function isBrevoConfigured() {
+  return getBrevoApiKey().length > 0 && Boolean(getBrevoFromEmail());
+}
+
+function getConfiguredProviders() {
+  const providers = [];
+  if (isResendConfigured()) providers.push('resend');
+  if (isBrevoConfigured()) providers.push('brevo');
+  return providers;
+}
+
+function getProvider() {
+  return getConfiguredProviders()[0] || null;
 }
 
 function getDailyCap() {
@@ -96,13 +117,14 @@ function checkDailyLimit(rawEmail) {
 
 function buildOtpEmailContent({ otp }) {
   const safeCode = String(otp || '').replace(/[^0-9]/g, '').slice(0, 6);
+  const expiryMinutes = Math.max(1, Math.round((config.otpExpirySeconds || 300) / 60));
   const subject = 'Your SafeSphere verification code';
   const text = [
     'SafeSphere Personal Safety Verification',
     '',
     `Your verification code is ${safeCode}.`,
     '',
-    'This code expires in 10 minutes.',
+    `This code expires in ${expiryMinutes} minutes.`,
     "If you didn't request this, you can safely ignore this email."
   ].join('\n');
 
@@ -120,7 +142,7 @@ function buildOtpEmailContent({ otp }) {
       ${safeCode}
     </div>
     <p style="margin:0 0 10px;font-size:13px;color:#94A3B8;">
-      This code expires in 10 minutes.
+      This code expires in ${expiryMinutes} minutes.
     </p>
     <p style="margin:0;font-size:12px;color:#64748B;">
       If you didn't request this, you can safely ignore this email.
@@ -132,17 +154,82 @@ function buildOtpEmailContent({ otp }) {
   return { subject, text, html };
 }
 
+async function dispatchWithResend({ email, subject, text, html }) {
+  try {
+    const res = await fetch(RESEND_API_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getResendApiKey()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: getFromEmail(),
+        to: [email],
+        subject,
+        text,
+        html
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    });
+    let decoded = null;
+    try { decoded = await res.json(); } catch (_) { decoded = null; }
+    if (!res.ok) {
+      return { delivered: false, provider: 'resend', error: `resend dispatch failed (HTTP ${res.status})` };
+    }
+    return {
+      delivered: true,
+      provider: 'resend',
+      id: decoded && decoded.id ? String(decoded.id) : undefined
+    };
+  } catch (_) {
+    return { delivered: false, provider: 'resend', error: 'resend network failure' };
+  }
+}
+
+async function dispatchWithBrevo({ email, subject, text, html }) {
+  try {
+    const res = await fetch(BREVO_API_URL, {
+      method: 'POST',
+      headers: {
+        'api-key': getBrevoApiKey(),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        sender: { name: 'SafeSphere', email: getBrevoFromEmail() },
+        to: [{ email }],
+        subject,
+        textContent: text,
+        htmlContent: html
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    });
+    let decoded = null;
+    try { decoded = await res.json(); } catch (_) { decoded = null; }
+    if (!res.ok) {
+      return { delivered: false, provider: 'brevo', error: `brevo dispatch failed (HTTP ${res.status})` };
+    }
+    return {
+      delivered: true,
+      provider: 'brevo',
+      id: decoded && (decoded.messageId || decoded.id) ? String(decoded.messageId || decoded.id) : undefined
+    };
+  } catch (_) {
+    return { delivered: false, provider: 'brevo', error: 'brevo network failure' };
+  }
+}
+
 /**
- * Dispatches a 6-digit OTP email through Resend (primary) or Brevo (fallback).
- * @returns {Promise<{delivered: boolean, provider?: string, id?: string, maskedEmail?: string, error?: string, skipped?: boolean}>}
+ * Dispatches a 6-digit OTP email through Resend (primary) with automatic runtime
+ * failover to Brevo (secondary) when both are configured.
+ * @returns {Promise<{delivered: boolean, provider?: string, id?: string, maskedEmail?: string, error?: string, skipped?: boolean, fallbackFrom?: string}>}
  */
 async function sendOtpEmail({ to, otp }) {
   const email = normalizeEmail(to);
   if (!email) {
     return { delivered: false, skipped: true, error: 'Valid recipient email is required' };
   }
-  const provider = getProvider();
-  if (!provider) {
+  const providers = getConfiguredProviders();
+  if (providers.length === 0) {
     return { delivered: false, skipped: true, maskedEmail: maskEmail(email), error: 'Email OTP provider not configured' };
   }
 
@@ -151,74 +238,39 @@ async function sendOtpEmail({ to, otp }) {
   db.incrementEmailOtpCount(email, day);
 
   const { subject, text, html } = buildOtpEmailContent({ otp });
+  const masked = maskEmail(email);
+  const failures = [];
 
-  try {
-    let res;
-    if (provider === 'resend') {
-      res = await fetch(RESEND_API_URL, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${getResendApiKey()}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: getFromEmail(),
-          to: [email],
-          subject,
-          text,
-          html
-        }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-      });
-    } else {
-      res = await fetch(BREVO_API_URL, {
-        method: 'POST',
-        headers: {
-          'api-key': getBrevoApiKey(),
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          sender: { name: 'SafeSphere', email: getBrevoFromEmail() },
-          to: [{ email }],
-          subject,
-          textContent: text,
-          htmlContent: html
-        }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-      });
-    }
+  for (const provider of providers) {
+    const attempt = provider === 'resend'
+      ? await dispatchWithResend({ email, subject, text, html })
+      : await dispatchWithBrevo({ email, subject, text, html });
 
-    let decoded = null;
-    try { decoded = await res.json(); } catch (_) { decoded = null; }
-
-    if (!res.ok) {
+    if (attempt.delivered) {
       return {
-        delivered: false,
-        provider,
-        maskedEmail: maskEmail(email),
-        error: `${provider} dispatch failed (HTTP ${res.status})`
+        delivered: true,
+        provider: attempt.provider,
+        id: attempt.id,
+        maskedEmail: masked,
+        ...(failures.length > 0 ? { fallbackFrom: failures[0].provider } : {})
       };
     }
 
-    return {
-      delivered: true,
-      provider,
-      id: decoded && (decoded.id || decoded.messageId) ? String(decoded.id || decoded.messageId) : undefined,
-      maskedEmail: maskEmail(email)
-    };
-  } catch (_) {
-    return {
-      delivered: false,
-      provider,
-      maskedEmail: maskEmail(email),
-      error: `${provider} network failure`
-    };
+    failures.push({ provider, error: attempt.error });
   }
+
+  return {
+    delivered: false,
+    provider: failures[failures.length - 1].provider,
+    maskedEmail: masked,
+    error: failures.map((f) => f.error).join('; ')
+  };
 }
 
 module.exports = {
   isConfigured,
   getProvider,
+  getConfiguredProviders,
   normalizeEmail,
   maskEmail,
   checkDailyLimit,

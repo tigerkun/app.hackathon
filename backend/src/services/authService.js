@@ -11,7 +11,7 @@ const { db } = require('../data/store');
 const { createUser, toSafeUser, normalizeEmail, normalizePhone } = require('../models/userModel');
 const { createSession } = require('../models/sessionModel');
 const { signAccessToken, signRefreshToken, verifyRefreshToken } = require('./tokenService');
-const { verifyOtp } = require('./otpService');
+const { verifyOtp, canonicalPurpose } = require('./otpService');
 
 async function register({
   name,
@@ -195,8 +195,11 @@ async function loginPin({ emailOrPhone, pin, userAgent, ipAddress }) {
   };
 }
 
-async function verifyOtpAndLogin({ phone, otp, userAgent, ipAddress }) {
-  const verifyResult = verifyOtp(phone, otp);
+async function verifyOtpAndLogin({ phone, otp, purpose = null, userAgent, ipAddress }) {
+  const expectedPurpose = (purpose && canonicalPurpose(purpose) !== 'pin_reset')
+    ? purpose
+    : 'login';
+  const verifyResult = verifyOtp(phone, otp, expectedPurpose);
 
   const user = db.findUserByPhone(verifyResult.phone);
   if (!user) {
@@ -412,9 +415,9 @@ async function resetPinWithOtp({ phone, otp, newPin }) {
     throw error;
   }
 
-  // Verify + consume the OTP bound to this registered phone. Throws
-  // INVALID_OTP / OTP_MAX_ATTEMPTS_EXCEEDED / OTP_EXPIRED on any failure.
-  verifyOtp(normalized, String(otp || ''));
+  // Verify + consume the OTP bound to this registered phone and 'pin_reset' purpose.
+  // Throws INVALID_OTP / OTP_MAX_ATTEMPTS_EXCEEDED / OTP_EXPIRED / OTP_PURPOSE_MISMATCH on failure.
+  verifyOtp(normalized, String(otp || ''), 'pin_reset');
 
   const pinHash = bcrypt.hashSync(pinStr, config.saltRounds);
   db.updateUser(user.id, { pin: pinHash, pinHash });

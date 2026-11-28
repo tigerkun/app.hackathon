@@ -18,6 +18,12 @@ const CONSENSUS_REJECT_RATIO = 0.3;
 const MIN_CONSENSUS_QUORUM = 5;
 const MAX_CONSENSUS_QUORUM = 25;
 
+function isPrivilegedUser(user) {
+  return Boolean(
+    user && (user.role === 'admin' || user.role === 'first_responder' || user.role === 'responder')
+  );
+}
+
 function deriveThreadTag(reportId, userId) {
   if (!userId) return 'Anonymous';
   const secret = config.jwtSecret || 'safesphere_thread_tag_salt';
@@ -41,8 +47,16 @@ function computeAreaQuorum(report) {
   );
 }
 
+function getLockedReportQuorum(report) {
+  const stored = Number(report?.quorumRequired);
+  if (Number.isFinite(stored) && stored >= MIN_CONSENSUS_QUORUM) {
+    return Math.min(MAX_CONSENSUS_QUORUM, Math.max(MIN_CONSENSUS_QUORUM, Math.round(stored)));
+  }
+  return computeAreaQuorum(report);
+}
+
 function recordPassiveUserLocation(user, lat, lng) {
-  if (!user || !user.id) return;
+  if (!user || !user.id || user.banned || !user.isActive) return;
   const nLat = Number(lat);
   const nLng = Number(lng);
   if (!Number.isFinite(nLat) || !Number.isFinite(nLng)) return;
@@ -55,9 +69,7 @@ function recordPassiveUserLocation(user, lat, lng) {
 }
 
 function decorateReportForViewer(report, viewerUser) {
-  const isPrivileged = Boolean(
-    viewerUser && (viewerUser.role === 'admin' || viewerUser.role === 'first_responder' || viewerUser.role === 'responder')
-  );
+  const isPrivileged = isPrivilegedUser(viewerUser);
   const myId = viewerUser ? viewerUser.id : null;
   const isOwner = Boolean(myId && report.reportedBy === myId);
 
@@ -66,7 +78,7 @@ function decorateReportForViewer(report, viewerUser) {
   const upvotes = tally.upvotes;
   const downvotes = tally.downvotes;
   const totalVotes = upvotes + downvotes;
-  const quorum = computeAreaQuorum(report);
+  const quorum = getLockedReportQuorum(report);
   const reporter = report.reportedBy ? db.findUserById(report.reportedBy) : null;
 
   safe.upvotes = upvotes;
@@ -87,31 +99,97 @@ function decorateReportForViewer(report, viewerUser) {
   return safe;
 }
 
-function applyVerdictKarma(report, targetStatus) {
-  if (!report || !report.reportedBy || report.karmaAwarded) return false;
+function reconcileVerdictKarma(report, targetStatus, { isSelfVerdict = false } = {}) {
+  if (!report || !report.reportedBy) return null;
   const reporter = db.findUserById(report.reportedBy);
-  if (!reporter) return false;
+  if (!reporter) return null;
 
-  let reputation = Number(reporter.reputationScore || 0);
-  let strikes = Number(reporter.strikes || 0);
-  let banned = Boolean(reporter.banned);
-
-  if (targetStatus === 'verified') {
-    reputation += 10;
-  } else if (targetStatus === 'rejected') {
-    reputation -= 20;
-    strikes += 1;
-    if (strikes >= 3) banned = true;
-  } else {
-    return false;
+  const hasExplicit = Number.isFinite(Number(report.karmaDelta))
+    && (Number(report.karmaDelta) !== 0 || Number(report.strikeApplied || 0) !== 0);
+  let prevDelta = 0;
+  let prevStrike = 0;
+  if (hasExplicit) {
+    prevDelta = Math.trunc(Number(report.karmaDelta));
+    prevStrike = Math.max(0, Math.trunc(Number(report.strikeApplied || 0)));
+  } else if (report.karmaAwarded) {
+    if (report.status === 'rejected') {
+      prevDelta = -20;
+      prevStrike = 1;
+    } else {
+      prevDelta = 10;
+      prevStrike = 0;
+    }
   }
 
-  db.updateUser(reporter.id, {
-    reputationScore: reputation,
-    strikes,
-    banned
-  });
-  return true;
+  let targetDelta = 0;
+  let targetStrike = 0;
+  if (targetStatus === 'verified') {
+    targetDelta = 10;
+    targetStrike = 0;
+  } else if (targetStatus === 'rejected') {
+    targetDelta = -20;
+    targetStrike = 1;
+  } else if (targetStatus === 'resolved') {
+    if (prevDelta === 10 && prevStrike === 0) {
+      targetDelta = 10;
+      targetStrike = 0;
+    }
+  } else {
+    // 'pending' or 'under_investigation': reverse prior verdict effects cleanly
+    targetDelta = 0;
+    targetStrike = 0;
+  }
+
+  if (isSelfVerdict && (targetDelta > prevDelta || targetStrike < prevStrike)) {
+    targetDelta = prevDelta;
+    targetStrike = prevStrike;
+  }
+
+  const repDiff = targetDelta - prevDelta;
+  const strikeDiff = targetStrike - prevStrike;
+
+  if (repDiff !== 0 || strikeDiff !== 0) {
+    const newRep = Number(reporter.reputationScore || 0) + repDiff;
+    const newStrikes = Math.max(0, Number(reporter.strikes || 0) + strikeDiff);
+    const newBanned = newStrikes >= 3;
+    db.updateUser(reporter.id, {
+      reputationScore: newRep,
+      strikes: newStrikes,
+      banned: newBanned
+    });
+  }
+
+  return {
+    karmaDelta: targetDelta,
+    strikeApplied: targetStrike,
+    karmaAwarded: targetDelta !== 0 || targetStrike !== 0
+  };
+}
+
+function ensureReportInteractive(res, report, actionLabel) {
+  if (report.status === 'rejected') {
+    res.status(409).json({
+      success: false,
+      error: {
+        code: 'REPORT_REJECTED',
+        message: `${actionLabel} is closed because this report has been rejected.`,
+        details: []
+      }
+    });
+    return true;
+  }
+  if (isReportExpired(report)) {
+    res.status(409).json({
+      success: false,
+      error: {
+        code: 'REPORT_EXPIRED',
+        message: `${actionLabel} is closed because this unverified report has expired.`,
+        details: []
+      }
+    });
+    return true;
+  }
+  return false;
 }
 
 // Expiry instant: persisted expiresAt wins; fall back to createdAt + window
@@ -132,21 +210,39 @@ function isReportExpired(r) {
 function list(req, res, next) {
   try {
     const { type, status, limit, reportedBy } = req.query;
+    const isPrivileged = isPrivilegedUser(req.user);
+    const myId = req.user ? req.user.id : null;
+
     const filter = {};
     if (type) filter.type = String(type);
-    if (status) filter.status = String(status);
-    if (reportedBy) filter.reportedBy = String(reportedBy);
+    if (status) filter.status = String(status).trim().toLowerCase();
+
+    const reportedByValues = Array.isArray(reportedBy)
+      ? reportedBy.map((v) => String(v ?? '').trim()).filter(Boolean)
+      : (reportedBy !== undefined ? [String(reportedBy).trim()].filter(Boolean) : []);
+    if (reportedByValues.length > 0) {
+      const requestedReporter = reportedByValues[0];
+      const hasUnauthorized = reportedByValues.some((val) => val !== myId);
+      if (!isPrivileged && (!myId || hasUnauthorized || reportedByValues.length > 1)) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'You are not authorized to filter reports by another user.',
+            details: []
+          }
+        });
+      }
+      filter.reportedBy = requestedReporter;
+    }
+
+    const mapVisible = req.query.mapVisible === 'true' || req.query.mapVisible === '1';
+    if (mapVisible) filter.mapVisible = true;
+    filter.includeRejected = isPrivileged && (filter.status === 'rejected' || req.query.includeRejected === 'true');
+
     const parsedLimit = limit !== undefined
       ? Math.min(Math.max(1, parseInt(limit, 10) || 100), 100)
       : 100;
-
-    // M2.4: is the caller privileged (moderator/admin/responder) or the
-    // report owner? Privileged/owner views include expired unverified
-    // reports; the default public feed hides them.
-    const isPrivileged = Boolean(
-      req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
-    );
-    const myId = req.user ? req.user.id : null;
 
     const latParam = req.query.latitude ?? req.query.lat;
     const lngParam = req.query.longitude ?? req.query.lng ?? req.query.lon;
@@ -176,7 +272,9 @@ function list(req, res, next) {
         const allMatching = db.getAllReports({
           type: filter.type,
           status: filter.status,
-          reportedBy: filter.reportedBy
+          reportedBy: filter.reportedBy,
+          includeRejected: filter.includeRejected,
+          mapVisible: filter.mapVisible
         });
         const nearbyReports = findNearby(
           allMatching.filter((r) => isPrivileged || r.reportedBy === myId || isFreshEnough(r)),
@@ -352,6 +450,8 @@ function vote(req, res, next) {
       });
     }
 
+    if (ensureReportInteractive(res, report, 'Voting')) return;
+
     // Users must not vote on their own reports — self-confirming inflates
     // credibility and defeats community verification.
     if (report.reportedBy && report.reportedBy === req.user.id) {
@@ -377,12 +477,11 @@ function vote(req, res, next) {
     const tally = db.getReportVoteTally(id);
     const totalVotes = tally.upvotes + tally.downvotes;
     const confirmRatio = totalVotes > 0 ? tally.upvotes / totalVotes : 0;
-    const quorum = computeAreaQuorum(report);
+    const quorum = getLockedReportQuorum(report);
 
     const updates = {
       upvotes: tally.upvotes,
-      downvotes: tally.downvotes,
-      quorumRequired: quorum
+      downvotes: tally.downvotes
     };
 
     // Dynamic 7:3 consensus evaluation for unverified reports once area quorum is met
@@ -391,15 +490,13 @@ function vote(req, res, next) {
         updates.status = 'verified';
         updates.verificationSource = 'community_consensus';
         updates.expiresAt = null;
-        if (!report.karmaAwarded && applyVerdictKarma(report, 'verified')) {
-          updates.karmaAwarded = true;
-        }
+        const karmaUpdates = reconcileVerdictKarma(report, 'verified');
+        if (karmaUpdates) Object.assign(updates, karmaUpdates);
       } else if (confirmRatio < CONSENSUS_REJECT_RATIO) {
         updates.status = 'rejected';
         updates.verificationSource = 'community_rejected';
-        if (!report.karmaAwarded && applyVerdictKarma(report, 'rejected')) {
-          updates.karmaAwarded = true;
-        }
+        const karmaUpdates = reconcileVerdictKarma(report, 'rejected');
+        if (karmaUpdates) Object.assign(updates, karmaUpdates);
       }
     }
 
@@ -442,15 +539,24 @@ function getById(req, res, next) {
       });
     }
 
+    const viewerPrivileged = isPrivilegedUser(req.user);
+    if (report.status === 'rejected' && !viewerPrivileged) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'REPORT_NOT_FOUND',
+          message: `Report with ID ${id} not found`,
+          details: []
+        }
+      });
+    }
+
     // M2.4: expired unverified reports are invisible to the public — the
     // by-ID route must apply the same rule the feed does, or it becomes a
     // bypass for stale/archived incidents. Owner and privileged roles still
     // see their own reports for moderation/history.
     if (isReportExpired(report)) {
       const viewerId = req.user ? req.user.id : null;
-      const viewerPrivileged = Boolean(
-        req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
-      );
       const isOwner = Boolean(viewerId && report.reportedBy === viewerId);
       if (!isOwner && !viewerPrivileged) {
         return res.status(404).json({
@@ -477,9 +583,7 @@ function getById(req, res, next) {
 
 function updateStatus(req, res, next) {
   try {
-    const isPrivileged = Boolean(
-      req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
-    );
+    const isPrivileged = isPrivilegedUser(req.user);
 
     if (!isPrivileged) {
       return res.status(403).json({
@@ -523,20 +627,22 @@ function updateStatus(req, res, next) {
       status,
       verificationSource: (status === 'verified' || status === 'rejected' || status === 'resolved')
         ? 'moderator'
-        : existing.verificationSource
+        : 'pending'
     };
-    if (status === 'verified' || status === 'resolved') updates.expiresAt = null;
+    if (status === 'verified' || status === 'resolved') {
+      updates.expiresAt = null;
+    } else if ((status === 'pending' || status === 'under_investigation') && !existing.expiresAt) {
+      updates.expiresAt = new Date(Date.now() + REPORT_FRESHNESS_WINDOW_MS).toISOString();
+    }
 
     // M2.5/M2.6: moderator verdicts drive reporter reputation, strikes, and
     // bans. 'verified' = +10; 'rejected' = -20 + 1 strike (3 strikes = banned).
-    // Apply once per report (!karmaAwarded) on the first terminal verdict so
-    // consensus & moderator verdicts or status flip-flops never stack karma/strikes.
-    const isFirstVerdict = !['verified', 'rejected', 'resolved'].includes(existing.status);
+    // Reconcile deltas cleanly so consensus->moderator overrides and reversals
+    // never double-award or leave stale penalties/bans intact.
     const isSelfVerdict = Boolean(existing.reportedBy) && existing.reportedBy === req.user.id;
-    if (existing.reportedBy && isFirstVerdict && !isSelfVerdict && !existing.karmaAwarded) {
-      if (applyVerdictKarma(existing, status)) {
-        updates.karmaAwarded = true;
-      }
+    if (existing.reportedBy) {
+      const karmaUpdates = reconcileVerdictKarma(existing, status, { isSelfVerdict });
+      if (karmaUpdates) Object.assign(updates, karmaUpdates);
     }
 
     const updated = db.updateReport(id, updates);
@@ -585,11 +691,16 @@ function listComments(req, res, next) {
       });
     }
 
+    const viewerPrivileged = isPrivilegedUser(req.user);
+    if (report.status === 'rejected' && !viewerPrivileged) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'REPORT_NOT_FOUND', message: `Report with ID ${id} not found`, details: [] }
+      });
+    }
+
     if (isReportExpired(report)) {
       const viewerId = req.user ? req.user.id : null;
-      const viewerPrivileged = Boolean(
-        req.user && (req.user.role === 'admin' || req.user.role === 'first_responder' || req.user.role === 'responder')
-      );
       if (!(viewerId && report.reportedBy === viewerId) && !viewerPrivileged) {
         return res.status(404).json({
           success: false,
@@ -646,6 +757,7 @@ function createComment(req, res, next) {
         error: { code: 'REPORT_NOT_FOUND', message: `Report with ID ${id} not found`, details: [] }
       });
     }
+    if (ensureReportInteractive(res, report, 'Commenting')) return;
 
     const rawBody = req.body?.body ?? req.body?.text;
     const parentId = req.body?.parentId ? String(req.body.parentId).trim() : null;
@@ -731,6 +843,15 @@ function voteComment(req, res, next) {
         error: { code: 'VALIDATION_ERROR', message: 'vote must be "confirm" or "decline".', details: [] }
       });
     }
+
+    const report = db.findReportById(id);
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'REPORT_NOT_FOUND', message: `Report with ID ${id} not found`, details: [] }
+      });
+    }
+    if (ensureReportInteractive(res, report, 'Comment voting')) return;
 
     const comment = db.findReportCommentById(commentId);
     if (!comment || comment.reportId !== id) {

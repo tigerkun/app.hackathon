@@ -129,13 +129,14 @@ async function sendOtp(req, res, next) {
 
 async function verifyOtp(req, res, next) {
   try {
-    const { phone, otp } = req.body;
+    const { phone, otp, purpose } = req.body;
     const userAgent = req.headers['user-agent'] || 'unknown';
     const ipAddress = req.ip || req.connection.remoteAddress || '127.0.0.1';
 
     const result = await authService.verifyOtpAndLogin({
       phone,
       otp,
+      purpose,
       userAgent,
       ipAddress
     });

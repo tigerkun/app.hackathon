@@ -86,59 +86,7 @@ function nearby(req, res, next) {
     }
     const maxRadius = Math.min(Math.max(0.1, Number(radius) || 10), 100);
     const parsedLimit = Math.min(Math.max(1, parseInt(limit, 10) || 100), 100);
-    let nearbyMarkers = findNearby(allMarkers, targetLat, targetLon, maxRadius).slice(0, parsedLimit);
-
-    const numLat = Number(targetLat);
-    const numLon = Number(targetLon);
-
-    if (nearbyMarkers.length === 0 && !filterCat && Number.isFinite(numLat) && Number.isFinite(numLon)) {
-      const generated = [
-        createMarker({
-          id: `marker_auto_police_${Math.round(numLat * 1000)}_${Math.round(numLon * 1000)}`,
-          name: 'Local Emergency Police Post',
-          category: 'Police Station',
-          latitude: numLat + 0.0035,
-          longitude: numLon + 0.0025,
-          address: 'Community Security Post',
-          isVerified: true
-        }),
-        createMarker({
-          id: `marker_auto_hosp_${Math.round(numLat * 1000)}_${Math.round(numLon * 1000)}`,
-          name: 'Emergency Medical & Trauma Center',
-          category: 'Hospital',
-          latitude: numLat - 0.0042,
-          longitude: numLon - 0.0031,
-          address: 'Emergency 24/7 First Aid Center',
-          isVerified: true
-        }),
-        createMarker({
-          id: `marker_auto_store_${Math.round(numLat * 1000)}_${Math.round(numLon * 1000)}`,
-          name: '24x7 Lit Store & Safe Refuge',
-          category: '24x7 Store',
-          latitude: numLat + 0.0021,
-          longitude: numLon - 0.0038,
-          address: '24/7 Well-Lit Mart & Pharmacy',
-          isVerified: true
-        }),
-        createMarker({
-          id: `marker_auto_safe_${Math.round(numLat * 1000)}_${Math.round(numLon * 1000)}`,
-          name: 'Verified Safe Zone & Transit Kiosk',
-          category: 'Verified Safe Zone',
-          latitude: numLat - 0.0028,
-          longitude: numLon + 0.0045,
-          address: 'Continuous Monitored Safe Refuge',
-          isVerified: true
-        })
-      ];
-      for (const m of generated) {
-        db.saveMarker(m);
-      }
-      allMarkers = db.getAllMarkers({
-        ...(isVerified !== undefined ? { isVerified: isVerified === 'true' } : {}),
-        includeUnverified: isPrivileged
-      });
-      nearbyMarkers = findNearby(allMarkers, numLat, numLon, maxRadius).slice(0, parsedLimit);
-    }
+    const nearbyMarkers = findNearby(allMarkers, targetLat, targetLon, maxRadius).slice(0, parsedLimit);
 
     res.status(200).json({
       success: true,

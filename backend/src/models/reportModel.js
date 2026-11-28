@@ -24,6 +24,15 @@ const VALID_REPORT_TYPES = [
 const VALID_REPORT_STATUSES = ['pending', 'under_investigation', 'verified', 'resolved', 'rejected'];
 const VALID_VERIFICATION_SOURCES = ['pending', 'moderator', 'community_consensus', 'community_rejected'];
 
+const MIN_REPORT_QUORUM = 5;
+const MAX_REPORT_QUORUM = 25;
+
+function clampQuorum(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return MIN_REPORT_QUORUM;
+  return Math.min(MAX_REPORT_QUORUM, Math.max(MIN_REPORT_QUORUM, Math.round(num)));
+}
+
 function createReport({
   id = generateReportId(),
   type = 'Other',
@@ -35,7 +44,9 @@ function createReport({
   reportedBy = null,
   verificationSource = 'pending',
   karmaAwarded = false,
-  quorumRequired = 5,
+  karmaDelta = 0,
+  strikeApplied = 0,
+  quorumRequired = MIN_REPORT_QUORUM,
   expiresAt = null,
   attachments = [],
   photoUrl = null,
@@ -53,7 +64,9 @@ function createReport({
     reportedBy: reportedBy ? String(reportedBy) : null,
     verificationSource: VALID_VERIFICATION_SOURCES.includes(verificationSource) ? verificationSource : 'pending',
     karmaAwarded: Boolean(karmaAwarded),
-    quorumRequired: Math.max(5, Number(quorumRequired) || 5),
+    karmaDelta: Number.isFinite(Number(karmaDelta)) ? Math.trunc(Number(karmaDelta)) : 0,
+    strikeApplied: Number.isFinite(Number(strikeApplied)) ? Math.max(0, Math.trunc(Number(strikeApplied))) : 0,
+    quorumRequired: clampQuorum(quorumRequired),
     expiresAt,
     attachments: Array.isArray(attachments) ? attachments : [],
     photoUrl: photoUrl ? String(photoUrl).trim() : null,
@@ -76,7 +89,7 @@ function toSafeReport(report) {
     longitude: report.longitude ?? null,
     status: report.status,
     verificationSource: report.verificationSource || (report.status === 'verified' ? 'moderator' : 'pending'),
-    quorumRequired: Math.max(5, Number(report.quorumRequired || 5)),
+    quorumRequired: clampQuorum(report.quorumRequired),
     reportedBy: report.reportedBy ?? null,
     attachments: Array.isArray(report.attachments) ? report.attachments : [],
     photoUrl: report.photoUrl ?? null,
