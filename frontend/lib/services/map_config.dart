@@ -87,8 +87,21 @@ class LocationService extends ChangeNotifier {
   String get locationLabel => _locationLabel;
   bool get hasLiveGps => _hasLiveGps;
   bool get isManualOverride => _isManualOverride;
+  bool get hasResolvedLocation => _hasLiveGps || _isManualOverride;
   bool get isDetecting => _isDetecting;
   String? get lastLocationError => _lastLocationError;
+
+  @visibleForTesting
+  void resetForTesting() {
+    _currentLat = 23.1967;
+    _currentLng = 77.0819;
+    _locationLabel = "Sehore, Madhya Pradesh";
+    _hasLiveGps = false;
+    _isManualOverride = false;
+    _isDetecting = false;
+    _lastLocationError = null;
+    notifyListeners();
+  }
 
   static const List<LocationPreset> presets = [
     LocationPreset(
@@ -183,6 +196,7 @@ class LocationService extends ChangeNotifier {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
+        if (!_isManualOverride) _hasLiveGps = false;
         _lastLocationError = "Device Location / GPS is turned off.";
         _isDetecting = false;
         notifyListeners();
@@ -195,6 +209,7 @@ class LocationService extends ChangeNotifier {
       }
 
       if (permission == LocationPermission.deniedForever) {
+        if (!_isManualOverride) _hasLiveGps = false;
         _lastLocationError = "Location permission permanently denied. Enable in app settings.";
         _isDetecting = false;
         notifyListeners();
@@ -216,6 +231,7 @@ class LocationService extends ChangeNotifier {
         }
 
         if (pos == null) {
+          if (!_isManualOverride) _hasLiveGps = false;
           _lastLocationError = "Waiting for GPS satellite fix — try outdoors or pick a location.";
           _isDetecting = false;
           notifyListeners();
@@ -239,9 +255,11 @@ class LocationService extends ChangeNotifier {
         notifyListeners();
         return true;
       } else {
+        if (!_isManualOverride) _hasLiveGps = false;
         _lastLocationError = "Location permission denied.";
       }
     } catch (_) {
+      if (!_isManualOverride) _hasLiveGps = false;
       _lastLocationError = "Unable to acquire GPS fix right now.";
     }
 
@@ -262,6 +280,7 @@ class LocationService extends ChangeNotifier {
     _hasLiveGps = false;
     _isManualOverride = true;
     _isDetecting = false;
+    _lastLocationError = null;
     notifyListeners();
   }
 
@@ -434,22 +453,27 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                       child: const Icon(Icons.my_location, color: AppColors.teal, size: 20),
                     ),
                     const SizedBox(width: 12),
-                    const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Choose Your Location",
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                    // Expanded: the subtitle ("...police, hospitals & 24x7
+                    // stores") must wrap on narrow viewports instead of
+                    // pushing the header Row 112px past the sheet edge.
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text(
+                            "Choose Your Location",
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                        Text(
-                          "Set area to discover nearby police, hospitals & 24x7 stores",
-                          style: TextStyle(fontSize: 11, color: Colors.white60),
-                        ),
-                      ],
+                          Text(
+                            "Set area to discover nearby police, hospitals & 24x7 stores",
+                            style: TextStyle(fontSize: 11, color: Colors.white60),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -464,16 +488,22 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                     color: const Color(0xFF1E293B),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: _service.isManualOverride
-                          ? AppColors.blue.withValues(alpha: 0.5)
-                          : AppColors.teal.withValues(alpha: 0.5),
+                      color: !_service.hasResolvedLocation
+                          ? AppColors.amber.withValues(alpha: 0.5)
+                          : (_service.isManualOverride
+                              ? AppColors.blue.withValues(alpha: 0.5)
+                              : AppColors.teal.withValues(alpha: 0.5)),
                     ),
                   ),
                   child: Row(
                     children: [
                       Icon(
-                        _service.isManualOverride ? Icons.edit_location_alt : Icons.gps_fixed,
-                        color: _service.isManualOverride ? AppColors.blue : AppColors.teal,
+                        !_service.hasResolvedLocation
+                            ? Icons.location_off_outlined
+                            : (_service.isManualOverride ? Icons.edit_location_alt : Icons.gps_fixed),
+                        color: !_service.hasResolvedLocation
+                            ? AppColors.amber
+                            : (_service.isManualOverride ? AppColors.blue : AppColors.teal),
                         size: 24,
                       ),
                       const SizedBox(width: 12),
@@ -484,11 +514,15 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                             Row(
                               children: [
                                 Text(
-                                  _service.isManualOverride ? "MANUAL OVERRIDE" : "DEVICE LOCATION",
+                                  !_service.hasResolvedLocation
+                                      ? "GPS UNAVAILABLE"
+                                      : (_service.isManualOverride ? "MANUAL OVERRIDE" : "DEVICE LOCATION"),
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
-                                    color: _service.isManualOverride ? AppColors.blue : AppColors.teal,
+                                    color: !_service.hasResolvedLocation
+                                        ? AppColors.amber
+                                        : (_service.isManualOverride ? AppColors.blue : AppColors.teal),
                                     letterSpacing: 0.8,
                                   ),
                                 ),
@@ -496,7 +530,9 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              _service.locationLabel,
+                              !_service.hasResolvedLocation
+                                  ? (_service.lastLocationError ?? "Tap GPS Fix or pick an area below")
+                                  : _service.locationLabel,
                               style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -506,7 +542,9 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                               overflow: TextOverflow.ellipsis,
                             ),
                             Text(
-                              "Lat: ${_service.currentLat.toStringAsFixed(4)}, Lon: ${_service.currentLng.toStringAsFixed(4)}",
+                              !_service.hasResolvedLocation
+                                  ? "Showing all areas until location is set"
+                                  : "Lat: ${_service.currentLat.toStringAsFixed(4)}, Lon: ${_service.currentLng.toStringAsFixed(4)}",
                               style: const TextStyle(fontSize: 11, color: Colors.white54),
                             ),
                           ],
@@ -666,7 +704,8 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                       ),
                     ),
                     ...LocationService.presets.map((p) {
-                      final isSelected = (_service.currentLat - p.latitude).abs() < 0.001 &&
+                      final isSelected = _service.hasResolvedLocation &&
+                          (_service.currentLat - p.latitude).abs() < 0.001 &&
                           (_service.currentLng - p.longitude).abs() < 0.001;
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),

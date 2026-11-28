@@ -20,7 +20,7 @@ import '../pages/my_circle_page.dart';
 import '../pages/privacy_hub_page.dart';
 
 class RouteGuard {
-  static Route<dynamic> _buildAnimatedRoute(WidgetBuilder builder, RouteSettings settings) {
+  static Route<dynamic> buildAnimatedRoute(WidgetBuilder builder, RouteSettings settings) {
     return PageRouteBuilder(
       settings: settings,
       transitionDuration: const Duration(milliseconds: 220),
@@ -43,6 +43,9 @@ class RouteGuard {
       },
     );
   }
+
+  static Route<dynamic> _buildAnimatedRoute(WidgetBuilder builder, RouteSettings settings) =>
+      buildAnimatedRoute(builder, settings);
 
   static Route<dynamic> generateRoute(RouteSettings settings, AuthState authState) {
     final String routeName = settings.name ?? AppRoutes.home;

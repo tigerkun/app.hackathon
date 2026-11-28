@@ -1,19 +1,72 @@
 import 'dart:convert';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import '../data/auth_state.dart';
 import '../data/report_store.dart';
 import '../models/report_model.dart';
 import '../services/auth_service.dart';
 import '../services/map_config.dart';
-import '../widgets/animated_widgets.dart';
 import '../widgets/map_placeholder.dart';
 import '../widgets/glass_container.dart';
 import '../theme/app_colors.dart';
 
 class ReportPage extends StatefulWidget {
   const ReportPage({super.key});
+
+  /// Detects supported image MIME subtype ('jpeg' or 'png') from magic bytes.
+  static String? detectImageMime(Uint8List bytes) {
+    if (bytes.length >= 3 &&
+        bytes[0] == 0xFF &&
+        bytes[1] == 0xD8 &&
+        bytes[2] == 0xFF) {
+      return 'jpeg';
+    }
+    if (bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47 &&
+        bytes[4] == 0x0D &&
+        bytes[5] == 0x0A &&
+        bytes[6] == 0x1A &&
+        bytes[7] == 0x0A) {
+      return 'png';
+    }
+    return null;
+  }
+
+  /// Downscales an image in-memory using `dart:ui` until its PNG encoding fits
+  /// within [maxBytes], or returns `null` if it cannot fit / decode.
+  static Future<Uint8List?> downscaleToPngUnderLimit(
+    Uint8List bytes, {
+    int maxBytes = 500 * 1024,
+  }) async {
+    for (final targetWidth in const [720, 512, 360, 256]) {
+      ui.Codec? codec;
+      ui.FrameInfo? frame;
+      try {
+        codec = await ui.instantiateImageCodec(bytes, targetWidth: targetWidth);
+        frame = await codec.getNextFrame();
+        final byteData =
+            await frame.image.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData != null) {
+          final pngBytes = byteData.buffer.asUint8List();
+          if (pngBytes.length <= maxBytes) {
+            return pngBytes;
+          }
+        }
+      } catch (_) {
+        // Ignore and fall through if undecodable or width step fails.
+      } finally {
+        frame?.image.dispose();
+        codec?.dispose();
+      }
+    }
+    return null;
+  }
 
   @override
   State<ReportPage> createState() => _ReportPageState();
@@ -147,7 +200,7 @@ class _ReportPageState extends State<ReportPage> {
 
   Future<void> _pickPhoto(ImageSource source) async {
     try {
-      XFile? picked = await _imagePicker.pickImage(
+      final XFile? picked = await _imagePicker.pickImage(
         source: source,
         maxWidth: 1024,
         maxHeight: 1024,
@@ -155,30 +208,26 @@ class _ReportPageState extends State<ReportPage> {
       );
       if (picked == null || !mounted) return;
       Uint8List bytes = await picked.readAsBytes();
-      if (bytes.length > 500 * 1024) {
-        // Retry with smaller dimensions/quality if original JPEG still >500KB
-        picked = await _imagePicker.pickImage(
-          source: source,
-          maxWidth: 720,
-          maxHeight: 720,
-          imageQuality: 50,
+      String? mime = ReportPage.detectImageMime(bytes);
+      if (bytes.length > 500 * 1024 || mime == null) {
+        final downscaled = await ReportPage.downscaleToPngUnderLimit(
+          bytes,
+          maxBytes: 500 * 1024,
         );
-        if (picked != null) {
-          bytes = await picked.readAsBytes();
+        if (!mounted) return;
+        if (downscaled == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Image exceeds 500KB limit after compression. Please pick a smaller image."),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
         }
+        bytes = downscaled;
+        mime = 'png';
       }
       if (!mounted) return;
-      if (bytes.length > 500 * 1024) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Image exceeds 500KB limit after compression. Please pick a smaller image."),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-      final lowerName = (picked?.name ?? '').toLowerCase();
-      final mime = lowerName.endsWith('.png') ? 'png' : 'jpeg';
       setState(() {
         _photoBytes = bytes;
         _photoBase64 = 'data:image/$mime;base64,${base64Encode(bytes)}';
@@ -224,13 +273,24 @@ class _ReportPageState extends State<ReportPage> {
     // M2.1: community reports require an authenticated account — guests get
     // an honest sign-in gate instead of a fabricated submission.
     final authService = AuthService.instance;
-    if (authService.currentUser == null) {
+    if (!authService.isAuthenticated) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
               "Sign in with a verified account to submit community reports. "
               "Guests can view alerts but not report them."),
           backgroundColor: Colors.amber,
+        ),
+      );
+      return;
+    }
+
+    if (authService.currentUser?.banned == true || AuthState().isBanned) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              "This account is banned from community submissions after repeated false reports."),
+          backgroundColor: Colors.redAccent,
         ),
       );
       return;
@@ -423,6 +483,33 @@ class _ReportPageState extends State<ReportPage> {
                           "Anonymous per thread • >=70% votes or Admin verified: +10 Karma | Rejected: -20 Karma",
                           style: TextStyle(color: AppColors.teal, fontSize: 11),
                         ),
+                        if (AuthState().isBanned ||
+                            AuthService.instance.currentUser?.banned == true) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: Colors.redAccent.withValues(alpha: 0.5)),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.block,
+                                    color: Colors.redAccent, size: 18),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    "Account restricted from community reports due to repeated rejected submissions. Emergency SOS remains available.",
+                                    style: TextStyle(
+                                        color: Colors.white70, fontSize: 11),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 10),
 
                         /// INCIDENT SELECTOR
@@ -712,71 +799,105 @@ class _ReportPageState extends State<ReportPage> {
   /// only a salted SHA-256 hash goes to the server.
   Future<bool?> _showAadhaarConsentDialog() {
     final last4Controller = TextEditingController();
+    bool isLinking = false;
+    String? inlineError;
     // Dispose the dialog-local controller when the dialog closes — leaking it
     // keeps the text field's listeners alive after the route is gone.
     return showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          "Prevent fake reports",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Help us keep SafeSphere trustworthy. Provide the last 4 digits "
-              "of your Aadhaar number — stored ONLY as a keyed hash that "
-              "cannot be read back. A weak signal moderators use for abuse "
-              "review — not verified identity.",
-              style: TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: last4Controller,
-              keyboardType: TextInputType.number,
-              maxLength: 4,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: "Aadhaar last 4 digits",
-                counterText: "",
-                border: OutlineInputBorder(),
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text(
+            "Prevent fake reports",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Help us keep SafeSphere trustworthy. Provide the last 4 digits "
+                "of your Aadhaar number — stored ONLY as a keyed hash that "
+                "cannot be read back. A weak signal moderators use for abuse "
+                "review — not verified identity.",
+                style: TextStyle(fontSize: 13),
               ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: last4Controller,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
+                obscureText: true,
+                enabled: !isLinking,
+                decoration: const InputDecoration(
+                  labelText: "Aadhaar last 4 digits",
+                  counterText: "",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (inlineError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  inlineError!,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                ),
+              ],
+              const SizedBox(height: 8),
+              const Text(
+                "Optional — you can skip this and still file your report.",
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isLinking ? null : () => Navigator.of(ctx).pop(false),
+              child: const Text("Skip"),
             ),
-            const SizedBox(height: 8),
-            const Text(
-              "Optional — you can skip this and still file your report.",
-              style: TextStyle(fontSize: 11, color: Colors.grey),
+            TextButton(
+              onPressed: isLinking ? null : () => Navigator.of(ctx).pop(null),
+              child: const Text("Cancel report"),
+            ),
+            ElevatedButton(
+              onPressed: isLinking
+                  ? null
+                  : () async {
+                      final last4 = last4Controller.text.trim();
+                      if (last4.length != 4 || int.tryParse(last4) == null) {
+                        setDialogState(() {
+                          inlineError = "Enter exactly 4 digits.";
+                        });
+                        return;
+                      }
+                      setDialogState(() {
+                        isLinking = true;
+                        inlineError = null;
+                      });
+                      final ok =
+                          await AuthService.instance.linkAadhaarLast4(last4);
+                      if (!ctx.mounted) return;
+                      if (ok) {
+                        AuthState().syncUserFromService();
+                        Navigator.of(ctx).pop(true);
+                      } else {
+                        setDialogState(() {
+                          isLinking = false;
+                          inlineError = AuthService.instance.lastAadhaarError ??
+                              "Could not link verification digits. Retry or choose Skip.";
+                        });
+                      }
+                    },
+              child: isLinking
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text("Link & continue"),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text("Skip"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text("Cancel report"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final last4 = last4Controller.text.trim();
-              if (last4.length != 4 || int.tryParse(last4) == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Enter exactly 4 digits.")),
-                );
-                return;
-              }
-              final ok = await AuthService.instance.linkAadhaarLast4(last4);
-              if (!ctx.mounted) return;
-              Navigator.of(ctx).pop(ok);
-            },
-            child: const Text("Link & continue"),
-          ),
-        ],
       ),
     ).whenComplete(() {
       // Wait for the dialog exit transition to finish unmounting TextField

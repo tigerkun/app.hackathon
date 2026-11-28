@@ -12,7 +12,8 @@ class PinLockPage extends StatefulWidget {
   State<PinLockPage> createState() => _PinLockPageState();
 }
 
-class _PinLockPageState extends State<PinLockPage> with SingleTickerProviderStateMixin {
+class _PinLockPageState extends State<PinLockPage>
+    with SingleTickerProviderStateMixin {
   String _enteredPin = '';
   int _failedAttempts = 0;
   int _lockoutSeconds = 0;
@@ -31,13 +32,16 @@ class _PinLockPageState extends State<PinLockPage> with SingleTickerProviderStat
       vsync: this,
     );
 
-    _shakeAnimation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: -12.0), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: -12.0, end: 12.0), weight: 2),
-      TweenSequenceItem(tween: Tween(begin: 12.0, end: -10.0), weight: 2),
-      TweenSequenceItem(tween: Tween(begin: -10.0, end: 10.0), weight: 2),
-      TweenSequenceItem(tween: Tween(begin: 10.0, end: 0.0), weight: 1),
-    ]).animate(CurvedAnimation(parent: _shakeController, curve: Curves.easeInOut));
+    _shakeAnimation =
+        TweenSequence<double>([
+          TweenSequenceItem(tween: Tween(begin: 0.0, end: -12.0), weight: 1),
+          TweenSequenceItem(tween: Tween(begin: -12.0, end: 12.0), weight: 2),
+          TweenSequenceItem(tween: Tween(begin: 12.0, end: -10.0), weight: 2),
+          TweenSequenceItem(tween: Tween(begin: -10.0, end: 10.0), weight: 2),
+          TweenSequenceItem(tween: Tween(begin: 10.0, end: 0.0), weight: 1),
+        ]).animate(
+          CurvedAnimation(parent: _shakeController, curve: Curves.easeInOut),
+        );
   }
 
   @override
@@ -116,8 +120,7 @@ class _PinLockPageState extends State<PinLockPage> with SingleTickerProviderStat
     if (reset == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-              'PIN reset successfully. Log in with your new PIN.'),
+          content: Text('PIN reset successfully. Log in with your new PIN.'),
           backgroundColor: Colors.teal,
         ),
       );
@@ -147,7 +150,9 @@ class _PinLockPageState extends State<PinLockPage> with SingleTickerProviderStat
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('PIN verified. Please sign in to restore your session.'),
+            content: Text(
+              'PIN verified. Please sign in to restore your session.',
+            ),
             backgroundColor: Colors.teal,
           ),
         );
@@ -163,7 +168,8 @@ class _PinLockPageState extends State<PinLockPage> with SingleTickerProviderStat
         final remaining = 5 - _failedAttempts;
         setState(() {
           _enteredPin = '';
-          _errorMessage = 'Incorrect PIN. $remaining ${remaining == 1 ? 'attempt' : 'attempts'} remaining.';
+          _errorMessage =
+              'Incorrect PIN. $remaining ${remaining == 1 ? 'attempt' : 'attempts'} remaining.';
         });
       }
     }
@@ -195,7 +201,11 @@ class _PinLockPageState extends State<PinLockPage> with SingleTickerProviderStat
     );
   }
 
-  Widget _buildKeypadButton(String label, {VoidCallback? onTap, IconData? icon}) {
+  Widget _buildKeypadButton(
+    String label, {
+    VoidCallback? onTap,
+    IconData? icon,
+  }) {
     return Container(
       width: 72,
       height: 72,
@@ -235,195 +245,226 @@ class _PinLockPageState extends State<PinLockPage> with SingleTickerProviderStat
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       body: SafeArea(
-        child: Column(
-          children: [
-            const Spacer(),
-
-            // Pulsing Shield Header
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.teal.withValues(alpha: 0.1),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.teal.withValues(alpha: 0.2),
-                    blurRadius: 20,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.shield_outlined,
-                size: 56,
-                color: AppColors.teal,
-              ),
+        // M2.5b: scrollable body — at small viewports (e.g. 800x600 test
+        // surface or a short device with the keyboard up) the fixed keypad +
+        // header would overflow and push "Forgot PIN?" / the emergency button
+        // off-screen, making them unreachable. Scrolling keeps every action
+        // reachable; Spacers become fixed gaps since flex is unbounded here.
+        child: SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight:
+                  MediaQuery.of(context).size.height -
+                  MediaQuery.of(context).padding.top -
+                  MediaQuery.of(context).padding.bottom,
             ),
-            const SizedBox(height: 16),
-            const Text(
-              'Enter 4-Digit PIN',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              AuthState().isDiscreetMode
-                  ? 'System Security Verification'
-                  : 'Quick security access for SafeSphere',
-              style: const TextStyle(color: Colors.white60, fontSize: 13),
-            ),
-            const SizedBox(height: 24),
-
-            // 4 Animated Indicator Dots
-            AnimatedBuilder(
-              animation: _shakeAnimation,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: Offset(_shakeAnimation.value, 0),
-                  child: child,
-                );
-              },
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(4, (i) => _buildDot(i)),
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            // Error / Lockout Message
-            if (_errorMessage != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Text(
-                  _errorMessage!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: AppColors.red,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              )
-            else
-              const SizedBox(height: 18),
-
-            const Spacer(),
-
-            // Custom Numeric Keypad (0-9, Backspace, Biometric)
-            Column(
+            child: Column(
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _buildKeypadButton('1', onTap: () => _onKeyPress('1')),
-                    _buildKeypadButton('2', onTap: () => _onKeyPress('2')),
-                    _buildKeypadButton('3', onTap: () => _onKeyPress('3')),
-                  ],
+                const SizedBox(height: 24),
+
+                // Pulsing Shield Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.teal.withValues(alpha: 0.1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.teal.withValues(alpha: 0.2),
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.shield_outlined,
+                    size: 56,
+                    color: AppColors.teal,
+                  ),
                 ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _buildKeypadButton('4', onTap: () => _onKeyPress('4')),
-                    _buildKeypadButton('5', onTap: () => _onKeyPress('5')),
-                    _buildKeypadButton('6', onTap: () => _onKeyPress('6')),
-                  ],
+                const SizedBox(height: 16),
+                const Text(
+                  'Enter 4-Digit PIN',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
                 ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _buildKeypadButton('7', onTap: () => _onKeyPress('7')),
-                    _buildKeypadButton('8', onTap: () => _onKeyPress('8')),
-                    _buildKeypadButton('9', onTap: () => _onKeyPress('9')),
-                  ],
+                const SizedBox(height: 6),
+                Text(
+                  AuthState().isDiscreetMode
+                      ? 'System Security Verification'
+                      : 'Quick security access for SafeSphere',
+                  style: const TextStyle(color: Colors.white60, fontSize: 13),
                 ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _buildKeypadButton(
-                      '',
-                      icon: Icons.fingerprint,
-                      onTap: () async {
-                        final authState = AuthState();
-                        final success = await authState.unlockBiometrics();
-                        if (!mounted) return;
-                        if (success) {
-                          Navigator.pushReplacementNamed(
-                            context,
-                            authState.isAuthenticated ? AppRoutes.home : AppRoutes.login,
-                          );
-                        }
-                      },
+                const SizedBox(height: 24),
+
+                // 4 Animated Indicator Dots
+                AnimatedBuilder(
+                  animation: _shakeAnimation,
+                  builder: (context, child) {
+                    return Transform.translate(
+                      offset: Offset(_shakeAnimation.value, 0),
+                      child: child,
+                    );
+                  },
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(4, (i) => _buildDot(i)),
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                // Error / Lockout Message
+                if (_errorMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Text(
+                      _errorMessage!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppColors.red,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                    _buildKeypadButton('0', onTap: () => _onKeyPress('0')),
-                    _buildKeypadButton('', icon: Icons.backspace_outlined, onTap: _onBackspace),
+                  )
+                else
+                  const SizedBox(height: 18),
+
+                const SizedBox(height: 18),
+
+                // Custom Numeric Keypad (0-9, Backspace, Biometric)
+                Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildKeypadButton('1', onTap: () => _onKeyPress('1')),
+                        _buildKeypadButton('2', onTap: () => _onKeyPress('2')),
+                        _buildKeypadButton('3', onTap: () => _onKeyPress('3')),
+                      ],
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildKeypadButton('4', onTap: () => _onKeyPress('4')),
+                        _buildKeypadButton('5', onTap: () => _onKeyPress('5')),
+                        _buildKeypadButton('6', onTap: () => _onKeyPress('6')),
+                      ],
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildKeypadButton('7', onTap: () => _onKeyPress('7')),
+                        _buildKeypadButton('8', onTap: () => _onKeyPress('8')),
+                        _buildKeypadButton('9', onTap: () => _onKeyPress('9')),
+                      ],
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildKeypadButton(
+                          '',
+                          icon: Icons.fingerprint,
+                          onTap: () async {
+                            final authState = AuthState();
+                            final success = await authState.unlockBiometrics();
+                            if (!mounted) return;
+                            if (success) {
+                              Navigator.pushReplacementNamed(
+                                context,
+                                authState.isAuthenticated
+                                    ? AppRoutes.home
+                                    : AppRoutes.login,
+                              );
+                            }
+                          },
+                        ),
+                        _buildKeypadButton('0', onTap: () => _onKeyPress('0')),
+                        _buildKeypadButton(
+                          '',
+                          icon: Icons.backspace_outlined,
+                          onTap: _onBackspace,
+                        ),
+                      ],
+                    ),
                   ],
+                ),
+
+                const SizedBox(height: 12),
+
+                // Alternative Login ("Use Password Instead")
+                TextButton(
+                  onPressed: () =>
+                      Navigator.pushReplacementNamed(context, AppRoutes.login),
+                  child: const Text(
+                    'Use Password Instead',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                ),
+
+                // M1.6b: Forgot-PIN recovery — OTP to the registered phone
+                TextButton(
+                  onPressed: _openForgotPinFlow,
+                  child: const Text(
+                    'Forgot PIN?',
+                    style: TextStyle(color: AppColors.teal, fontSize: 13),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                // 🚨 Unconditional Bottom Emergency SOS Button
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        // Unconditional emergency bypass
+                        AuthState().enterEmergencyBypass();
+                        Navigator.pushNamed(context, AppRoutes.emergency);
+                      },
+                      icon: const Icon(
+                        Icons.emergency,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                      label: const Text(
+                        'Emergency SOS / Dial 112',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.red,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        elevation: 6,
+                        shadowColor: AppColors.red.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ),
                 ),
               ],
-            ),
-
-            const SizedBox(height: 12),
-
-            // Alternative Login ("Use Password Instead")
-            TextButton(
-              onPressed: () => Navigator.pushReplacementNamed(context, AppRoutes.login),
-              child: const Text(
-                'Use Password Instead',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-            ),
-
-            // M1.6b: Forgot-PIN recovery — OTP to the registered phone
-            TextButton(
-              onPressed: _openForgotPinFlow,
-              child: const Text(
-                'Forgot PIN?',
-                style: TextStyle(color: AppColors.teal, fontSize: 13),
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            // 🚨 Unconditional Bottom Emergency SOS Button
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              child: SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    // Unconditional emergency bypass
-                    AuthState().enterEmergencyBypass();
-                    Navigator.pushNamed(context, AppRoutes.emergency);
-                  },
-                  icon: const Icon(Icons.emergency, color: Colors.white, size: 24),
-                  label: const Text(
-                    'Emergency SOS / Dial 112',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.red,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    elevation: 6,
-                    shadowColor: AppColors.red.withValues(alpha: 0.6),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+            ), // Column
+          ), // ConstrainedBox
+        ), // SingleChildScrollView
+      ), // SafeArea
+    ); // Scaffold
   }
 }
 
@@ -452,17 +493,28 @@ class _ForgotPinSheetState extends State<_ForgotPinSheet> {
     super.dispose();
   }
 
+  String get _formattedPhone {
+    final raw = _phoneController.text.trim();
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('+')) return raw;
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return '';
+    return '+91$digits';
+  }
+
   Future<void> _sendOtp() async {
-    final phone = _phoneController.text.trim();
-    if (phone.isEmpty) {
-      setState(() => _error = 'Enter your registered phone number.');
+    final raw = _phoneController.text.trim();
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (raw.isEmpty || (!raw.startsWith('+') && digits.length != 10)) {
+      setState(() => _error = 'Enter your 10-digit registered mobile number.');
       return;
     }
+    final phone = _formattedPhone;
     setState(() {
       _isBusy = true;
       _error = null;
     });
-    final res = await AuthService.instance.sendOtp(phone);
+    final res = await AuthService.instance.sendOtp(phone, purpose: 'pin_reset');
     if (!mounted) return;
     setState(() {
       _isBusy = false;
@@ -470,7 +522,9 @@ class _ForgotPinSheetState extends State<_ForgotPinSheet> {
         _otpSent = true;
         _error = null;
       } else {
-        _error = 'Could not send the OTP. Check the number and try again.';
+        _error =
+            res.message ??
+            'Could not send the OTP. Check the number and try again.';
       }
     });
   }
@@ -478,7 +532,8 @@ class _ForgotPinSheetState extends State<_ForgotPinSheet> {
   Future<void> _resetPin() async {
     final otp = _otpController.text.trim();
     final newPin = _pinController.text.trim();
-    if (otp.isEmpty || newPin.isEmpty) {
+    final phone = _formattedPhone;
+    if (phone.isEmpty || otp.isEmpty || newPin.isEmpty) {
       setState(() => _error = 'Enter the OTP and your new PIN.');
       return;
     }
@@ -487,7 +542,7 @@ class _ForgotPinSheetState extends State<_ForgotPinSheet> {
       _error = null;
     });
     final ok = await AuthService.instance.resetPin(
-      phone: _phoneController.text.trim(),
+      phone: phone,
       otp: otp,
       newPin: newPin,
     );
@@ -503,6 +558,7 @@ class _ForgotPinSheetState extends State<_ForgotPinSheet> {
     } else {
       setState(() {
         _error =
+            AuthService.instance.lastPinResetError ??
             'Reset failed. Check the OTP and PIN (4-6 digits), then retry.';
       });
     }
@@ -510,90 +566,41 @@ class _ForgotPinSheetState extends State<_ForgotPinSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Reset your PIN',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'We will email a 6-digit verification code to the address on your account.',
-            style: TextStyle(color: Colors.white60, fontSize: 12),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _phoneController,
-            keyboardType: TextInputType.phone,
-            maxLength: 10,
-            enabled: !_otpSent,
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              labelText: 'Registered mobile number',
-              prefixText: '+91 ',
-              counterText: '',
-              labelStyle: TextStyle(color: Colors.white60),
-              enabledBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: Colors.white24),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: AppColors.teal),
+    return SingleChildScrollView(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 20,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Reset your PIN',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isBusy ? null : _sendOtp,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.teal,
-                foregroundColor: Colors.black,
-              ),
-              child: Text(_otpSent ? 'OTP sent ✓' : 'Send OTP'),
+            const SizedBox(height: 6),
+            const Text(
+              'We will email a 6-digit verification code to the address on your account.',
+              style: TextStyle(color: Colors.white60, fontSize: 12),
             ),
-          ),
-          if (_otpSent) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             TextField(
-              controller: _otpController,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              style: const TextStyle(color: Colors.white, letterSpacing: 4),
+              controller: _phoneController,
+              keyboardType: TextInputType.phone,
+              maxLength: 10,
+              enabled: !_otpSent,
+              style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
-                labelText: '6-digit OTP',
-                counterText: '',
-                labelStyle: TextStyle(color: Colors.white60),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: Colors.white24),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: AppColors.teal),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _pinController,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              obscureText: true,
-              style: const TextStyle(color: Colors.white, letterSpacing: 4),
-              decoration: const InputDecoration(
-                labelText: 'New PIN (4-6 digits)',
+                labelText: 'Registered mobile number',
+                prefixText: '+91 ',
                 counterText: '',
                 labelStyle: TextStyle(color: Colors.white60),
                 enabledBorder: OutlineInputBorder(
@@ -607,25 +614,76 @@ class _ForgotPinSheetState extends State<_ForgotPinSheet> {
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _isBusy ? null : _resetPin,
+              child: ElevatedButton(
+                onPressed: _isBusy ? null : _sendOtp,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.teal,
                   foregroundColor: Colors.black,
                 ),
-                icon: const Icon(Icons.lock_reset),
-                label: const Text('Reset PIN'),
+                child: Text(_otpSent ? 'OTP sent ✓' : 'Send OTP'),
               ),
             ),
+            if (_otpSent) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _otpController,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                style: const TextStyle(color: Colors.white, letterSpacing: 4),
+                decoration: const InputDecoration(
+                  labelText: '6-digit OTP',
+                  counterText: '',
+                  labelStyle: TextStyle(color: Colors.white60),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white24),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.teal),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _pinController,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                obscureText: true,
+                style: const TextStyle(color: Colors.white, letterSpacing: 4),
+                decoration: const InputDecoration(
+                  labelText: 'New PIN (4-6 digits)',
+                  counterText: '',
+                  labelStyle: TextStyle(color: Colors.white60),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white24),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.teal),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _isBusy ? null : _resetPin,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.teal,
+                    foregroundColor: Colors.black,
+                  ),
+                  icon: const Icon(Icons.lock_reset),
+                  label: const Text('Reset PIN'),
+                ),
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _error!,
+                style: const TextStyle(color: AppColors.red, fontSize: 12),
+              ),
+            ],
           ],
-          if (_error != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              _error!,
-              style: const TextStyle(color: AppColors.red, fontSize: 12),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }

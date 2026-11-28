@@ -10,10 +10,12 @@ import '../widgets/app_drawer.dart';
 import '../services/auth_service.dart';
 import '../services/map_config.dart';
 import '../services/gesture_service.dart';
-import 'auth/login_page.dart';
+import '../routes/app_routes.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final AuthService? authService;
+
+  const HomePage({super.key, this.authService});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -51,16 +53,23 @@ class _HomePageState extends State<HomePage> {
   void _onLocationServiceChanged() {
     if (!mounted) return;
     final loc = LocationService.instance;
-    final changed = _userLat != loc.currentLat ||
-        _userLng != loc.currentLng ||
-        _locationLabel != loc.locationLabel;
+    if (loc.isDetecting) return;
+    final double? nextLat = loc.hasResolvedLocation ? loc.currentLat : null;
+    final double? nextLng = loc.hasResolvedLocation ? loc.currentLng : null;
+    final String nextLabel =
+        loc.hasResolvedLocation ? loc.locationLabel : 'All areas (GPS off)';
+    final changed = _userLat != nextLat ||
+        _userLng != nextLng ||
+        _locationLabel != nextLabel;
     if (changed) {
       setState(() {
-        _userLat = loc.currentLat;
-        _userLng = loc.currentLng;
-        _locationLabel = loc.locationLabel;
+        _userLat = nextLat;
+        _userLng = nextLng;
+        _locationLabel = nextLabel;
       });
-      _refreshDashboard();
+      if (!_isLoading) {
+        _refreshDashboard();
+      }
     }
   }
 
@@ -72,7 +81,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _refreshDashboard() async {
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
 
     try {
       // 1. Detect or apply user position from LocationService
@@ -83,25 +92,32 @@ class _HomePageState extends State<HomePage> {
         _locationLabel = loc.locationLabel;
       } else {
         final success = await loc.detectLiveGps();
-        if (success) {
+        if (success || loc.hasResolvedLocation) {
           _userLat = loc.currentLat;
           _userLng = loc.currentLng;
           _locationLabel = loc.locationLabel;
         } else {
-          _userLat = loc.currentLat;
-          _userLng = loc.currentLng;
-          _locationLabel = loc.locationLabel;
+          _userLat = null;
+          _userLng = null;
+          _locationLabel = 'All areas (GPS off)';
         }
       }
     } catch (_) {
-      _userLat = LocationService.instance.currentLat;
-      _userLng = LocationService.instance.currentLng;
-      _locationLabel = LocationService.instance.locationLabel;
+      final loc = LocationService.instance;
+      if (loc.hasResolvedLocation) {
+        _userLat = loc.currentLat;
+        _userLng = loc.currentLng;
+        _locationLabel = loc.locationLabel;
+      } else {
+        _userLat = null;
+        _userLng = null;
+        _locationLabel = 'All areas (GPS off)';
+      }
     }
 
     try {
       // 2. Fetch live community reports from real backend
-      final auth = AuthService.instance;
+      final auth = widget.authService ?? AuthService.instance;
       final hasLocation = _userLat != null && _userLng != null;
       final fetched = await auth.fetchReports(
         limit: 10,
@@ -130,13 +146,13 @@ class _HomePageState extends State<HomePage> {
     await _loadQueuedSos();
   }
 
-  bool get _isBackendUnavailable => AuthService.instance.lastFetchFailed;
+  bool get _isBackendUnavailable => (widget.authService ?? AuthService.instance).lastFetchFailed;
 
   /// M1.7: honest queued-SOS banner state — pending offline SOS alerts show
   /// "will send automatically when signal returns" with their queue time.
   Future<void> _loadQueuedSos() async {
     try {
-      final queued = await AuthService.instance.getQueuedSosAlerts();
+      final queued = await (widget.authService ?? AuthService.instance).getQueuedSosAlerts();
       if (mounted) setState(() => _queuedSos = queued);
     } catch (_) {
       // Queue read is best-effort; the banner simply won't show.
@@ -287,10 +303,7 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.shield_outlined, color: AppColors.teal),
             tooltip: "Account & PIN Security",
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const LoginPage()),
-              );
+              Navigator.pushNamed(context, AppRoutes.login);
             },
           ),
         ],
@@ -652,13 +665,16 @@ class _HomePageState extends State<HomePage> {
                 ),
               )
             else if (recentReports.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.check_circle_outline, color: AppColors.teal, size: 22),
-                  title: Text("No reports within 10 km", style: TextStyle(color: Colors.white70)),
-                  subtitle: Text("Area is calm • Stay vigilant", style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  leading: const Icon(Icons.check_circle_outline, color: AppColors.teal, size: 22),
+                  title: Text(
+                    _userLat != null ? "No reports within 10 km" : "No recent community reports",
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                  subtitle: const Text("Area is calm • Stay vigilant", style: TextStyle(color: Colors.white38, fontSize: 12)),
                 ),
               )
             else

@@ -60,6 +60,25 @@ class AuthState extends ChangeNotifier {
   bool get isLoading => _status == AuthStatus.loading;
   bool get hasActiveAccess => isAuthenticated || isGuest;
   bool get isPrivileged => _currentUser != null && _currentUser!.isPrivileged;
+  bool get isBanned => _currentUser?.banned ?? false;
+  int get strikes => _currentUser?.strikes ?? 0;
+
+  void syncUserFromService() {
+    if (authService.currentUser != null) {
+      _currentUser = authService.currentUser;
+    }
+    notifyListeners();
+  }
+
+  Future<UserModel?> refreshProfile() async {
+    final user = await authService.getProfile();
+    if (user != null) {
+      _currentUser = user;
+      notifyListeners();
+      return _currentUser;
+    }
+    return null;
+  }
 
   void setErrorMessage(String? msg) {
     _errorMessage = msg;
@@ -151,7 +170,8 @@ class AuthState extends ChangeNotifier {
       }
     } catch (e) {
       _status = AuthStatus.unauthenticated;
-      _errorMessage = e.toString();
+      // Honest but READABLE: raw exception strings never surface verbatim.
+      _errorMessage = 'Sign in failed. Please check your connection and try again.';
       notifyListeners();
       return false;
     }
@@ -198,13 +218,14 @@ class AuthState extends ChangeNotifier {
       }
     } catch (e) {
       _status = AuthStatus.unauthenticated;
-      _errorMessage = e.toString();
+      // Honest but READABLE: raw exception strings never surface verbatim.
+      _errorMessage = 'Registration failed. Please check your connection and try again.';
       notifyListeners();
       return false;
     }
   }
 
-  Future<bool> sendOtp(String phone, {String? email}) async {
+  Future<bool> sendOtp(String phone, {String? email, String purpose = 'verification'}) async {
     _status = AuthStatus.loading;
     _errorMessage = null;
     _pendingPhone = phone;
@@ -214,7 +235,7 @@ class AuthState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await authService.sendOtp(phone, email: email);
+      final result = await authService.sendOtp(phone, email: email, purpose: purpose);
       if (result.success) {
         _lastOtpChannel = result.channel;
         _lastOtpMaskedEmail = result.maskedEmail;
@@ -230,7 +251,9 @@ class AuthState extends ChangeNotifier {
       }
     } catch (e) {
       _status = AuthStatus.unauthenticated;
-      _errorMessage = e.toString();
+      // Honest but READABLE: raw exception strings (SocketException,
+      // UnsupportedError, ...) must never surface verbatim in the UI.
+      _errorMessage = 'Failed to send verification code. Please check your connection and try again.';
       notifyListeners();
       return false;
     }
@@ -267,7 +290,8 @@ class AuthState extends ChangeNotifier {
       }
     } catch (e) {
       _status = AuthStatus.otpPending;
-      _errorMessage = e.toString();
+      // Honest but READABLE: raw exception strings never surface verbatim.
+      _errorMessage = 'Verification failed. Please check the code and your connection.';
       notifyListeners();
       return false;
     }

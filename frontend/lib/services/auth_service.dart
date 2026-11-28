@@ -4,7 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:crypto/crypto.dart' show sha256;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show immutable, kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 import '../models/user_model.dart';
@@ -60,6 +60,25 @@ class OtpSendResult {
     this.expiresInSeconds,
     this.cooldownSeconds,
     this.devOtp,
+  });
+}
+
+@immutable
+class ReportActionResult<T> {
+  final bool success;
+  final int statusCode;
+  final String? message;
+  final String? error;
+  final String? errorCode;
+  final T? data;
+
+  const ReportActionResult({
+    required this.success,
+    this.statusCode = 0,
+    this.message,
+    this.error,
+    this.errorCode,
+    this.data,
   });
 }
 
@@ -144,13 +163,21 @@ class AuthService {
     // queued SOS alerts flush immediately instead of waiting for the next
     // unrelated API call to trigger processQueuedSosAlerts.
     try {
-      Connectivity().onConnectivityChanged.listen((results) {
-        final hasConnection =
-            results.isNotEmpty && !results.contains(ConnectivityResult.none);
-        if (hasConnection) {
-          unawaited(processQueuedSosAlerts());
-        }
-      });
+      Connectivity().onConnectivityChanged.listen(
+        (results) {
+          final hasConnection =
+              results.isNotEmpty && !results.contains(ConnectivityResult.none);
+          if (hasConnection) {
+            unawaited(processQueuedSosAlerts());
+          }
+        },
+        // The sync try/catch cannot catch the ASYNC MissingPluginException the
+        // EventChannel throws when the platform channel is unavailable (widget
+        // tests / headless). onError keeps that error contained — manual
+        // replay paths remain fully functional without the listener.
+        onError: (_) {},
+        cancelOnError: true,
+      );
     } catch (_) {
       // Listener setup is best-effort; manual replay paths remain.
     }
@@ -163,6 +190,10 @@ class AuthService {
   bool _reportsFetchFailed = false;
   bool _markersFetchFailed = false;
   String? _lastReportError;
+  String? _lastVoteError;
+  bool _commentsFetchFailed = false;
+  String? _lastAadhaarError;
+  String? _lastPinResetError;
   Future<String?>? _refreshFuture;
   bool _isProcessingSosQueue = false;
   Future<void> _sosQueueChain = Future.value();
@@ -174,6 +205,29 @@ class AuthService {
   bool get reportsFetchFailed => _reportsFetchFailed;
   bool get markersFetchFailed => _markersFetchFailed;
   String? get lastReportError => _lastReportError;
+  String? get lastVoteError => _lastVoteError;
+  bool get commentsFetchFailed => _commentsFetchFailed;
+  String? get lastAadhaarError => _lastAadhaarError;
+  String? get lastPinResetError => _lastPinResetError;
+
+  static String? _extractErrorCode(Map<String, dynamic>? data) {
+    final err = data?['error'];
+    if (err is Map) {
+      return err['code'] as String?;
+    }
+    return null;
+  }
+
+  static String? _extractErrorMessage(Map<String, dynamic>? data) {
+    final err = data?['error'];
+    if (err is Map) {
+      return err['message'] as String? ?? err['code']?.toString();
+    }
+    if (err != null) {
+      return err.toString();
+    }
+    return data?['message'] as String?;
+  }
 
   // ---------------------------------------------------------------------------
   // Networking HTTP Helpers
@@ -232,7 +286,7 @@ class AuthService {
         });
         final newAccessToken = await _refreshFuture;
         if (newAccessToken != null && newAccessToken.isNotEmpty) {
-          return _requestDetailed(
+          return await _requestDetailed(
             method: method,
             path: path,
             body: body,
@@ -250,7 +304,7 @@ class AuthService {
       return AuthHttpResponse(
         statusCode: statusCode,
         data: decoded,
-        error: !isSuccess ? (decoded?['error']?['message'] as String? ?? 'HTTP $statusCode') : null,
+        error: !isSuccess ? (_extractErrorMessage(decoded) ?? 'HTTP $statusCode') : null,
       );
     } catch (e) {
       return AuthHttpResponse(
@@ -368,7 +422,7 @@ class AuthService {
     // NOTE: Removed dangerous fabricated offline auth fallback (fake tokens and simulated user).
     // An offline or unreachable backend must return an honest error instead of granting a phantom authenticated state.
     // NOTE: Ensure backend /api/v1/auth/register endpoint is reachable and healthy (endpoints verified live).
-    final errMsg = res?['error']?['message'] as String? ?? 'Registration failed. Backend is unreachable or returned an error.';
+    final errMsg = _extractErrorMessage(res) ?? 'Registration failed. Backend is unreachable or returned an error.';
     return AuthResult(success: false, message: errMsg);
   }
 
@@ -407,17 +461,21 @@ class AuthService {
 
     // NOTE: Removed dangerous fabricated login fallback (phantom JWTs on error/offline).
     // NOTE: Verify credentials against real backend POST /api/v1/auth/login (endpoints verified live).
-    final errMsg = res?['error']?['message'] as String? ?? 'Login failed. Please verify credentials or connection.';
+    final errMsg = _extractErrorMessage(res) ?? 'Login failed. Please verify credentials or connection.';
     return AuthResult(success: false, message: errMsg);
   }
 
   // ---------------------------------------------------------------------------
   // Send OTP (POST /api/v1/auth/otp/send)
   // ---------------------------------------------------------------------------
-  Future<OtpSendResult> sendOtp(String phone, {String? email}) async {
+  Future<OtpSendResult> sendOtp(
+    String phone, {
+    String? email,
+    String purpose = 'verification',
+  }) async {
     final body = <String, dynamic>{
       'phone': phone.trim(),
-      'purpose': 'verification',
+      'purpose': purpose,
       if (email != null && email.trim().isNotEmpty) 'email': email.trim(),
     };
 
@@ -441,7 +499,7 @@ class AuthService {
     }
 
     // NOTE: Removed hardcoded fake devOtp '123456' offline fallback.
-    final errMsg = res?['error']?['message'] as String? ??
+    final errMsg = _extractErrorMessage(res) ??
         'Failed to send verification code. Please check your connection and try again.';
     return OtpSendResult(success: false, message: errMsg);
   }
@@ -1553,12 +1611,57 @@ class AuthService {
   }
 
   // ---------------------------------------------------------------------------
-  // M2.3: Community voting (POST /api/v1/reports/:id/vote)
+  // M2.3: Community voting & moderation (POST /api/v1/reports/:id/vote, /status)
   // ---------------------------------------------------------------------------
-  /// Casts or switches the user's vote ('confirm' | 'decline') on a report.
-  /// Returns the updated tally { upvotes, downvotes, myVote } on success,
-  /// null on failure (callers roll back optimistic UI honestly).
-  Future<Map<String, dynamic>?> voteReport({
+  static const Set<String> validReportStatuses = {
+    'pending',
+    'under_investigation',
+    'verified',
+    'resolved',
+    'rejected',
+  };
+
+  /// Updates a report's moderation status (admin/responder only).
+  Future<ReportActionResult<Map<String, dynamic>>> updateReportStatus(
+    String reportId,
+    String status,
+  ) async {
+    final normalized = status.trim().toLowerCase();
+    if (!validReportStatuses.contains(normalized)) {
+      return ReportActionResult<Map<String, dynamic>>(
+        success: false,
+        statusCode: 400,
+        errorCode: 'VALIDATION_ERROR',
+        error: 'Invalid report status: $status',
+      );
+    }
+    final token = await storage.getString(keyToken);
+    final res = await _requestDetailed(
+      method: 'POST',
+      path: '/api/v1/reports/$reportId/status',
+      body: {'status': normalized},
+      token: token,
+    );
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      final payload = (res.data!['data'] as Map<String, dynamic>?) ??
+          (res.data!['report'] as Map<String, dynamic>?);
+      return ReportActionResult<Map<String, dynamic>>(
+        success: true,
+        statusCode: res.statusCode,
+        message: res.data!['message'] as String?,
+        data: payload,
+      );
+    }
+    return ReportActionResult<Map<String, dynamic>>(
+      success: false,
+      statusCode: res.statusCode,
+      errorCode: _extractErrorCode(res.data),
+      error: res.error ?? 'Failed to update report status.',
+    );
+  }
+
+  /// Structured vote endpoint returning full error / errorCode / data.
+  Future<ReportActionResult<Map<String, dynamic>>> voteReportDetailed({
     required String reportId,
     required String vote,
   }) async {
@@ -1566,15 +1669,37 @@ class AuthService {
     final res = await _requestDetailed(
       method: 'POST',
       path: '/api/v1/reports/$reportId/vote',
-      body: { 'vote': vote },
+      body: {'vote': vote},
       token: token,
     );
     if (res.isSuccess && res.data != null && res.data!['success'] == true) {
-      return res.data!['data'] is Map<String, dynamic>
-          ? res.data!['data'] as Map<String, dynamic>
-          : null;
+      return ReportActionResult<Map<String, dynamic>>(
+        success: true,
+        statusCode: res.statusCode,
+        message: res.data!['message'] as String?,
+        data: res.data!['data'] is Map<String, dynamic>
+            ? res.data!['data'] as Map<String, dynamic>
+            : null,
+      );
     }
-    return null;
+    return ReportActionResult<Map<String, dynamic>>(
+      success: false,
+      statusCode: res.statusCode,
+      errorCode: _extractErrorCode(res.data),
+      error: res.error ?? 'Could not record vote.',
+    );
+  }
+
+  /// Casts or switches the user's vote ('confirm' | 'decline') on a report.
+  /// Returns the updated tally { upvotes, downvotes, myVote } on success,
+  /// null on failure (populates `lastVoteError`).
+  Future<Map<String, dynamic>?> voteReport({
+    required String reportId,
+    required String vote,
+  }) async {
+    final res = await voteReportDetailed(reportId: reportId, vote: vote);
+    _lastVoteError = res.success ? null : res.error;
+    return res.data;
   }
 
   // ---------------------------------------------------------------------------
@@ -1583,7 +1708,9 @@ class AuthService {
   String? _lastCommentError;
   String? get lastCommentError => _lastCommentError;
 
-  Future<List<Map<String, dynamic>>> fetchReportComments(String reportId) async {
+  Future<ReportActionResult<List<Map<String, dynamic>>>> fetchReportCommentsDetailed(
+    String reportId,
+  ) async {
     final token = await storage.getString(keyToken);
     final res = await _requestDetailed(
       method: 'GET',
@@ -1592,11 +1719,28 @@ class AuthService {
     );
     if (res.isSuccess && res.data != null && res.data!['success'] == true) {
       final list = res.data!['data'];
-      if (list is List) {
-        return list.whereType<Map<String, dynamic>>().toList();
-      }
+      final comments = list is List
+          ? list.whereType<Map<String, dynamic>>().toList()
+          : <Map<String, dynamic>>[];
+      return ReportActionResult<List<Map<String, dynamic>>>(
+        success: true,
+        statusCode: res.statusCode,
+        data: comments,
+      );
     }
-    return [];
+    return ReportActionResult<List<Map<String, dynamic>>>(
+      success: false,
+      statusCode: res.statusCode,
+      errorCode: _extractErrorCode(res.data),
+      error: res.error ?? 'Failed to load comments.',
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> fetchReportComments(String reportId) async {
+    final res = await fetchReportCommentsDetailed(reportId);
+    _commentsFetchFailed = !res.success;
+    _lastCommentError = res.success ? null : res.error;
+    return res.data ?? [];
   }
 
   Future<Map<String, dynamic>?> createReportComment({
@@ -1623,7 +1767,7 @@ class AuthService {
     return null;
   }
 
-  Future<Map<String, dynamic>?> voteReportComment({
+  Future<ReportActionResult<Map<String, dynamic>>> voteReportCommentDetailed({
     required String reportId,
     required String commentId,
     required String vote,
@@ -1636,11 +1780,35 @@ class AuthService {
       token: token,
     );
     if (res.isSuccess && res.data != null && res.data!['success'] == true) {
-      return res.data!['data'] is Map<String, dynamic>
-          ? res.data!['data'] as Map<String, dynamic>
-          : null;
+      return ReportActionResult<Map<String, dynamic>>(
+        success: true,
+        statusCode: res.statusCode,
+        message: res.data!['message'] as String?,
+        data: res.data!['data'] is Map<String, dynamic>
+            ? res.data!['data'] as Map<String, dynamic>
+            : null,
+      );
     }
-    return null;
+    return ReportActionResult<Map<String, dynamic>>(
+      success: false,
+      statusCode: res.statusCode,
+      errorCode: _extractErrorCode(res.data),
+      error: res.error ?? 'Could not vote on comment.',
+    );
+  }
+
+  Future<Map<String, dynamic>?> voteReportComment({
+    required String reportId,
+    required String commentId,
+    required String vote,
+  }) async {
+    final res = await voteReportCommentDetailed(
+      reportId: reportId,
+      commentId: commentId,
+      vote: vote,
+    );
+    _lastCommentError = res.success ? null : res.error;
+    return res.data;
   }
 
   // ---------------------------------------------------------------------------
@@ -1649,14 +1817,23 @@ class AuthService {
   /// Links the last 4 digits of Aadhaar as a salted SHA-256 hash (server-side).
   /// The plaintext digits are never stored. Returns true when linked.
   Future<bool> linkAadhaarLast4(String last4) async {
+    _lastAadhaarError = null;
     final token = await storage.getString(keyToken);
     final res = await _requestDetailed(
       method: 'POST',
       path: '/api/v1/auth/aadhaar/link',
-      body: { 'aadhaarLast4': last4 },
+      body: {'aadhaarLast4': last4},
       token: token,
     );
-    return res.isSuccess && res.data != null && res.data!['success'] == true;
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      if (_currentUser != null) {
+        _currentUser = _currentUser!.copyWith(aadhaarLinked: true);
+        await storage.setString(keyUser, jsonEncode(_currentUser!.toJson()));
+      }
+      return true;
+    }
+    _lastAadhaarError = res.error ?? 'Failed to link verification digits.';
+    return false;
   }
 
   // ---------------------------------------------------------------------------
@@ -1834,6 +2011,7 @@ class AuthService {
     required String otp,
     required String newPin,
   }) async {
+    _lastPinResetError = null;
     final res = await _requestDetailed(
       method: 'POST',
       path: '/api/v1/auth/pin/reset',
@@ -1843,7 +2021,11 @@ class AuthService {
         'newPin': newPin,
       },
     );
-    return res.isSuccess && res.data != null && res.data!['success'] == true;
+    if (res.isSuccess && res.data != null && res.data!['success'] == true) {
+      return true;
+    }
+    _lastPinResetError = res.error ?? 'Reset failed. Check the OTP and PIN (4-6 digits), then retry.';
+    return false;
   }
 
   Future<bool> signup({

@@ -102,67 +102,112 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _showSmsOtpDialog() {
-    final phoneCtrl = TextEditingController(text: _emailController.text.contains('@') ? '' : _emailController.text);
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: AppColors.bgDark,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.border),
-        ),
-        title: const Row(
-          children: [
-            Icon(Icons.mark_email_read_outlined, color: AppColors.teal),
-            SizedBox(width: 8),
-            Text('Login with Verification Code', style: TextStyle(color: Colors.white, fontSize: 18)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Enter your 10-digit registered phone number. A 6-digit verification code will be sent to the email address on your account.',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: phoneCtrl,
-              keyboardType: TextInputType.phone,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: '+91 9876543210',
-                hintStyle: const TextStyle(color: Colors.white38),
-                prefixIcon: const Icon(Icons.phone, color: AppColors.teal, size: 20),
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.05),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.teal, foregroundColor: Colors.black87),
-            onPressed: () async {
-              final phone = phoneCtrl.text.trim();
-              if (phone.length < 8) return;
-              Navigator.pop(dialogCtx);
-              final authState = AuthState();
-              await authState.sendOtp(phone);
-              if (!mounted) return;
-              Navigator.pushNamed(context, AppRoutes.otp, arguments: phone);
-            },
-            child: const Text('Send OTP'),
-          ),
-        ],
-      ),
+    final phoneCtrl = TextEditingController(
+      text: _emailController.text.contains('@') ? '' : _emailController.text,
     );
+    bool isSending = false;
+    String? dialogError;
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (stCtx, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.bgDark,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: AppColors.border),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.mark_email_read_outlined, color: AppColors.teal),
+              SizedBox(width: 8),
+              Text('Login with Verification Code', style: TextStyle(color: Colors.white, fontSize: 18)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Enter your 10-digit registered phone number. A 6-digit verification code will be sent to the email address on your account.',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: phoneCtrl,
+                keyboardType: TextInputType.phone,
+                enabled: !isSending,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: '+91 9876543210',
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  prefixIcon: const Icon(Icons.phone, color: AppColors.teal, size: 20),
+                  filled: true,
+                  fillColor: Colors.white.withValues(alpha: 0.05),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              if (dialogError != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  dialogError!,
+                  style: const TextStyle(color: AppColors.red, fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSending ? null : () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.teal, foregroundColor: Colors.black87),
+              onPressed: isSending
+                  ? null
+                  : () async {
+                      final phone = phoneCtrl.text.trim();
+                      if (phone.length < 8) {
+                        setDialogState(() {
+                          dialogError = 'Enter a valid registered phone number.';
+                        });
+                        return;
+                      }
+                      setDialogState(() {
+                        isSending = true;
+                        dialogError = null;
+                      });
+                      final authState = AuthState();
+                      final sent = await authState.sendOtp(phone);
+                      if (!dialogCtx.mounted) return;
+                      if (sent) {
+                        Navigator.pop(dialogCtx);
+                        if (!mounted) return;
+                        Navigator.pushNamed(context, AppRoutes.otp, arguments: phone);
+                      } else {
+                        setDialogState(() {
+                          isSending = false;
+                          dialogError = authState.errorMessage ??
+                              'Failed to send verification code.';
+                        });
+                      }
+                    },
+              child: isSending
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.black87,
+                      ),
+                    )
+                  : const Text('Send OTP'),
+            ),
+          ],
+        ),
+      ),
+    ).whenComplete(() {
+      Future<void>.delayed(const Duration(milliseconds: 400), phoneCtrl.dispose);
+    });
   }
 
   @override

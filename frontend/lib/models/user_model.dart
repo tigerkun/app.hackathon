@@ -48,6 +48,8 @@ class UserModel {
   final int reputationScore;
   final bool trustedReporter;
   final bool aadhaarLinked;
+  final int strikes;
+  final bool banned;
 
   /// M3: public SafeSphere ID (SF-XXXX-XX) — the only address other users
   /// need to send this user a connection request. Never an email/phone.
@@ -69,6 +71,8 @@ class UserModel {
     this.reputationScore = 0,
     this.trustedReporter = false,
     this.aadhaarLinked = false,
+    this.strikes = 0,
+    this.banned = false,
     this.safeId,
     required this.createdAt,
   });
@@ -107,6 +111,8 @@ class UserModel {
         json['emergency_contact_name'] as String? ??
         (contacts.isNotEmpty ? contacts.first.name : null);
 
+    final reputation = (json['reputationScore'] as num?)?.toInt() ?? 0;
+
     return UserModel(
       id: json['id'] as String? ?? json['_id'] as String? ?? '',
       name: json['name'] as String? ?? '',
@@ -119,9 +125,11 @@ class UserModel {
       isGuest: json['isGuest'] as bool? ?? false,
       hasPin: json['hasPin'] as bool? ?? (json['pin'] != null),
       biometricsEnabled: json['biometricsEnabled'] as bool? ?? false,
-      reputationScore: json['reputationScore'] as int? ?? 0,
-      trustedReporter: json['trustedReporter'] as bool? ?? false,
+      reputationScore: reputation,
+      trustedReporter: json['trustedReporter'] as bool? ?? (reputation >= 50),
       aadhaarLinked: json['aadhaarLinked'] as bool? ?? false,
+      strikes: (json['strikes'] as num?)?.toInt() ?? 0,
+      banned: json['banned'] as bool? ?? false,
       safeId: json['safeId'] as String?,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
@@ -141,6 +149,11 @@ class UserModel {
     'isGuest': isGuest,
     'hasPin': hasPin,
     'biometricsEnabled': biometricsEnabled,
+    'reputationScore': reputationScore,
+    'trustedReporter': trustedReporter,
+    'aadhaarLinked': aadhaarLinked,
+    'strikes': strikes,
+    'banned': banned,
     if (safeId != null) 'safeId': safeId,
     'createdAt': createdAt.toIso8601String(),
   };
@@ -157,6 +170,12 @@ class UserModel {
     bool? isGuest,
     bool? hasPin,
     bool? biometricsEnabled,
+    int? reputationScore,
+    bool? trustedReporter,
+    bool? aadhaarLinked,
+    int? strikes,
+    bool? banned,
+    String? safeId,
     DateTime? createdAt,
     bool? isAnonymous,
   }) {
@@ -172,6 +191,12 @@ class UserModel {
       isGuest: isGuest ?? (isAnonymous ?? this.isGuest),
       hasPin: hasPin ?? this.hasPin,
       biometricsEnabled: biometricsEnabled ?? this.biometricsEnabled,
+      reputationScore: reputationScore ?? this.reputationScore,
+      trustedReporter: trustedReporter ?? this.trustedReporter,
+      aadhaarLinked: aadhaarLinked ?? this.aadhaarLinked,
+      strikes: strikes ?? this.strikes,
+      banned: banned ?? this.banned,
+      safeId: safeId ?? this.safeId,
       createdAt: createdAt ?? this.createdAt,
     );
   }
