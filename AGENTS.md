@@ -263,6 +263,15 @@ repositories via built-in `node:sqlite` with instant `reset()` for tests).
   - **Multi-active-SOS resolve tokens**: resolve tokens persist in a per-alert JSON map (`safesphere_sos_resolve_tokens`, cap 10, oldest evicted) with the legacy single-token key kept in sync for pre-M6 sessions; `resolveSos` reads per-alert first with legacy fallback and prunes on success. A victim with several alerts can self-resolve all of them.
   - **PIN file-fallback hashing**: when FlutterSecureStorage is unavailable, `setPin` writes a salted `sp1$<salt>$<sha256>` hash to file storage (never the raw PIN); `verifyPin` accepts both hashed and legacy plaintext forms, and legacy plaintext file values are upgraded to hashed in place during read-migration. Hash failure degrades gracefully — the user is never locked out.
   - **Tracking credential hygiene**: the `TrackSessionPage` session token lives in memory only — verified never persisted to any storage key; the only egress is the explicit copy-to-clipboard action.
+- **Backend M1 Hardening & Env-Gated Admin Bootstrap (M1-hardening)**:
+  - `bootstrapService.js`: moderator provisioning strictly via `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` / `BOOTSTRAP_ADMIN_PHONE` env at boot — no hardcoded credentials, no HTTP promotion backdoor, no secret logging.
+  - Reporter anonymity: third-party `?reportedBy` enumeration (including array spoofing) → 403; only the owner and privileged moderators may filter by it.
+  - Honest markers: empty regions return `count: 0` without fabricating synthetic `marker_auto_*` rows.
+  - Rejected/expired reports isolated from feed, by-id, and comments; `mapVisible=true` filter; voting/commenting on them blocked.
+  - Quorum locked at creation (passive `GET /reports?lat=&lng=` views cannot inflate `quorumRequired` mid-vote); `countNearbyActiveUsers` excludes banned/inactive users.
+  - Karma/strike/verificationSource transitions idempotent across status overrides, with ban reversal and self-verdict protection.
+  - `AuthState.sendOtp/verifyOtp/login/register` catch blocks surface readable honest failures — raw exception strings never leak verbatim into the UI.
+  - Tests: `backend/tests/m1_hardening.test.js` + `frontend/test/m2_core_hardening_test.dart` (13 widget tests) cover the full matrix.
 
 ## Conventions & invariants
 
@@ -317,6 +326,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 | `M4 Map Excellence` | `backend/src/models/markerModel.js`, `frontend/lib/pages/safety_map_page.dart`, `frontend/lib/services/movement_analyzer.dart`, `frontend/lib/pages/track_session_page.dart`, `frontend/test/challenger_m5_map_empirical_test.py` | 24x7 Store category end-to-end, glowing category-tinted marker halos, "Near me" nearest-service strip (GPS-fix gated), dashed straight-line guidance polyline (honest non-turn-by-turn), breadcrumb movement state machine with F3-2 stall parity | DONE |
 | `M5 UX Polish` | `backend/src/controllers/locationController.js` (`listMine`), `frontend/lib/pages/privacy_hub_page.dart`, `emergency_page.dart`, `frontend/test/challenger_m6_ux_empirical_test.py` | "Who can see me" privacy hub (live sessions token-scrubbed, watchers, plain-language privacy), WhatsApp-first SOS share with fresh GPS fix + honest no-fix copy + share-sheet fallback | DONE |
 | `M6 Hardening Sweep` | `backend/src/controllers/markerController.js`, `frontend/lib/services/auth_service.dart`, `frontend/test/challenger_m7_hardening_empirical_test.py` | Marker name/address/note 400-rejection caps, offline SOS queue content-signature idempotency, per-alert resolve-token map (cap 10 + legacy fallback), PIN file-fallback salted hashing with legacy upgrade, tracking token verified memory-only | DONE |
+| `M1/M2 Hardening (bootstrap, anonymity, quorum, karma, test suite)` | `backend/src/services/bootstrapService.js`, `reportController.js`, `store.js`, `frontend/test/m2_core_hardening_test.dart`, `backend/tests/m1_hardening.test.js` | Env-gated admin bootstrap, `?reportedBy` 403 guard, marker honesty, rejected/expired isolation, quorum lock, karma idempotency, route-bypass/GPS-honesty/OTP-error/PIN-scroll widget tests (13) | DONE |
 | `F4-2 (1-Tap SOS)` | `frontend/lib/pages/home_page.dart`, `emergency_page.dart`, `about_page.dart` | Persistent 1-tap SOS action, single countdown gate, lock-screen widget recommendation | DONE |
 | `F4-3 (Onboarding & DPDP)` | `frontend/lib/pages/onboarding_page.dart`, `app_drawer.dart`, `backend/src/controllers/authController.js` | 3-screen onboarding, DPDP consent checkbox, emergency bypass, DELETE /api/v1/auth/me wipe | DONE |
 | `F4-4 (Review Markers)` | `backend/src/controllers/markerController.js`, `frontend/lib/pages/review_markers_page.dart` | GET /pending, POST /verify with audit fields, admin Review Markers UI | DONE |
@@ -362,7 +372,7 @@ Search `TODO(REAL_` for the live list. Current stubs:
 # Full gate (recommended)
 npm test
 
-# Backend only — 334 tests across 82 suites
+# Backend only — 376 tests across 95 suites
 cd backend && npm test
 npm run smoke
 
@@ -383,8 +393,12 @@ node --test tests/ai_chat.test.js             # AI assistant Groq chat, validati
 node --test tests/db_snapshot.test.js         # Supabase snapshot persistence, hydrate fail-safe & pruning
 node --test tests/hardening.test.js           # guest SOS identity stripping, revocation gates, input caps, OTP limiter, env fail-closed
 node --test tests/sms_gateway.test.js         # Fast2SMS SMS gateway: OTP dispatch, SOS contacts, honest failures
+node --test tests/m1_hardening.test.js        # M1: reporter anonymity, quorum locking, karma idempotency, marker honesty
 
-# Python challengers (197 tests across 10 suites: frontend structure, routes, AST invariants, permissions)
+# Python challengers (256 tests: frontend structure, routes, AST invariants, permissions, map/movement intel, UX, hardening)
+
+# Dart tests (72: M2 hardening widgets, routing, runtime stability, emergency actions, permissions)
+# Requires the Flutter SDK (C:\srclutter): flutter test  # from frontend/
 python -m unittest discover -s frontend/test -p "*.py"
 python frontend/test/adversarial_r1_challenger_test.py
 python frontend/test/challenger_m2_empirical_test.py
